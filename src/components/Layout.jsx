@@ -10,7 +10,7 @@ const TABS = [
 
 export default function Layout() {
   const location = useLocation();
-  const isSubPage = location.pathname.includes('/jobs/') && location.pathname !== '/';
+  const isSubPage = location.pathname.includes('/jobs/');
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
