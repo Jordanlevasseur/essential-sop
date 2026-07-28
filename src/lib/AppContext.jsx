@@ -45,6 +45,11 @@ export function AppProvider({ children }) {
   });
 
   useEffect(() => {
+    // Clear stale localStorage IDs whenever app boots (handles re-seeds)
+    localStorage.removeItem(STORAGE_KEYS.recent);
+    localStorage.removeItem(STORAGE_KEYS.favorites);
+    localStorage.removeItem('esop_fav_init');
+
     ensureSeeded()
       .then(async () => {
         if (!favoritesInitialized) {

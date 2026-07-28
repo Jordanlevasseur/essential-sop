@@ -34,23 +34,28 @@ export default function JobDetail() {
   const [showAddFor, setShowAddFor] = useState(null);
 
   const loadData = useCallback(async () => {
-    const [j, secs, contents] = await Promise.all([
-      base44.entities.Job.get(jobId),
-      base44.entities.JobSection.filter({ jobId }, 'sortOrder', 10),
-      base44.entities.SectionContent.filter({ jobId }, 'sortOrder', 500),
-    ]);
-    setJob(j);
-    setSections(secs || []);
-    const bySection = {};
-    for (const item of (contents || [])) {
-      if (!bySection[item.sectionType]) bySection[item.sectionType] = [];
-      bySection[item.sectionType].push(item);
+    try {
+      const [j, secs, contents] = await Promise.all([
+        base44.entities.Job.get(jobId),
+        base44.entities.JobSection.filter({ jobId }, 'sortOrder', 10),
+        base44.entities.SectionContent.filter({ jobId }, 'sortOrder', 500),
+      ]);
+      setJob(j);
+      setSections(secs || []);
+      const bySection = {};
+      for (const item of (contents || [])) {
+        if (!bySection[item.sectionType]) bySection[item.sectionType] = [];
+        bySection[item.sectionType].push(item);
+      }
+      for (const key of Object.keys(bySection)) {
+        bySection[key].sort((a, b) => a.sortOrder - b.sortOrder);
+      }
+      setContentBySection(bySection);
+      if (j) addRecentlyViewed(j.id, j.title);
+    } catch (err) {
+      // Job not found — stale ID, go back to jobs list
+      navigate('/');
     }
-    for (const key of Object.keys(bySection)) {
-      bySection[key].sort((a, b) => a.sortOrder - b.sortOrder);
-    }
-    setContentBySection(bySection);
-    if (j) addRecentlyViewed(j.id, j.title);
     setLoading(false);
   }, [jobId]);
 
