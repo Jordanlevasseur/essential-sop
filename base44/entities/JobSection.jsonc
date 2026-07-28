@@ -1,0 +1,45 @@
+{
+  "name": "JobSection",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "sectionType": {
+      "type": "string",
+      "enum": [
+        "scope",
+        "procedure",
+        "tools",
+        "materials",
+        "safety",
+        "documentation",
+        "quality"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "sortOrder": {
+      "type": "number",
+      "default": 0
+    },
+    "completionStatus": {
+      "type": "string",
+      "enum": [
+        "Empty",
+        "In Progress",
+        "Complete"
+      ],
+      "default": "Empty"
+    }
+  },
+  "required": [
+    "jobId",
+    "sectionType",
+    "title"
+  ]
+}

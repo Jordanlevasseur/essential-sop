@@ -1,0 +1,65 @@
+{
+  "name": "SectionContent",
+  "type": "object",
+  "properties": {
+    "sectionId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "sectionType": {
+      "type": "string",
+      "enum": [
+        "scope",
+        "procedure",
+        "tools",
+        "materials",
+        "safety",
+        "documentation",
+        "quality"
+      ]
+    },
+    "contentType": {
+      "type": "string",
+      "enum": [
+        "text",
+        "checklist",
+        "numberedStep",
+        "tool",
+        "material",
+        "warning",
+        "documentationRequirement",
+        "qualityCheck"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "sortOrder": {
+      "type": "number",
+      "default": 0
+    },
+    "isRequired": {
+      "type": "boolean",
+      "default": false
+    },
+    "isCritical": {
+      "type": "boolean",
+      "default": false
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "sectionId",
+    "jobId",
+    "sectionType",
+    "contentType",
+    "title"
+  ]
+}

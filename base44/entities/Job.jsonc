@@ -1,0 +1,54 @@
+{
+  "name": "Job",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "shortDescription": {
+      "type": "string"
+    },
+    "trade": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "skillLevel": {
+      "type": "string",
+      "enum": [
+        "Entry",
+        "Intermediate",
+        "Advanced"
+      ],
+      "default": "Intermediate"
+    },
+    "estimatedDuration": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "thumbnail": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Published"
+      ],
+      "default": "Draft"
+    },
+    "isArchived": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

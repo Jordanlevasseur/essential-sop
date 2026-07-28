@@ -6,7 +6,14 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
-// Add page imports here
+import { AppProvider, useApp } from '@/lib/AppContext';
+import Layout from '@/components/Layout';
+import Jobs from '@/pages/Jobs';
+import JobDetail from '@/pages/JobDetail';
+import SectionDetail from '@/pages/SectionDetail';
+import CreateJob from '@/pages/CreateJob';
+import Assistant from '@/pages/Assistant';
+import Profile from '@/pages/Profile';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -33,8 +40,44 @@ const AuthenticatedApp = () => {
 
   // Render the main app
   return (
+    <AppProvider>
+      <SeededApp />
+    </AppProvider>
+  );
+};
+
+const SeededApp = () => {
+  const { isReady, seedError } = useApp();
+
+  if (seedError) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center p-4 text-center">
+        <div>
+          <p className="text-red-600 font-medium mb-2">Failed to initialize</p>
+          <p className="text-sm text-neutral-500">{seedError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isReady) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-neutral-200 border-t-blue-600 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
     <Routes>
-      {/* Add your page Route elements here */}
+      <Route element={<Layout />}>
+        <Route path="/" element={<Jobs />} />
+        <Route path="/assistant" element={<Assistant />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/jobs/:jobId" element={<JobDetail />} />
+        <Route path="/jobs/:jobId/:sectionType" element={<SectionDetail />} />
+        <Route path="/create-job" element={<CreateJob />} />
+      </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
