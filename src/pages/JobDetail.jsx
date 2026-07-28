@@ -5,13 +5,13 @@ import { useApp } from '@/lib/AppContext';
 import {
   ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown,
   CheckCircle2, Circle, AlertTriangle, Info, AlertCircle, ShieldAlert,
-  Camera, Check, X, GripVertical, Upload, ChevronDown, ChevronUp
+  Camera, Check, Upload
 } from 'lucide-react';
 import { SECTION_MAP, SEVERITY_LEVELS } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import { Image } from '@/components/ui/image';
 
-// Display order for sections on the single-page view
+// Section display order for the single-page layout
 const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'documentation', 'quality'];
 
 const RESULT_STYLES = {
@@ -31,7 +31,7 @@ export default function JobDetail() {
   const [editMode, setEditMode] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [editSectionType, setEditSectionType] = useState(null);
-  const [showAddFor, setShowAddFor] = useState(null); // sectionType
+  const [showAddFor, setShowAddFor] = useState(null);
 
   const loadData = useCallback(async () => {
     const [j, secs, contents] = await Promise.all([
@@ -50,18 +50,16 @@ export default function JobDetail() {
       bySection[key].sort((a, b) => a.sortOrder - b.sortOrder);
     }
     setContentBySection(bySection);
-    addRecentlyViewed(j.id, j.title);
+    if (j) addRecentlyViewed(j.id, j.title);
     setLoading(false);
   }, [jobId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const getSectionRecord = (sectionType) => sections.find(s => s.sectionType === sectionType);
-
   const handleSaveItem = async (data) => {
     const st = editSectionType || showAddFor;
     if (!st) return;
-    const sectionRecord = getSectionRecord(st);
+    const sectionRecord = sections.find(s => s.sectionType === st);
     if (editItem) {
       const updated = await base44.entities.SectionContent.update(editItem.id, data);
       setContentBySection(prev => ({
@@ -73,22 +71,14 @@ export default function JobDetail() {
       const created = await base44.entities.SectionContent.create({
         ...data, sectionId: sectionRecord?.id, jobId, sectionType: st, sortOrder: items.length,
       });
-      setContentBySection(prev => ({
-        ...prev,
-        [st]: [...(prev[st] || []), created],
-      }));
+      setContentBySection(prev => ({ ...prev, [st]: [...(prev[st] || []), created] }));
     }
-    setEditItem(null);
-    setEditSectionType(null);
-    setShowAddFor(null);
+    setEditItem(null); setEditSectionType(null); setShowAddFor(null);
   };
 
   const handleDelete = async (sectionType, id) => {
     await base44.entities.SectionContent.delete(id);
-    setContentBySection(prev => ({
-      ...prev,
-      [sectionType]: (prev[sectionType] || []).filter(i => i.id !== id),
-    }));
+    setContentBySection(prev => ({ ...prev, [sectionType]: (prev[sectionType] || []).filter(i => i.id !== id) }));
   };
 
   const handleReorder = async (sectionType, index, dir) => {
@@ -97,16 +87,14 @@ export default function JobDetail() {
     if (swap < 0 || swap >= items.length) return;
     [items[index], items[swap]] = [items[swap], items[index]];
     items.forEach((item, i) => base44.entities.SectionContent.update(item.id, { sortOrder: i }));
-    setContentBySection(prev => ({
-      ...prev,
-      [sectionType]: items.map((item, i) => ({ ...item, sortOrder: i })),
-    }));
+    setContentBySection(prev => ({ ...prev, [sectionType]: items.map((item, i) => ({ ...item, sortOrder: i })) }));
   };
 
   const handlePhotoUpload = async (itemId, sectionType, file) => {
     const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const item = (contentBySection[sectionType] || []).find(i => i.id === itemId);
     const updated = await base44.entities.SectionContent.update(itemId, {
-      metadata: { ...(contentBySection[sectionType]?.find(i => i.id === itemId)?.metadata || {}), photoUrl: file_url },
+      metadata: { ...(item?.metadata || {}), photoUrl: file_url },
     });
     setContentBySection(prev => ({
       ...prev,
@@ -117,42 +105,32 @@ export default function JobDetail() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-neutral-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-neutral-200 border-t-blue-600 rounded-full animate-spin" />
       </div>
     );
   }
-
   if (!job) return <div className="p-4 text-center text-neutral-400">Job not found.</div>;
-
-  const sessionPrefix = jobId;
 
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Sticky header */}
       <div className="bg-white border-b border-neutral-200 sticky top-0 z-40">
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="flex-shrink-0">
-            <ArrowLeft size={22} className="text-neutral-700" />
-          </button>
+          <button onClick={() => navigate(-1)}><ArrowLeft size={22} className="text-neutral-700" /></button>
           <h1 className="font-semibold text-neutral-900 flex-1 truncate">{job.title}</h1>
-          <button onClick={() => toggleFavorite(job.id)} className="flex-shrink-0">
+          <button onClick={() => toggleFavorite(job.id)}>
             <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-neutral-300'} />
           </button>
           {isAdmin && (
-            <>
-              <button
-                onClick={() => setEditMode(e => !e)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 ${editMode ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700'}`}
-              >
-                <Pencil size={14} />
-                {editMode ? 'Done' : 'Edit'}
-              </button>
-            </>
+            <button onClick={() => setEditMode(e => !e)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${editMode ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700'}`}>
+              <Pencil size={14} />{editMode ? 'Done' : 'Edit'}
+            </button>
           )}
         </div>
       </div>
 
-      {/* Job metadata card */}
+      {/* Job metadata */}
       <div className="px-4 pt-4 pb-2">
         <div className="bg-white border border-neutral-200 rounded-xl p-4">
           <p className="text-xs text-blue-600 font-semibold uppercase mb-1">{job.trade} · {job.category}</p>
@@ -169,13 +147,13 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {/* All sections in display order */}
+      {/* Sections */}
       {DISPLAY_ORDER.map(sectionType => {
-        const items = contentBySection[sectionType] || [];
         const def = SECTION_MAP[sectionType];
         if (!def) return null;
+        const items = contentBySection[sectionType] || [];
         return (
-          <JobSection
+          <SectionBlock
             key={sectionType}
             sectionType={sectionType}
             sectionDef={def}
@@ -184,7 +162,7 @@ export default function JobDetail() {
             editMode={editMode}
             session={session}
             setSessionItem={setSessionItem}
-            sessionPrefix={sessionPrefix}
+            sessionPrefix={jobId}
             onEdit={(item) => { setEditItem(item); setEditSectionType(sectionType); }}
             onDelete={(id) => handleDelete(sectionType, id)}
             onReorder={(idx, dir) => handleReorder(sectionType, idx, dir)}
@@ -194,9 +172,8 @@ export default function JobDetail() {
         );
       })}
 
-      <div className="h-8" />
+      <div className="h-10" />
 
-      {/* Edit / Add dialog */}
       {(editItem || showAddFor) && (
         <ContentEditDialog
           sectionType={editSectionType || showAddFor}
@@ -209,8 +186,8 @@ export default function JobDetail() {
   );
 }
 
-/* ─── Section wrapper ─────────────────────────────────────────────────────── */
-function JobSection({ sectionType, sectionDef, items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onAdd, onPhotoUpload }) {
+/* ── Section wrapper ─────────────────────────────────────────────────────── */
+function SectionBlock({ sectionType, sectionDef, items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onAdd, onPhotoUpload }) {
   const Icon = sectionDef.icon;
   return (
     <div className="px-4 pt-5">
@@ -219,7 +196,7 @@ function JobSection({ sectionType, sectionDef, items, isAdmin, editMode, session
           <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
             <Icon size={16} className="text-blue-600" />
           </div>
-          <h2 className="font-bold text-neutral-900">{sectionDef.title}</h2>
+          <h2 className="font-bold text-neutral-900 text-base">{sectionDef.title}</h2>
         </div>
         {isAdmin && editMode && (
           <button onClick={onAdd} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium">
@@ -227,70 +204,38 @@ function JobSection({ sectionType, sectionDef, items, isAdmin, editMode, session
           </button>
         )}
       </div>
-
       {items.length === 0 ? (
         <div className="bg-white border border-dashed border-neutral-200 rounded-xl p-5 text-center">
           <p className="text-xs text-neutral-400">{isAdmin && editMode ? 'Tap Add to create the first item.' : 'No content yet.'}</p>
         </div>
       ) : (
-        <SectionContent
-          sectionType={sectionType}
-          items={items}
-          isAdmin={isAdmin}
-          editMode={editMode}
-          session={session}
-          setSessionItem={setSessionItem}
-          sessionPrefix={sessionPrefix}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onReorder={onReorder}
-          onPhotoUpload={onPhotoUpload}
-        />
+        <SectionRenderer sectionType={sectionType} items={items} isAdmin={isAdmin} editMode={editMode}
+          session={session} setSessionItem={setSessionItem} sessionPrefix={sessionPrefix}
+          onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} onPhotoUpload={onPhotoUpload} />
       )}
     </div>
   );
 }
 
-/* ─── Section content router ──────────────────────────────────────────────── */
-function SectionContent(props) {
-  const { sectionType } = props;
-  if (sectionType === 'tools') return <ToolsSection {...props} />;
-  if (sectionType === 'materials') return <MaterialsSection {...props} />;
-  if (sectionType === 'scope') return <ScopeSection {...props} />;
-  if (sectionType === 'procedure') return <ProcedureSection {...props} />;
-  if (sectionType === 'safety') return <SafetySection {...props} />;
-  if (sectionType === 'documentation') return <DocumentationSection {...props} />;
-  if (sectionType === 'quality') return <QualitySection {...props} />;
-  return null;
-}
-
-/* ─── Admin row controls ──────────────────────────────────────────────────── */
+/* ── Admin controls bar ──────────────────────────────────────────────────── */
 function AdminBar({ item, index, total, onEdit, onDelete, onReorder }) {
   return (
     <div className="flex items-center gap-1 pt-2 mt-2 border-t border-neutral-100">
-      <button onClick={() => onEdit(item)} className="px-2 py-1 text-xs text-blue-600 font-medium flex items-center gap-1">
-        <Pencil size={11} /> Edit
-      </button>
-      <button onClick={() => onDelete(item.id)} className="px-2 py-1 text-xs text-red-500 font-medium flex items-center gap-1">
-        <Trash2 size={11} /> Delete
-      </button>
+      <button onClick={() => onEdit(item)} className="px-2 py-1 text-xs text-blue-600 font-medium flex items-center gap-1"><Pencil size={11} /> Edit</button>
+      <button onClick={() => onDelete(item.id)} className="px-2 py-1 text-xs text-red-500 font-medium flex items-center gap-1"><Trash2 size={11} /> Delete</button>
       <div className="flex-1" />
-      <button onClick={() => onReorder(index, -1)} disabled={index === 0} className="p-1 text-neutral-400 disabled:opacity-25">
-        <ArrowUp size={13} />
-      </button>
-      <button onClick={() => onReorder(index, 1)} disabled={index === total - 1} className="p-1 text-neutral-400 disabled:opacity-25">
-        <ArrowDown size={13} />
-      </button>
+      <button onClick={() => onReorder(index, -1)} disabled={index === 0} className="p-1 text-neutral-400 disabled:opacity-25"><ArrowUp size={13} /></button>
+      <button onClick={() => onReorder(index, 1)} disabled={index === total - 1} className="p-1 text-neutral-400 disabled:opacity-25"><ArrowDown size={13} /></button>
     </div>
   );
 }
 
-/* ─── Photo upload button ─────────────────────────────────────────────────── */
-function PhotoUploadBtn({ itemId, onPhotoUpload }) {
+/* ── Photo upload button ─────────────────────────────────────────────────── */
+function PhotoUpload({ itemId, onPhotoUpload }) {
   const ref = useRef();
   return (
     <>
-      <button onClick={() => ref.current?.click()} className="flex items-center gap-1 text-xs text-blue-600 mt-1">
+      <button onClick={() => ref.current?.click()} className="flex items-center gap-1 text-xs text-blue-600 mt-1.5">
         <Upload size={11} /> Upload photo
       </button>
       <input ref={ref} type="file" accept="image/*" className="hidden"
@@ -299,45 +244,51 @@ function PhotoUploadBtn({ itemId, onPhotoUpload }) {
   );
 }
 
-/* ─── 1. Tools ────────────────────────────────────────────────────────────── */
-function ToolsSection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
+/* ── Section renderer router ─────────────────────────────────────────────── */
+function SectionRenderer(props) {
+  const { sectionType } = props;
+  if (sectionType === 'tools') return <ToolsView {...props} />;
+  if (sectionType === 'materials') return <MaterialsView {...props} />;
+  if (sectionType === 'scope') return <ScopeView {...props} />;
+  if (sectionType === 'procedure') return <ProcedureView {...props} />;
+  if (sectionType === 'safety') return <SafetyView {...props} />;
+  if (sectionType === 'documentation') return <DocumentationView {...props} />;
+  if (sectionType === 'quality') return <QualityView {...props} />;
+  return null;
+}
+
+/* ── 1. Tools ────────────────────────────────────────────────────────────── */
+function ToolsView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const gathered = session[`${sessionPrefix}_tools_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden transition-colors ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
             <div className="flex gap-3 p-3">
-              {/* Photo */}
               <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-neutral-100 overflow-hidden">
-                {item.metadata?.photoUrl ? (
-                  <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-2xl">🔧</div>
-                )}
+                {item.metadata?.photoUrl
+                  ? <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
+                  : <div className="w-full h-full flex items-center justify-center text-2xl">🔧</div>}
               </div>
-              {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-1">
-                  <h4 className={`font-semibold text-sm text-neutral-900 ${gathered && !editMode ? 'line-through text-neutral-400' : ''}`}>{item.title}</h4>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${item.isRequired ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                      {item.isRequired ? 'Required' : 'Optional'}
-                    </span>
-                  </div>
+                <div className="flex items-start justify-between gap-1 mb-0.5">
+                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                    {item.isRequired ? 'Required' : 'Optional'}
+                  </span>
                 </div>
-                <p className="text-xs text-neutral-500 mt-0.5">Qty: {item.metadata?.quantity || 1}</p>
+                <p className="text-xs text-neutral-500">Qty: {item.metadata?.quantity || 1}</p>
                 {item.body && <p className="text-xs text-neutral-400 mt-0.5">{item.body}</p>}
-                {editMode && <PhotoUploadBtn itemId={item.id} onPhotoUpload={onPhotoUpload} />}
+                {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
-              {/* Gather checkbox */}
               {!editMode && (
-                <button onClick={() => setSessionItem(`${sessionPrefix}_tools_${item.id}`, !gathered)} className="flex-shrink-0 self-center">
+                <button onClick={() => setSessionItem(`${sessionPrefix}_tools_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
                   {gathered ? <CheckCircle2 size={22} className="text-green-500" /> : <Circle size={22} className="text-neutral-300" />}
                 </button>
               )}
             </div>
-            {editMode && <AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} />}
+            {editMode && <div className="px-3 pb-3"><AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} /></div>}
           </div>
         );
       })}
@@ -345,45 +296,39 @@ function ToolsSection({ items, isAdmin, editMode, session, setSessionItem, sessi
   );
 }
 
-/* ─── 2. Materials ────────────────────────────────────────────────────────── */
-function MaterialsSection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
+/* ── 2. Materials ────────────────────────────────────────────────────────── */
+function MaterialsView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const gathered = session[`${sessionPrefix}_materials_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden transition-colors ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
             <div className="flex gap-3 p-3">
-              {/* Photo */}
               <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-neutral-100 overflow-hidden">
-                {item.metadata?.photoUrl ? (
-                  <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-2xl">📦</div>
-                )}
+                {item.metadata?.photoUrl
+                  ? <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
+                  : <div className="w-full h-full flex items-center justify-center text-2xl">📦</div>}
               </div>
-              {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-1">
-                  <h4 className={`font-semibold text-sm text-neutral-900 ${gathered && !editMode ? 'line-through text-neutral-400' : ''}`}>{item.title}</h4>
+                <div className="flex items-start justify-between gap-1 mb-0.5">
+                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
                     {item.isRequired ? 'Required' : 'Optional'}
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500 mt-0.5">
-                  Qty: {item.metadata?.quantity || 1}{item.metadata?.unit ? ` ${item.metadata.unit}` : ''}
-                </p>
+                <p className="text-xs text-neutral-500">Qty: {item.metadata?.quantity || 1}{item.metadata?.unit ? ` ${item.metadata.unit}` : ''}</p>
                 {item.metadata?.specification && <p className="text-xs text-blue-600 mt-0.5">{item.metadata.specification}</p>}
                 {item.body && <p className="text-xs text-neutral-400 mt-0.5">{item.body}</p>}
-                {editMode && <PhotoUploadBtn itemId={item.id} onPhotoUpload={onPhotoUpload} />}
+                {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
               {!editMode && (
-                <button onClick={() => setSessionItem(`${sessionPrefix}_materials_${item.id}`, !gathered)} className="flex-shrink-0 self-center">
+                <button onClick={() => setSessionItem(`${sessionPrefix}_materials_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
                   {gathered ? <CheckCircle2 size={22} className="text-green-500" /> : <Circle size={22} className="text-neutral-300" />}
                 </button>
               )}
             </div>
-            {editMode && <AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} />}
+            {editMode && <div className="px-3 pb-3"><AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} /></div>}
           </div>
         );
       })}
@@ -391,8 +336,8 @@ function MaterialsSection({ items, isAdmin, editMode, session, setSessionItem, s
   );
 }
 
-/* ─── 3. Scope ────────────────────────────────────────────────────────────── */
-function ScopeSection({ items, isAdmin, editMode, onEdit, onDelete, onReorder }) {
+/* ── 3. Scope ────────────────────────────────────────────────────────────── */
+function ScopeView({ items, editMode, onEdit, onDelete, onReorder }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
@@ -406,14 +351,14 @@ function ScopeSection({ items, isAdmin, editMode, onEdit, onDelete, onReorder })
   );
 }
 
-/* ─── 4. Procedure ────────────────────────────────────────────────────────── */
-function ProcedureSection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
+/* ── 4. Procedure ────────────────────────────────────────────────────────── */
+function ProcedureView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const done = session[`${sessionPrefix}_proc_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl p-4 transition-colors ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-white border rounded-xl p-4 ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
             <div className="flex items-start gap-3">
               {!editMode && (
                 <button onClick={() => setSessionItem(`${sessionPrefix}_proc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
@@ -423,7 +368,7 @@ function ProcedureSection({ items, isAdmin, editMode, session, setSessionItem, s
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">{i + 1}</span>
-                  <h4 className={`font-semibold text-sm text-neutral-900 ${done && !editMode ? 'line-through text-neutral-400' : ''}`}>{item.title}</h4>
+                  <h4 className={`font-semibold text-sm ${done && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
                 </div>
                 <p className="text-sm text-neutral-600 ml-8 leading-relaxed">{item.body}</p>
                 {item.metadata?.warning && (
@@ -448,8 +393,8 @@ function ProcedureSection({ items, isAdmin, editMode, session, setSessionItem, s
   );
 }
 
-/* ─── 5. Safety ───────────────────────────────────────────────────────────── */
-function SafetySection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
+/* ── 5. Safety ───────────────────────────────────────────────────────────── */
+function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const ackKey = `${sessionPrefix}_safety_ack`;
   const acknowledged = session[ackKey];
   return (
@@ -460,7 +405,7 @@ function SafetySection({ items, isAdmin, editMode, session, setSessionItem, sess
           const SevIcon = severity.icon;
           return (
             <div key={item.id} className="bg-white border border-neutral-200 rounded-xl p-4">
-              <div className={`p-3 rounded-lg border ${severity.bg} ${severity.border} mb-2`}>
+              <div className={`p-3 rounded-lg border ${severity.bg} ${severity.border}`}>
                 <div className="flex items-center gap-2 mb-1">
                   <SevIcon size={15} className={severity.color} />
                   <span className={`text-xs font-bold uppercase tracking-wide ${severity.color}`}>{severity.value}</span>
@@ -479,7 +424,7 @@ function SafetySection({ items, isAdmin, editMode, session, setSessionItem, sess
         })}
       </div>
       {!editMode && (
-        <div className={`rounded-xl p-4 border-2 transition-colors ${acknowledged ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-300'}`}>
+        <div className={`rounded-xl p-4 border-2 ${acknowledged ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-300'}`}>
           <label className="flex items-center gap-3 cursor-pointer">
             <button onClick={() => setSessionItem(ackKey, !acknowledged)}>
               {acknowledged ? <CheckCircle2 size={24} className="text-green-500" /> : <Circle size={24} className="text-neutral-300" />}
@@ -492,14 +437,14 @@ function SafetySection({ items, isAdmin, editMode, session, setSessionItem, sess
   );
 }
 
-/* ─── 6. Documentation ────────────────────────────────────────────────────── */
-function DocumentationSection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
+/* ── 6. Documentation ────────────────────────────────────────────────────── */
+function DocumentationView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const completed = items.filter(i => session[`${sessionPrefix}_doc_${i.id}`]).length;
   return (
     <div>
       {items.length > 0 && (
         <div className="mb-3 bg-blue-50 rounded-xl p-3">
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex justify-between mb-1">
             <span className="text-xs font-semibold text-blue-700">{completed} of {items.length} complete</span>
             <span className="text-xs text-blue-500">{Math.round((completed / items.length) * 100)}%</span>
           </div>
@@ -513,7 +458,7 @@ function DocumentationSection({ items, isAdmin, editMode, session, setSessionIte
           const done = session[`${sessionPrefix}_doc_${item.id}`];
           const docType = item.metadata?.documentationType || 'Note';
           return (
-            <div key={item.id} className={`bg-white border rounded-xl p-4 transition-colors ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+            <div key={item.id} className={`bg-white border rounded-xl p-4 ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
               <div className="flex items-start gap-3">
                 {!editMode && (
                   <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
@@ -521,7 +466,7 @@ function DocumentationSection({ items, isAdmin, editMode, session, setSessionIte
                   </button>
                 )}
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <span className="text-xs px-1.5 py-0.5 bg-neutral-100 text-neutral-600 rounded">{docType}</span>
                     {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">Required</span>}
                   </div>
@@ -530,7 +475,8 @@ function DocumentationSection({ items, isAdmin, editMode, session, setSessionIte
                   {!editMode && !done && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {docType.includes('photo') && (
-                        <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)} className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-1">
+                        <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)}
+                          className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-1">
                           <Camera size={11} /> Add Photo
                         </button>
                       )}
@@ -542,9 +488,8 @@ function DocumentationSection({ items, isAdmin, editMode, session, setSessionIte
                         <input placeholder="Add note" className="text-xs px-2 py-1 border border-neutral-200 rounded-lg flex-1 min-w-0"
                           onBlur={e => { if (e.target.value) setSessionItem(`${sessionPrefix}_doc_${item.id}`, true); }} />
                       )}
-                      <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)} className="text-xs px-2.5 py-1 border border-neutral-200 text-neutral-600 rounded-lg">
-                        Mark Done
-                      </button>
+                      <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)}
+                        className="text-xs px-2.5 py-1 border border-neutral-200 text-neutral-600 rounded-lg">Mark Done</button>
                     </div>
                   )}
                   {!editMode && done && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check size={11} /> Completed</p>}
@@ -559,20 +504,12 @@ function DocumentationSection({ items, isAdmin, editMode, session, setSessionIte
   );
 }
 
-/* ─── 7. Quality ──────────────────────────────────────────────────────────── */
-function QualitySection({ items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
-  const getResult = (id) => session[`${sessionPrefix}_quality_${id}_result`];
+/* ── 7. Quality ──────────────────────────────────────────────────────────── */
+function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const [finalNotes, setFinalNotes] = useState(session[`${sessionPrefix}_quality_notes`] || '');
   const [submitted, setSubmitted] = useState(!!session[`${sessionPrefix}_quality_submitted`]);
-
-  const allAnswered = items.every(i => getResult(i.id));
-  const failedWithoutNote = items.some(i => getResult(i.id) === 'Fail' && !session[`${sessionPrefix}_quality_${i.id}_note`]);
-
-  const handleSubmit = () => {
-    setSessionItem(`${sessionPrefix}_quality_submitted`, true);
-    setSessionItem(`${sessionPrefix}_quality_notes`, finalNotes);
-    setSubmitted(true);
-  };
+  const allAnswered = items.every(i => session[`${sessionPrefix}_quality_${i.id}_result`]);
+  const failedWithoutNote = items.some(i => session[`${sessionPrefix}_quality_${i.id}_result`] === 'Fail' && !session[`${sessionPrefix}_quality_${i.id}_note`]);
 
   if (submitted && !editMode) {
     return (
@@ -590,13 +527,13 @@ function QualitySection({ items, isAdmin, editMode, session, setSessionItem, ses
     <div>
       <div className="space-y-2.5">
         {items.map((item, i) => {
-          const result = getResult(item.id);
+          const result = session[`${sessionPrefix}_quality_${item.id}_result`];
           const failNote = session[`${sessionPrefix}_quality_${item.id}_note`];
           return (
             <div key={item.id} className="bg-white border border-neutral-200 rounded-xl p-4">
-              <div className="flex items-start gap-2 mb-2">
-                {item.isCritical && <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium flex-shrink-0">Critical</span>}
-                {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Required</span>}
+              <div className="flex gap-1.5 mb-1.5">
+                {item.isCritical && <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">Critical</span>}
+                {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">Required</span>}
               </div>
               <h4 className="font-semibold text-sm text-neutral-900 mb-1">{item.title}</h4>
               {item.body && <p className="text-xs text-neutral-500 mb-2">{item.body}</p>}
@@ -607,8 +544,7 @@ function QualitySection({ items, isAdmin, editMode, session, setSessionItem, ses
                       <button key={r} onClick={() => {
                         setSessionItem(`${sessionPrefix}_quality_${item.id}_result`, r);
                         if (r !== 'Fail') setSessionItem(`${sessionPrefix}_quality_${item.id}_note`, undefined);
-                      }}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${result === r ? RESULT_STYLES[r] : 'border-neutral-200 text-neutral-500 bg-white'}`}>
+                      }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${result === r ? RESULT_STYLES[r] : 'border-neutral-200 text-neutral-500 bg-white'}`}>
                         {r === 'Not Applicable' ? 'N/A' : r}
                       </button>
                     ))}
@@ -629,14 +565,15 @@ function QualitySection({ items, isAdmin, editMode, session, setSessionItem, ses
         <div className="mt-4 bg-white border border-neutral-200 rounded-xl p-4">
           <h4 className="font-semibold text-sm text-neutral-900 mb-2">Final Notes</h4>
           <textarea value={finalNotes} onChange={e => setFinalNotes(e.target.value)} rows={3}
-            placeholder="Add final notes for this inspection..." className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm" />
-          <button onClick={handleSubmit} disabled={!allAnswered || failedWithoutNote}
+            placeholder="Add final notes..." className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm" />
+          <button onClick={() => { setSessionItem(`${sessionPrefix}_quality_submitted`, true); setSessionItem(`${sessionPrefix}_quality_notes`, finalNotes); setSubmitted(true); }}
+            disabled={!allAnswered || failedWithoutNote}
             className="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold disabled:bg-neutral-300">
             Submit Quality Checklist
           </button>
           {(!allAnswered || failedWithoutNote) && (
             <p className="text-xs text-orange-600 mt-1.5 text-center">
-              {!allAnswered ? 'All items must be answered before submitting.' : 'Failed items require a note.'}
+              {!allAnswered ? 'All items must be answered.' : 'Failed items require a note.'}
             </p>
           )}
         </div>
