@@ -1,0 +1,63 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "userId": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "invitation_received",
+        "invitation_accepted",
+        "invitation_cancelled",
+        "role_changed",
+        "membership_suspended",
+        "membership_restored",
+        "edit_request_submitted",
+        "edit_request_approved",
+        "edit_request_denied",
+        "temporary_access_expiring",
+        "temporary_access_expired",
+        "temporary_access_revoked",
+        "revision_submitted",
+        "revision_changes_requested",
+        "revision_published",
+        "revision_rejected",
+        "job_published",
+        "plan_limit_reached",
+        "subscription_status_changed"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "targetType": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string"
+    },
+    "isRead": {
+      "type": "boolean",
+      "default": false
+    },
+    "readAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "userId",
+    "type",
+    "title",
+    "body"
+  ]
+}

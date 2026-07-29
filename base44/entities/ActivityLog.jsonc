@@ -11,14 +11,47 @@
     "actionType": {
       "type": "string",
       "enum": [
+        "company_created",
+        "member_invited",
+        "invitation_resent",
+        "invitation_cancelled",
+        "invitation_accepted",
+        "member_role_changed",
+        "member_suspended",
+        "member_restored",
+        "member_removed",
+        "ownership_transferred",
+        "job_created",
+        "job_edited",
+        "job_published",
+        "job_archived",
+        "job_restored",
+        "edit_request_submitted",
+        "edit_request_approved",
+        "edit_request_denied",
+        "temporary_access_granted",
+        "temporary_access_revoked",
+        "temporary_access_expired",
+        "revision_submitted",
+        "revision_changes_requested",
+        "revision_rejected",
+        "revision_published",
         "plan_selected",
         "plan_upgraded",
         "plan_downgraded",
         "downgrade_blocked",
         "account_over_limit",
         "account_within_limit",
-        "membership_activation_blocked"
+        "membership_activation_blocked",
+        "account_deletion_requested",
+        "seat_limit_blocked"
       ]
+    },
+    "targetType": {
+      "type": "string"
+    },
+    "targetId": {
+      "type": "string"
     },
     "previousPlan": {
       "type": "string"
@@ -32,12 +65,15 @@
     "seatLimit": {
       "type": "number"
     },
+    "summary": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
     "timestamp": {
       "type": "string",
       "format": "date-time"
-    },
-    "summary": {
-      "type": "string"
     }
   },
   "required": [

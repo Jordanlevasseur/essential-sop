@@ -1,0 +1,64 @@
+{
+  "name": "CompanyInvitation",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "invitedEmail": {
+      "type": "string"
+    },
+    "intendedRole": {
+      "type": "string",
+      "enum": [
+        "general_manager",
+        "project_manager",
+        "project_lead",
+        "technician"
+      ]
+    },
+    "invitedByUserId": {
+      "type": "string"
+    },
+    "tokenHash": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "accepted",
+        "expired",
+        "cancelled"
+      ],
+      "default": "pending"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sentAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastResentAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "acceptedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cancelledAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "invitedEmail",
+    "intendedRole",
+    "invitedByUserId",
+    "status"
+  ]
+}

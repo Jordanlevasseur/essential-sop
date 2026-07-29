@@ -23,6 +23,11 @@ import TermsOfService from '@/pages/TermsOfService';
 import DeletionRequests from '@/pages/DeletionRequests';
 import Subscription from '@/pages/Subscription';
 import Plans from '@/pages/Plans';
+import TeamMembers from '@/pages/TeamMembers';
+import RequestsAndReviews from '@/pages/RequestsAndReviews';
+import ActivityHistory from '@/pages/ActivityHistory';
+import Notifications from '@/pages/Notifications';
+import AcceptInvitation from '@/pages/AcceptInvitation';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -100,6 +105,11 @@ const SeededApp = () => {
       <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
       <Route path="/subscription" element={<Subscription />} />
       <Route path="/plans" element={<Plans />} />
+      <Route path="/team" element={<TeamMembers />} />
+      <Route path="/requests" element={<RequestsAndReviews />} />
+      <Route path="/activity" element={<ActivityHistory />} />
+      <Route path="/notifications" element={<Notifications />} />
+      <Route path="/accept-invitation" element={<AcceptInvitation />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

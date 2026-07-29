@@ -5,7 +5,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard, Users, GitPullRequest, Activity, Bell } from 'lucide-react';
 import { getPlan, formatPrice } from '@/lib/plans';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
@@ -14,10 +14,13 @@ import { resolveLegalLink } from '@/lib/appSettings';
 export default function Profile() {
   const navigate = useNavigate();
   const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin, companyId } = useApp();
-  const { activeCompany, activeMembership, companies } = useCompany();
+  const { activeCompany, activeMembership, companies, isGeneralManager } = useCompany();
   const { appearance, setAppearance } = useTheme();
   const currentPlan = getPlan(activeCompany?.subscriptionPlanCode);
   const isHomeowner = activeCompany?.subscriptionPlanCode === 'homeowner';
+  const role = activeMembership?.role;
+  const isProjectManager = role === 'project_manager';
+  const isProjectLead = role === 'project_lead';
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -64,8 +67,39 @@ export default function Profile() {
       {/* Company selector — only visible when user belongs to multiple companies */}
       <CompanySelector />
 
+      {/* Company section — role-aware */}
+      {!isHomeowner && (
+        <Section title="Company">
+          {isGeneralManager && (
+            <>
+              <Row icon={Users} label="Team Members" onClick={() => navigate('/team')} />
+              <Divider />
+            </>
+          )}
+          {(isGeneralManager || isProjectManager) && (
+            <>
+              <Row icon={GitPullRequest} label="Requests & Reviews" onClick={() => navigate('/requests')} />
+              <Divider />
+            </>
+          )}
+          {isProjectLead && (
+            <>
+              <Row icon={GitPullRequest} label="My Edit Requests" onClick={() => navigate('/requests')} />
+              <Divider />
+            </>
+          )}
+          {(isGeneralManager || isProjectManager) && (
+            <>
+              <Row icon={Activity} label="Activity History" onClick={() => navigate('/activity')} />
+              <Divider />
+            </>
+          )}
+          <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+        </Section>
+      )}
+
       {/* Subscription — shown to all users; label adapts for Homeowner vs business */}
-      <Section title={isHomeowner ? 'Subscription' : 'Company · Subscription'}>
+      <Section title={isHomeowner ? 'Subscription' : 'Subscription'}>
         <button onClick={() => navigate('/subscription')} className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active">
           <CreditCard size={18} className="text-app-text-muted" />
           <div className="flex-1 min-w-0">

@@ -1,0 +1,66 @@
+{
+  "name": "TemporaryEditGrant",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "editRequestId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "userId": {
+      "type": "string"
+    },
+    "approvedSectionTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "grantedByUserId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "submitted",
+        "revoked",
+        "expired"
+      ],
+      "default": "active"
+    },
+    "grantedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revokedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiredAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "editRequestId",
+    "jobId",
+    "userId",
+    "approvedSectionTypes",
+    "grantedByUserId",
+    "status"
+  ]
+}

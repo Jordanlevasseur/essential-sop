@@ -1,0 +1,76 @@
+{
+  "name": "JobRevision",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "createdByUserId": {
+      "type": "string"
+    },
+    "editRequestId": {
+      "type": "string"
+    },
+    "revisionNumber": {
+      "type": "number",
+      "default": 1
+    },
+    "basePublishedVersion": {
+      "type": "number",
+      "default": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "submitted_for_review",
+        "changes_requested",
+        "approved",
+        "published",
+        "rejected",
+        "superseded"
+      ],
+      "default": "draft"
+    },
+    "changeSummary": {
+      "type": "string"
+    },
+    "draftContentSnapshot": {
+      "type": "object"
+    },
+    "publishedContentSnapshot": {
+      "type": "object"
+    },
+    "reviewerNotes": {
+      "type": "string"
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "publishedByUserId": {
+      "type": "string"
+    },
+    "rejectedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "createdByUserId",
+    "status"
+  ]
+}

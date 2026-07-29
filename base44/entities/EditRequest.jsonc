@@ -1,0 +1,119 @@
+{
+  "name": "EditRequest",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "requestedByUserId": {
+      "type": "string"
+    },
+    "requestedSectionTypes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "tools",
+          "materials",
+          "scope",
+          "procedure",
+          "safety",
+          "quality_standards"
+        ]
+      }
+    },
+    "reason": {
+      "type": "string"
+    },
+    "proposedChangeSummary": {
+      "type": "string"
+    },
+    "urgency": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "important",
+        "urgent_safety_correction"
+      ],
+      "default": "normal"
+    },
+    "supportingNote": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "denied",
+        "editing",
+        "submitted_for_review",
+        "changes_requested",
+        "published",
+        "rejected",
+        "expired",
+        "revoked",
+        "cancelled"
+      ],
+      "default": "pending"
+    },
+    "reviewedByUserId": {
+      "type": "string"
+    },
+    "reviewerNotes": {
+      "type": "string"
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "accessGrantedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "accessExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revisionId": {
+      "type": "string"
+    },
+    "changesSubmittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cancelledAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revokedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "requestedByUserId",
+    "requestedSectionTypes",
+    "reason",
+    "proposedChangeSummary",
+    "urgency",
+    "status"
+  ]
+}

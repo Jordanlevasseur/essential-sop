@@ -3,9 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
-import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert, Edit3 } from 'lucide-react';
 import { SECTION_MAP } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
+import EditRequestForm from '@/components/EditRequestForm';
+import NotificationBell from '@/components/NotificationBell';
 
 const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
 
@@ -13,7 +15,8 @@ export default function JobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { isFavorite, toggleFavorite, addRecentlyViewed, isAdmin } = useApp();
-  const { activeCompany } = useCompany();
+  const { activeCompany, activeMembership } = useCompany();
+  const isProjectLead = activeMembership?.role === 'project_lead';
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
@@ -22,6 +25,8 @@ export default function JobDetail() {
   const [editItem, setEditItem] = useState(null);
   const [editSectionType, setEditSectionType] = useState(null);
   const [showAddFor, setShowAddFor] = useState(null);
+  const [showRequestForm, setShowRequestForm] = useState(false);
+  const [activeGrant, setActiveGrant] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -48,6 +53,13 @@ export default function JobDetail() {
         return;
       }
       if (j) addRecentlyViewed(j.id, j.title);
+      // Check for active temporary edit grant (Project Lead)
+      const user = await base44.auth.me().catch(() => null);
+      if (user) {
+        const grants = await base44.entities.TemporaryEditGrant.filter({ jobId, userId: user.id, status: 'active' }).catch(() => []);
+        const valid = (grants || []).find(g => new Date(g.expiresAt) > new Date());
+        setActiveGrant(valid || null);
+      }
     } catch (err) {
       navigate('/');
     }
@@ -109,6 +121,7 @@ export default function JobDetail() {
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1 truncate">{job.title}</h1>
+          <NotificationBell />
           <button onClick={() => toggleFavorite(job.id)} className="icon-btn no-select touch-active" aria-label="Toggle favorite">
             <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
           </button>
@@ -118,6 +131,12 @@ export default function JobDetail() {
               className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active transition-colors ${editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}
             >
               <Pencil size={14} />{editMode ? 'Done' : 'Edit'}
+            </button>
+          )}
+          {isProjectLead && job?.status === 'Published' && !activeGrant && !editMode && (
+            <button onClick={() => setShowRequestForm(true)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated">
+              <Edit3 size={14} /> Request Edit
             </button>
           )}
         </div>
@@ -173,6 +192,18 @@ export default function JobDetail() {
       </div>
 
       <div style={{ height: 'calc(32px + env(safe-area-inset-bottom))' }} />
+
+      {/* Active grant banner for Project Lead */}
+      {activeGrant && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-app-info border-t border-app-info/30 px-4 py-2.5 text-center" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <p className="text-xs font-semibold text-white">Temporary Editing Enabled · Approved: {activeGrant.approvedSectionTypes?.join(', ')}</p>
+          <p className="text-xs text-white/80">Expires {new Date(activeGrant.expiresAt).toLocaleTimeString()}</p>
+        </div>
+      )}
+
+      {showRequestForm && job && (
+        <EditRequestForm job={job} onClose={() => setShowRequestForm(false)} />
+      )}
 
       {(editItem || showAddFor) && (
         <ContentEditDialog
