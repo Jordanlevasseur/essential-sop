@@ -38,6 +38,11 @@
     "removedAt": {
       "type": "string",
       "format": "date-time"
+    },
+    "isTestMembership": {
+      "type": "boolean",
+      "default": false,
+      "description": "True for synthetic test-only records seeded during acceptance testing. These are not real authenticated users and cannot sign in."
     }
   },
   "required": [
