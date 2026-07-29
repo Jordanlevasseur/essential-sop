@@ -1,0 +1,68 @@
+{
+  "name": "PlatformAuditLog",
+  "type": "object",
+  "properties": {
+    "actingUserId": {
+      "type": "string",
+      "description": "userId of the platform admin who performed the action"
+    },
+    "actingUserRole": {
+      "type": "string",
+      "description": "Platform role of the acting user at time of action (admin | esop_admin)"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "platform_role_assigned",
+        "platform_role_removed",
+        "master_sop_created",
+        "master_sop_draft_updated",
+        "master_sop_version_published",
+        "master_sop_archived",
+        "master_sop_deleted",
+        "master_sop_duplicated"
+      ]
+    },
+    "targetUserId": {
+      "type": "string",
+      "description": "For role actions: the user whose role was changed"
+    },
+    "targetRole": {
+      "type": "string",
+      "description": "For role actions: the role assigned or removed"
+    },
+    "masterId": {
+      "type": "string",
+      "description": "For Master Library actions: the affected EssentialSOPMaster.id"
+    },
+    "masterTitle": {
+      "type": "string",
+      "description": "Snapshot of the master SOP title at time of action"
+    },
+    "versionId": {
+      "type": "string",
+      "description": "For publish actions: the EssentialSOPVersion.id created"
+    },
+    "versionNumber": {
+      "type": "number",
+      "description": "For publish actions: the version number"
+    },
+    "changeNotes": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional structured context for the action"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "actingUserId",
+    "actingUserRole",
+    "action",
+    "timestamp"
+  ]
+}

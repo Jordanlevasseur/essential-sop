@@ -1,10 +1,10 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { requireEsopAdmin } from '../../shared/esopAdminAuth.js';
+import { requireEsopAdmin, requirePlatformAdmin, writePlatformAudit } from '../../shared/esopAdminAuth.js';
 
 /**
- * manageMasterSOP — All Essential SOP Master Library operations in one function.
+ * manageMasterSOP — All Essential SOP Master Library and platform role operations.
  *
- * Actions:
+ * Master Library actions (require esop_admin or admin):
  *   create          — Create a new Master SOP (Draft)
  *   update_draft    — Update fields on a Draft master or its sections
  *   delete_draft    — Delete a Draft master (and its sections)
@@ -16,7 +16,12 @@ import { requireEsopAdmin } from '../../shared/esopAdminAuth.js';
  *   list            — List all masters (with optional status filter)
  *   get             — Get one master with its current draft sections
  *
- * All actions require esop_admin or admin role.
+ * Platform role actions (require admin only):
+ *   manage_role     — Assign or remove platform roles (esop_admin, admin)
+ *
+ * Authorization is enforced server-side on every write operation.
+ * Every write action produces an immutable PlatformAuditLog entry.
+ * The platform is NOT represented as a company. Platform roles live on User only.
  */
 
 function slugify(text) {
@@ -26,15 +31,51 @@ function slugify(text) {
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
-    const { user, error: authError } = await requireEsopAdmin(base44);
-    if (authError) return authError;
-
     const body = await req.json().catch(() => ({}));
     const { action } = body;
     if (!action) return Response.json({ error: 'action is required' }, { status: 400 });
 
     const now = new Date().toISOString();
     const SR = base44.asServiceRole;
+
+    // ── MANAGE ROLE (admin only) ─────────────────────────────────────────────
+    // Only an existing admin may assign or remove platform roles.
+    // Users may never modify their own platform role.
+    if (action === 'manage_role') {
+      const { user, error: authError } = await requirePlatformAdmin(base44);
+      if (authError) return authError;
+
+      const { targetUserId, role, operation } = body; // operation: 'assign' | 'remove'
+      if (!targetUserId || !role || !['assign', 'remove'].includes(operation)) {
+        return Response.json({ error: 'targetUserId, role, and operation (assign|remove) are required' }, { status: 400 });
+      }
+      const ALLOWED_PLATFORM_ROLES = ['admin', 'esop_admin', 'user'];
+      if (!ALLOWED_PLATFORM_ROLES.includes(role)) {
+        return Response.json({ error: `Invalid platform role. Allowed: ${ALLOWED_PLATFORM_ROLES.join(', ')}` }, { status: 400 });
+      }
+      // Prevent self-promotion / self-demotion
+      if (targetUserId === user.id) {
+        return Response.json({ error: 'Users may not modify their own platform role' }, { status: 403 });
+      }
+      const targetUser = await SR.entities.User.get(targetUserId);
+      if (!targetUser) return Response.json({ error: 'Target user not found' }, { status: 404 });
+
+      const newRole = operation === 'remove' ? 'user' : role;
+      await SR.entities.User.update(targetUserId, { role: newRole });
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: operation === 'assign' ? 'platform_role_assigned' : 'platform_role_removed',
+        extra: { targetUserId, targetRole: role, metadata: { operation, newRole } },
+      });
+
+      return Response.json({ success: true, targetUserId, newRole });
+    }
+
+    // ── All remaining actions require esop_admin or admin ───────────────────
+    const { user, error: authError } = await requireEsopAdmin(base44);
+    if (authError) return authError;
 
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === 'list') {
@@ -50,7 +91,6 @@ export default async function(req) {
       if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
       const master = await SR.entities.EssentialSOPMaster.get(masterId);
       if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
-      // Load current draft sections (versionId = null means draft)
       const sections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
       return Response.json({ master, sections: sections || [] });
     }
@@ -71,7 +111,6 @@ export default async function(req) {
         createdAt: now,
         updatedAt: now,
       });
-      // Scaffold the six draft sections
       const SECTION_TYPES = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
       const SECTION_TITLES = { tools: 'Tools', materials: 'Materials', scope: 'Scope', procedure: 'Procedure', safety: 'Safety', quality: 'Quality Standards' };
       for (let i = 0; i < SECTION_TYPES.length; i++) {
@@ -85,6 +124,12 @@ export default async function(req) {
           contentItems: [],
         });
       }
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_created',
+        extra: { masterId: master.id, masterTitle: master.title },
+      });
       return Response.json({ master });
     }
 
@@ -114,6 +159,13 @@ export default async function(req) {
         await SR.entities.EssentialSOPMaster.update(masterId, { updatedAt: now });
       }
 
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_draft_updated',
+        extra: { masterId, masterTitle: master.title, metadata: { fieldsUpdated: !!fields, sectionUpdated: !!sectionId } },
+      });
+
       const updated = await SR.entities.EssentialSOPMaster.get(masterId);
       return Response.json({ master: updated });
     }
@@ -125,11 +177,17 @@ export default async function(req) {
       const master = await SR.entities.EssentialSOPMaster.get(masterId);
       if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
       if (master.status !== 'draft') return Response.json({ error: 'Only Draft SOPs may be deleted' }, { status: 409 });
-      // Delete draft sections
       const sections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' });
       for (const s of (sections || [])) {
         await SR.entities.EssentialSOPSection.delete(s.id);
       }
+      // Write audit BEFORE deletion so title is still available
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_deleted',
+        extra: { masterId, masterTitle: master.title },
+      });
       await SR.entities.EssentialSOPMaster.delete(masterId);
       return Response.json({ success: true });
     }
@@ -152,7 +210,6 @@ export default async function(req) {
         createdAt: now,
         updatedAt: now,
       });
-      // Copy draft sections from source (use source's current draft sections)
       const sourceSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
       for (const s of (sourceSections || [])) {
         await SR.entities.EssentialSOPSection.create({
@@ -164,6 +221,12 @@ export default async function(req) {
           contentItems: s.contentItems || [],
         });
       }
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_duplicated',
+        extra: { masterId: newMaster.id, masterTitle: newMaster.title, metadata: { sourceMasterId: masterId } },
+      });
       return Response.json({ master: newMaster });
     }
 
@@ -175,11 +238,9 @@ export default async function(req) {
       if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
       if (master.status !== 'draft') return Response.json({ error: 'Only Draft SOPs may be published' }, { status: 409 });
 
-      // Determine next version number
       const existingVersions = await SR.entities.EssentialSOPVersion.filter({ masterId }, '-versionNumber', 100);
       const nextVersionNumber = ((existingVersions || [])[0]?.versionNumber || 0) + 1;
 
-      // Create immutable version record
       const version = await SR.entities.EssentialSOPVersion.create({
         masterId,
         versionNumber: nextVersionNumber,
@@ -190,7 +251,6 @@ export default async function(req) {
         createdAt: now,
       });
 
-      // Snapshot draft sections as published sections (versionId = version.id)
       const draftSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
       for (const s of (draftSections || [])) {
         await SR.entities.EssentialSOPSection.create({
@@ -203,11 +263,23 @@ export default async function(req) {
         });
       }
 
-      // Promote master to active, record published version
       await SR.entities.EssentialSOPMaster.update(masterId, {
         status: 'active',
         currentPublishedVersionId: version.id,
         updatedAt: now,
+      });
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_version_published',
+        extra: {
+          masterId,
+          masterTitle: master.title,
+          versionId: version.id,
+          versionNumber: nextVersionNumber,
+          changeNotes: changeNotes || '',
+        },
       });
 
       return Response.json({ master: await SR.entities.EssentialSOPMaster.get(masterId), version });
@@ -221,6 +293,12 @@ export default async function(req) {
       if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
       if (master.status === 'archived') return Response.json({ error: 'Already archived' }, { status: 409 });
       await SR.entities.EssentialSOPMaster.update(masterId, { status: 'archived', updatedAt: now });
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: user.role,
+        action: 'master_sop_archived',
+        extra: { masterId, masterTitle: master.title },
+      });
       return Response.json({ success: true });
     }
 
