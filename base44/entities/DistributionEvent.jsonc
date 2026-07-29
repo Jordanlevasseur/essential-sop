@@ -1,0 +1,121 @@
+{
+  "name": "DistributionEvent",
+  "type": "object",
+  "description": "Platform-owned record capturing the intent and progress of a Master SOP publication distribution. Created exclusively by backend publishing orchestration. No client writes permitted. Does not contain a tenant companyId \u2014 it is a platform record.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "masterId": {
+      "type": "string",
+      "description": "EssentialSOPMaster.id being distributed."
+    },
+    "versionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id being distributed."
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "NEW_SOP",
+        "NEW_VERSION"
+      ],
+      "description": "NEW_SOP = first ever published version of this master. NEW_VERSION = subsequent publication."
+    },
+    "distributionPolicy": {
+      "type": "string",
+      "enum": [
+        "ALL_EXISTING_AND_FUTURE_COMPANIES",
+        "FUTURE_COMPANIES_ONLY",
+        "SELECTED_COMPANIES",
+        "MANUAL"
+      ],
+      "description": "Which companies should receive this distribution."
+    },
+    "selectedCompanyIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Populated only when distributionPolicy is SELECTED_COMPANIES. Must be empty for all other policies."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "PROCESSING",
+        "COMPLETED",
+        "COMPLETED_WITH_ERRORS",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "default": "PENDING",
+      "description": "Lifecycle status of this distribution event."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Caller-supplied idempotency key tied to the publication mutation. Retries with the same key return the original event without creating a duplicate."
+    },
+    "publicationMutationKey": {
+      "type": "string",
+      "description": "The publicationMutationKey from the triggering publish operation. Stored for cross-reference."
+    },
+    "totalEligibleCompanies": {
+      "type": "number",
+      "default": 0
+    },
+    "processedCompanies": {
+      "type": "number",
+      "default": 0
+    },
+    "successfulCompanies": {
+      "type": "number",
+      "default": 0
+    },
+    "skippedCompanies": {
+      "type": "number",
+      "default": 0
+    },
+    "failedCompanies": {
+      "type": "number",
+      "default": 0
+    },
+    "errorSummary": {
+      "type": "string",
+      "description": "Non-sensitive summary of any distribution errors."
+    },
+    "createdByUserId": {
+      "type": "string",
+      "description": "Platform Super Admin userId who initiated the publication."
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "masterId",
+    "versionId",
+    "eventType",
+    "distributionPolicy",
+    "status",
+    "idempotencyKey",
+    "createdByUserId",
+    "createdAt"
+  ]
+}

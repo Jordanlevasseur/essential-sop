@@ -32,7 +32,34 @@
         "retired"
       ],
       "default": "internal",
-      "description": "Controls customer distribution eligibility. Only admin/esop_admin may change this. 'customer_available' = eligible for company provisioning. 'internal' = platform use only. 'retired' = no longer provisioned to new companies."
+      "description": "Controls customer distribution eligibility. 'customer_available' = eligible for company provisioning. 'internal' = platform use only. 'retired' = no longer provisioned to new companies. Distinct from defaultDistributionPolicy."
+    },
+    "defaultDistributionPolicy": {
+      "type": "string",
+      "enum": [
+        "ALL_EXISTING_AND_FUTURE_COMPANIES",
+        "FUTURE_COMPANIES_ONLY",
+        "SELECTED_COMPANIES",
+        "MANUAL"
+      ],
+      "default": "MANUAL",
+      "description": "Which companies should receive this SOP when a publication distribution is executed. Separate from distributionStatus. Only Platform Super Admins may alter this field."
+    },
+    "defaultSelectedCompanyIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Pre-selected company IDs used when defaultDistributionPolicy is SELECTED_COMPANIES. Must be empty for all other policies."
+    },
+    "distributionPolicyUpdatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the last change to defaultDistributionPolicy or defaultSelectedCompanyIds."
+    },
+    "distributionPolicyUpdatedByUserId": {
+      "type": "string",
+      "description": "userId of the Platform Super Admin who last changed the distribution policy."
     },
     "currentPublishedVersionId": {
       "type": "string",

@@ -27,6 +27,18 @@
       "type": "string",
       "description": "userId of the PlatformAdmin who published this version"
     },
+    "changeNotes": {
+      "type": "string",
+      "description": "Human-readable summary of what changed in this version."
+    },
+    "publicationMutationKey": {
+      "type": "string",
+      "description": "Idempotency key supplied by the caller when publishing. Stored to detect and safely replay duplicate publication requests without creating another version."
+    },
+    "distributionEventId": {
+      "type": "string",
+      "description": "The DistributionEvent.id created alongside this version publication. Stored for cross-reference."
+    },
     "createdAt": {
       "type": "string",
       "format": "date-time"

@@ -8,7 +8,7 @@
     },
     "actingUserRole": {
       "type": "string",
-      "description": "Platform role of the acting user at time of action (admin | esop_admin)"
+      "description": "Platform role of the acting user at time of action"
     },
     "action": {
       "type": "string",
@@ -21,7 +21,12 @@
         "master_sop_archived",
         "master_sop_deleted",
         "master_sop_duplicated",
-        "company_library_provisioned"
+        "company_library_provisioned",
+        "distribution_event_created",
+        "distribution_policy_changed",
+        "publication_requested",
+        "publication_completed",
+        "publication_failed"
       ]
     },
     "targetUserId": {
@@ -47,6 +52,37 @@
     "versionNumber": {
       "type": "number",
       "description": "For publish actions: the version number"
+    },
+    "distributionEventId": {
+      "type": "string",
+      "description": "For distribution actions: the DistributionEvent.id"
+    },
+    "eventType": {
+      "type": "string",
+      "description": "For distribution actions: NEW_SOP or NEW_VERSION"
+    },
+    "distributionPolicy": {
+      "type": "string",
+      "description": "For distribution actions: the policy applied"
+    },
+    "publicationMutationKey": {
+      "type": "string",
+      "description": "Idempotency key for the publication operation"
+    },
+    "previousVersionId": {
+      "type": "string",
+      "description": "The currentPublishedVersionId before this publication"
+    },
+    "resultingVersionId": {
+      "type": "string",
+      "description": "The currentPublishedVersionId after this publication"
+    },
+    "selectedCompanyIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "For SELECTED_COMPANIES policy: the company IDs targeted"
     },
     "changeNotes": {
       "type": "string"

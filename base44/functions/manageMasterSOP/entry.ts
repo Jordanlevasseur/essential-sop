@@ -1,5 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { requirePlatformSuperAdmin, writePlatformAudit } from '../../shared/platformAuth.ts';
+import { publishMasterSOPVersion, updateDistributionPolicy } from '../../shared/publishingOrchestration.ts';
 
 /**
  * manageMasterSOP — All Essential SOP Master Library and platform role operations.
@@ -61,12 +62,6 @@ export default async function(req) {
       // operation: 'assign' creates/reactivates a PlatformMembership(SUPER_ADMIN)
       // operation: 'remove' suspends the existing PlatformMembership
 
-      if (!targetUserId || typeof targetUserId !== 'string' || !targetUserId.trim()) {
-        return Response.json({ error: 'targetUserId is required' }, { status: 400 });
-      }
-      if (!operation || !['assign', 'remove'].includes(operation)) {
-        return Response.json({ error: 'operation must be assign or remove' }, { status: 400 });
-      }
       // Self-modification guard
       if (targetUserId === user.id) {
         return Response.json({ error: 'Users may not modify their own platform membership' }, { status: 403 });
@@ -305,58 +300,47 @@ export default async function(req) {
     }
 
     // ── PUBLISH ──────────────────────────────────────────────────────────────
+    // All publishing flows through the canonical publishMasterSOPVersion
+    // orchestration in base44/shared/publishingOrchestration.ts.
     if (action === 'publish') {
-      const { masterId, changeNotes } = body;
-      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
-      const master = await SR.entities.EssentialSOPMaster.get(masterId);
-      if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
-      if (master.status !== 'draft') return Response.json({ error: 'Only Draft SOPs may be published' }, { status: 409 });
-
-      const existingVersions = await SR.entities.EssentialSOPVersion.filter({ masterId }, '-versionNumber', 100);
-      const nextVersionNumber = ((existingVersions || [])[0]?.versionNumber || 0) + 1;
-
-      const version = await SR.entities.EssentialSOPVersion.create({
+      const {
         masterId,
-        versionNumber: nextVersionNumber,
-        status: 'published',
-        publishedAt: now,
-        publishedBy: user.id,
-        changeNotes: changeNotes || '',
-        createdAt: now,
+        publicationMutationKey,
+        changeSummary,
+        changeNotes, // legacy alias — accepted for backwards compatibility
+        distributionPolicyOverride,
+        selectedCompanyIds,
+      } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+      if (!publicationMutationKey) return Response.json({ error: 'publicationMutationKey is required' }, { status: 400 });
+
+      const { result, error: publishError } = await publishMasterSOPVersion(base44, {
+        masterId,
+        publicationMutationKey,
+        changeSummary: changeSummary || changeNotes || '',
+        distributionPolicyOverride,
+        selectedCompanyIds,
       });
-
-      const draftSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
-      for (const s of (draftSections || [])) {
-        await SR.entities.EssentialSOPSection.create({
-          masterId,
-          versionId: version.id,
-          sectionType: s.sectionType,
-          title: s.title,
-          sortOrder: s.sortOrder,
-          contentItems: s.contentItems || [],
-        });
-      }
-
-      await SR.entities.EssentialSOPMaster.update(masterId, {
-        status: 'active',
-        currentPublishedVersionId: version.id,
-        updatedAt: now,
+      if (publishError) return publishError;
+      return Response.json({
+        master: result!.master,
+        version: result!.version,
+        distributionEvent: result!.distributionEvent,
+        eventType: result!.eventType,
+        idempotent: result!.idempotent,
       });
+    }
 
-      await writePlatformAudit(SR, {
-        actingUserId: user.id,
-        actingUserRole: 'SUPER_ADMIN',
-        action: 'master_sop_version_published',
-        extra: {
-          masterId,
-          masterTitle: master.title,
-          versionId: version.id,
-          versionNumber: nextVersionNumber,
-          changeNotes: changeNotes || '',
-        },
+    // ── UPDATE DISTRIBUTION POLICY ───────────────────────────────────────────
+    if (action === 'update_distribution_policy') {
+      const { masterId, defaultDistributionPolicy, defaultSelectedCompanyIds } = body;
+      const { success, master: updatedMaster, error: policyError } = await updateDistributionPolicy(base44, {
+        masterId,
+        defaultDistributionPolicy,
+        defaultSelectedCompanyIds,
       });
-
-      return Response.json({ master: await SR.entities.EssentialSOPMaster.get(masterId), version });
+      if (policyError) return policyError;
+      return Response.json({ success, master: updatedMaster });
     }
 
     // ── ARCHIVE ──────────────────────────────────────────────────────────────
