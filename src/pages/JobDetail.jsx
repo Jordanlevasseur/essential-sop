@@ -5,6 +5,7 @@ import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
 import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert, Edit3, Sliders } from 'lucide-react';
 import JobCustomizeEditor from '@/components/jobs/JobCustomizeEditor';
+import VersionUpdateBanner from '@/components/jobs/VersionUpdateBanner';
 import { SECTION_MAP } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
@@ -191,6 +192,22 @@ export default function JobDetail() {
           </div>
         )}
       </div>
+
+      {/* Version Update Banner — shown only when admin + update available */}
+      {capabilities?.canCustomize && (
+        <VersionUpdateBanner
+          job={job}
+          overrideMeta={overrideMeta}
+          onAdopted={(resolvedJob) => {
+            const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = resolvedJob;
+            setJob(j);
+            setSections(secs || []);
+            setContentBySection(cbs || {});
+            setCapabilities(caps || null);
+            setOverrideMeta(ovr || null);
+          }}
+        />
+      )}
 
       {/* Sections */}
       <div className="max-w-2xl mx-auto w-full">
