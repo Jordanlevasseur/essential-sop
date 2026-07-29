@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle } from 'lucide-react';
+import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
 
 export default function Profile() {
@@ -12,6 +13,7 @@ export default function Profile() {
   const { appearance, setAppearance } = useTheme();
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const handleReset = async () => {
     if (!confirm('This will delete all jobs and restore the original demo data. Continue?')) return;
@@ -126,6 +128,26 @@ export default function Profile() {
           <Row icon={LogOut} label="Sign Out" />
         </button>
       </Section>
+
+      {/* Danger zone */}
+      <div className="mb-4">
+        <div className="bg-app-card border border-app-danger/40 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-app-divider flex items-center gap-2">
+            <AlertTriangle size={13} className="text-app-danger" />
+            <span className="text-xs font-semibold text-app-danger uppercase tracking-wide">Danger Zone</span>
+          </div>
+          <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center gap-3 px-4 py-3.5 active:opacity-70">
+            <Trash2 size={18} className="text-app-danger" />
+            <div className="flex-1 text-left">
+              <span className="text-sm font-medium text-app-danger">Delete Account</span>
+              <p className="text-xs text-app-text-muted mt-0.5">Permanently delete your account and personal data.</p>
+            </div>
+            <ChevronRight size={16} className="text-app-danger/60" />
+          </button>
+        </div>
+      </div>
+
+      {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
 
       <p className="text-xs text-app-text-muted text-center mt-6">Essential SOP v1.0 · Prototype</p>
     </div>
