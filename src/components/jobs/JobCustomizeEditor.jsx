@@ -18,7 +18,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { X, Save, AlertTriangle, ChevronDown, ChevronUp, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { X, Save, AlertTriangle, ChevronDown, ChevronUp, Plus, Trash2, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 const SECTION_LABELS = {
@@ -63,6 +63,9 @@ export default function JobCustomizeEditor({ job, contentBySection, override, on
   const [saveError, setSaveError] = useState(null);
   const [conflictError, setConflictError] = useState(null);
   const [dirty, setDirty] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(null);
 
   const markDirty = () => setDirty(true);
 
@@ -157,6 +160,30 @@ export default function JobCustomizeEditor({ job, contentBySection, override, on
     }
   }, [saving, job, title, shortDescription, sectionData, override]);
 
+  const handleRestore = useCallback(async () => {
+    if (restoring) return;
+    setRestoring(true);
+    setRestoreError(null);
+    const mutationKey = newMutationKey();
+    const expectedRevision = override?.revision ?? 0;
+    try {
+      const res = await base44.functions.invoke('restoreCompanyJob', { jobId: job.id, expectedRevision, mutationKey });
+      if (res.data?.success) {
+        setShowRestoreConfirm(false);
+        onSaved(res.data.resolvedJob);
+      } else {
+        setRestoreError(res.data?.error || 'Restore failed. Please try again.');
+        setShowRestoreConfirm(false);
+      }
+    } catch (err) {
+      const msg = err?.message || '';
+      setRestoreError(msg.includes('REVISION_CONFLICT') ? 'Another administrator made changes. Reload and retry.' : 'Restore failed. Please try again.');
+      setShowRestoreConfirm(false);
+    } finally {
+      setRestoring(false);
+    }
+  }, [restoring, job, override, onSaved]);
+
   const handleClose = () => {
     if (dirty) {
       if (!window.confirm('You have unsaved changes. Leave without saving?')) return;
@@ -187,21 +214,29 @@ export default function JobCustomizeEditor({ job, contentBySection, override, on
         </div>
       </div>
 
-      {/* Override badge */}
+      {/* Override badge + Restore Original */}
       {override && (
-        <div className="flex-shrink-0 px-4 py-2 bg-app-info-bg border-b border-app-border">
-          <p className="text-xs text-app-info">
-            You have saved customizations (revision {override.revision}).
-            Fields not changed inherit from the Master SOP.
+        <div className="flex-shrink-0 px-4 py-2 bg-app-info-bg border-b border-app-border flex items-center justify-between gap-3">
+          <p className="text-xs text-app-info flex-1">
+            Company customizations active (revision {override.revision}).
+            Fields not overridden inherit from the Master SOP.
           </p>
+          <button
+            onClick={() => setShowRestoreConfirm(true)}
+            disabled={restoring}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-app-warning text-app-warning text-xs font-medium no-select touch-active flex-shrink-0 bg-app-warning-bg"
+          >
+            <RotateCcw size={11} />
+            {restoring ? 'Restoring…' : 'Restore Original'}
+          </button>
         </div>
       )}
 
       {/* Errors */}
-      {(saveError || conflictError) && (
+      {(saveError || conflictError || restoreError) && (
         <div className="flex-shrink-0 px-4 py-3 bg-app-danger-bg border-b border-app-border flex items-start gap-2">
           <AlertTriangle size={16} className="text-app-danger flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-app-danger">{conflictError || saveError}</p>
+          <p className="text-sm text-app-danger">{conflictError || saveError || restoreError}</p>
         </div>
       )}
 
@@ -250,6 +285,39 @@ export default function JobCustomizeEditor({ job, contentBySection, override, on
 
         <div style={{ height: 'calc(32px + env(safe-area-inset-bottom))' }} />
       </div>
+
+      {/* Restore Original confirmation modal */}
+      {showRestoreConfirm && (
+        <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/50">
+          <div className="bg-app-surface rounded-t-2xl p-5 w-full max-w-lg" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <RotateCcw size={18} className="text-app-warning flex-shrink-0" />
+              <h2 className="font-semibold text-app-text">Restore Original?</h2>
+            </div>
+            <p className="text-sm text-app-text-2 mb-1">
+              This will remove all company-specific changes and return this Job to the original Essential SOP.
+            </p>
+            <p className="text-sm text-app-text-muted mb-5">
+              The Essential SOP itself will not be modified.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRestoreConfirm(false)}
+                className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2 no-select touch-active"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestore}
+                disabled={restoring}
+                className="flex-1 py-2.5 bg-app-warning text-white rounded-lg text-sm font-medium no-select touch-active disabled:opacity-50"
+              >
+                {restoring ? 'Restoring…' : 'Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
