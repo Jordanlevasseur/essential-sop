@@ -5,8 +5,14 @@ import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard, Users, GitPullRequest, Activity, Bell } from 'lucide-react';
+import {
+  Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw,
+  Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2,
+  AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
+  Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
+} from 'lucide-react';
 import { getPlan, formatPrice } from '@/lib/plans';
+import { getRoleLabel } from '@/lib/roleLabels';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
 import { resolveLegalLink } from '@/lib/appSettings';
@@ -21,9 +27,12 @@ export default function Profile() {
   const role = activeMembership?.role;
   const isProjectManager = role === 'project_manager';
   const isProjectLead = role === 'project_lead';
+  const isTechnician = role === 'technician';
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const rl = (code) => getRoleLabel(code, activeCompany);
 
   const handleReset = async () => {
     if (!confirm('This will delete all jobs and restore the original demo data. Continue?')) return;
@@ -41,8 +50,8 @@ export default function Profile() {
 
   const APPEARANCE_OPTIONS = [
     { value: 'system', label: 'System', icon: Monitor },
-    { value: 'light', label: 'Light', icon: Sun },
-    { value: 'dark', label: 'Dark', icon: Moon },
+    { value: 'light',  label: 'Light',  icon: Sun },
+    { value: 'dark',   label: 'Dark',   icon: Moon },
   ];
 
   return (
@@ -56,61 +65,86 @@ export default function Profile() {
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-app-text truncate">{user.name}</h2>
-          <p className="text-sm text-app-text-2 truncate">{activeMembership?.role?.replace('_', ' ') || user.role}</p>
+          <p className="text-sm text-app-text-2 truncate">{rl(activeMembership?.role) || user.role}</p>
           <p className="text-xs text-app-text-muted truncate">{activeCompany?.name || user.company}</p>
         </div>
         <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${userMode === 'admin' ? 'bg-app-info-bg text-app-info' : 'bg-app-info-bg text-app-accent'}`}>
-          {userMode === 'admin' ? 'Admin' : 'Technician'}
+          {userMode === 'admin' ? 'Admin' : 'View Only'}
         </div>
       </div>
 
-      {/* Company selector — only visible when user belongs to multiple companies */}
+      {/* Company selector */}
       <CompanySelector />
 
-      {/* Company section — role-aware */}
-      {!isHomeowner && (
+      {/* ── COMPANY SECTION ── */}
+      {isHomeowner ? (
+        /* Homeowner: Workspace section */
+        <Section title="Workspace">
+          <Row icon={Building2} label="Workspace Profile" onClick={() => navigate('/company-profile')} />
+          <Divider />
+          <Row icon={Activity} label="Content History" onClick={() => navigate('/activity')} />
+          <Divider />
+          <Row icon={CreditCard} label="Subscription" onClick={() => navigate('/subscription')} />
+          <Divider />
+          <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+        </Section>
+      ) : isGeneralManager ? (
+        /* General Manager: full company section */
         <Section title="Company">
-          {isGeneralManager && (
-            <>
-              <Row icon={Users} label="Team Members" onClick={() => navigate('/team')} />
-              <Divider />
-            </>
-          )}
-          {(isGeneralManager || isProjectManager) && (
-            <>
-              <Row icon={GitPullRequest} label="Requests & Reviews" onClick={() => navigate('/requests')} />
-              <Divider />
-            </>
-          )}
-          {isProjectLead && (
-            <>
-              <Row icon={GitPullRequest} label="My Edit Requests" onClick={() => navigate('/requests')} />
-              <Divider />
-            </>
-          )}
-          {(isGeneralManager || isProjectManager) && (
-            <>
-              <Row icon={Activity} label="Activity History" onClick={() => navigate('/activity')} />
-              <Divider />
-            </>
-          )}
+          <Row icon={Building2} label="Company Profile" onClick={() => navigate('/company-profile')} />
+          <Divider />
+          <Row icon={Users} label="Team Members" onClick={() => navigate('/team')} />
+          <Divider />
+          <Row icon={GitPullRequest} label="Edit Requests" onClick={() => navigate('/requests')} />
+          <Divider />
+          <Row icon={Activity} label="Activity History" onClick={() => navigate('/activity')} />
+          <Divider />
+          <Row icon={Tag} label="Role Labels" onClick={() => navigate('/role-labels')} />
+          <Divider />
+          <Row icon={CreditCard} label="Subscription" onClick={() => navigate('/subscription')} />
+          <Divider />
+          <Row icon={ShieldAlert} label="Ownership &amp; Account" onClick={() => navigate('/ownership')} />
+          <Divider />
+          <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+        </Section>
+      ) : isProjectManager ? (
+        /* Project Manager: limited company section */
+        <Section title="Company">
+          <Row icon={GitPullRequest} label="Edit Requests" onClick={() => navigate('/requests')} />
+          <Divider />
+          <Row icon={Activity} label="Activity History" onClick={() => navigate('/activity')} />
+          <Divider />
+          <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+        </Section>
+      ) : isProjectLead ? (
+        /* Project Lead: only own edit requests + notifications */
+        <Section title="Company">
+          <Row icon={GitPullRequest} label="My Edit Requests" onClick={() => navigate('/requests')} />
+          <Divider />
+          <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+        </Section>
+      ) : !isTechnician ? null : (
+        /* Technician: notifications only */
+        <Section title="Company">
           <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
         </Section>
       )}
 
-      {/* Subscription — shown to all users; label adapts for Homeowner vs business */}
-      <Section title={isHomeowner ? 'Subscription' : 'Subscription'}>
-        <button onClick={() => navigate('/subscription')} className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active">
-          <CreditCard size={18} className="text-app-text-muted" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-app-text">{currentPlan?.displayName || 'Subscription'}</p>
-            <p className="text-xs text-app-text-muted">
-              {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Prototype' : ''}
-            </p>
-          </div>
-          <ChevronRight size={16} className="text-app-text-disabled" />
-        </button>
-      </Section>
+      {/* Subscription — shown only for homeowner (non-homeowner GM already sees it above) */}
+      {!isHomeowner && !isGeneralManager && (
+        <Section title="Subscription">
+          <button onClick={() => navigate('/subscription')} className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active">
+            <CreditCard size={18} className="text-app-text-muted" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-app-text">{currentPlan?.displayName || 'Subscription'}</p>
+              <p className="text-xs text-app-text-muted">
+                {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Prototype' : ''}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-app-text-disabled" />
+          </button>
+        </Section>
+      )}
 
       <Section title="Saved Content">
         <Row icon={Star} label="Favorite Jobs" value={favorites.length} onClick={() => navigate('/')} />
@@ -128,7 +162,7 @@ export default function Profile() {
           <div className="flex gap-2">
             {['small', 'medium', 'large'].map(s => (
               <button key={s} onClick={() => updatePreferences({ textSize: s })}
-                className={`flex-1 py-1.5 rounded-lg text-sm capitalize font-medium transition-colors ${preferences.textSize === s ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-sm capitalize font-medium transition-colors no-select touch-active ${preferences.textSize === s ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
                 {s}
               </button>
             ))}
@@ -144,7 +178,7 @@ export default function Profile() {
           <div className="flex gap-2">
             {APPEARANCE_OPTIONS.map(({ value, label, icon: Icon }) => (
               <button key={value} onClick={() => setAppearance(value)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium flex flex-col items-center gap-1 transition-colors ${appearance === value ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
+                className={`flex-1 py-2 rounded-lg text-sm font-medium flex flex-col items-center gap-1 transition-colors no-select touch-active ${appearance === value ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
                 <Icon size={16} />
                 <span className="text-xs">{label}</span>
               </button>
@@ -170,7 +204,7 @@ export default function Profile() {
         <Divider />
         <Row icon={ShieldCheck} label="Switch to Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
         <Divider />
-        <Row icon={RotateCcw} label={resetting ? 'Resetting...' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
+        <Row icon={RotateCcw} label={resetting ? 'Resetting…' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
         {isAdmin && (
           <>
             <Divider />
@@ -204,7 +238,7 @@ export default function Profile() {
             <AlertTriangle size={13} className="text-app-danger" />
             <span className="text-xs font-semibold text-app-danger uppercase tracking-wide">Danger Zone</span>
           </div>
-          <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center gap-3 px-4 py-3.5 active:opacity-70">
+          <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center gap-3 px-4 py-3.5 touch-active">
             <Trash2 size={18} className="text-app-danger" />
             <div className="flex-1 text-left">
               <span className="text-sm font-medium text-app-danger">Delete Account</span>
@@ -238,12 +272,11 @@ function Divider() {
 function Row({ icon: Icon, label, value, onClick, active }) {
   const Wrapper = onClick ? 'button' : 'div';
   return (
-    <Wrapper
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 text-left no-select ${onClick ? 'touch-active' : ''} ${active ? 'bg-app-info-bg' : ''}`}
-    >
+    <Wrapper onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-left no-select ${onClick ? 'touch-active' : ''} ${active ? 'bg-app-info-bg' : ''}`}>
       <Icon size={18} className={active ? 'text-app-accent' : 'text-app-text-muted'} aria-hidden="true" />
-      <span className={`text-sm flex-1 ${active ? 'text-app-accent font-medium' : 'text-app-text'}`}>{label}</span>
+      <span className={`text-sm flex-1 ${active ? 'text-app-accent font-medium' : 'text-app-text'}`}
+        dangerouslySetInnerHTML={{ __html: label }} />
       {value !== undefined && <span className="text-sm text-app-text-muted">{value}</span>}
       {onClick && <ChevronRight size={16} className="text-app-text-disabled" aria-hidden="true" />}
     </Wrapper>

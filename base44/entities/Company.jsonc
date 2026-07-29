@@ -18,6 +18,31 @@
     "ownerUserId": {
       "type": "string"
     },
+    "phone": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "website": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "tradeSpecialties": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "customRoleLabels": {
+      "type": "object",
+      "description": "Optional per-company display labels for role codes. Keys: project_manager, project_lead, technician. Values: display strings. Does not affect permissions."
+    },
     "status": {
       "type": "string",
       "enum": [

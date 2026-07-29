@@ -2,13 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { getRoleLabel } from '@/lib/roleLabels';
 
-const ROLE_LABELS = {
-  general_manager: 'General Manager',
-  project_manager: 'Project Manager',
-  project_lead: 'Project Lead',
-  technician: 'Technician',
-};
 
 export default function AcceptInvitation() {
   const navigate = useNavigate();
@@ -84,7 +79,7 @@ export default function AcceptInvitation() {
         actionType: 'invitation_accepted',
         targetType: 'invitation',
         targetId: invitationId,
-        summary: `${user.full_name || user.email} accepted invitation to join as ${invitation.intendedRole.replace('_', ' ')}`,
+        summary: `${user.full_name || user.email} accepted invitation to join as ${getRoleLabel(invitation.intendedRole, null)}`,
         timestamp: new Date().toISOString(),
       });
 
@@ -122,7 +117,7 @@ export default function AcceptInvitation() {
         ) : (
           <div className="bg-app-card border border-app-border rounded-xl p-6">
             <h1 className="text-xl font-bold text-app-text mb-1">You're Invited</h1>
-            <p className="text-sm text-app-text-2 mb-4">Join <strong>{company?.name}</strong> as a <strong>{ROLE_LABELS[invitation?.intendedRole]}</strong>.</p>
+            <p className="text-sm text-app-text-2 mb-4">Join <strong>{company?.name}</strong> as a <strong>{getRoleLabel(invitation?.intendedRole, company)}</strong>.</p>
             <button onClick={handleAccept} disabled={accepting}
               className="w-full py-3 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold disabled:opacity-60">
               {accepting ? 'Accepting…' : 'Accept Invitation'}

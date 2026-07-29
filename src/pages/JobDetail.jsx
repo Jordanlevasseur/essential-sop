@@ -194,12 +194,20 @@ export default function JobDetail() {
       <div style={{ height: 'calc(32px + env(safe-area-inset-bottom))' }} />
 
       {/* Active grant banner for Project Lead */}
-      {activeGrant && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-app-info border-t border-app-info/30 px-4 py-2.5 text-center" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          <p className="text-xs font-semibold text-white">Temporary Editing Enabled · Approved: {activeGrant.approvedSectionTypes?.join(', ')}</p>
-          <p className="text-xs text-white/80">Expires {new Date(activeGrant.expiresAt).toLocaleTimeString()}</p>
-        </div>
-      )}
+      {activeGrant && (() => {
+        const sectionNames = { tools: 'Tools', materials: 'Materials', scope: 'Scope', procedure: 'Procedure', safety: 'Safety', quality_standards: 'Quality Standards' };
+        const approved = (activeGrant.approvedSectionTypes || []).map(s => sectionNames[s] || s).join(', ');
+        const expiresMinutes = Math.max(0, Math.round((new Date(activeGrant.expiresAt) - new Date()) / 60000));
+        const expiresHours = Math.floor(expiresMinutes / 60);
+        const expiresDisplay = expiresMinutes < 60 ? `${expiresMinutes} min` : `${expiresHours}h`;
+        return (
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-app-info border-t border-app-info/30 px-4 py-3" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <p className="text-xs font-bold text-white">Editing Enabled</p>
+            <p className="text-xs text-white/90 mt-0.5">You can edit {approved} for this Job.</p>
+            <p className="text-xs text-white/70 mt-0.5">Edit Access Expires in {expiresDisplay}.</p>
+          </div>
+        );
+      })()}
 
       {showRequestForm && job && (
         <EditRequestForm job={job} onClose={() => setShowRequestForm(false)} />

@@ -25,9 +25,13 @@ import Subscription from '@/pages/Subscription';
 import Plans from '@/pages/Plans';
 import TeamMembers from '@/pages/TeamMembers';
 import RequestsAndReviews from '@/pages/RequestsAndReviews';
+import EditRequests from '@/pages/EditRequests';
 import ActivityHistory from '@/pages/ActivityHistory';
 import Notifications from '@/pages/Notifications';
 import AcceptInvitation from '@/pages/AcceptInvitation';
+import CompanyProfile from '@/pages/CompanyProfile';
+import RoleLabels from '@/pages/RoleLabels';
+import OwnershipAndAccount from '@/pages/OwnershipAndAccount';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -106,10 +110,13 @@ const SeededApp = () => {
       <Route path="/subscription" element={<Subscription />} />
       <Route path="/plans" element={<Plans />} />
       <Route path="/team" element={<TeamMembers />} />
-      <Route path="/requests" element={<RequestsAndReviews />} />
+      <Route path="/requests" element={<EditRequests />} />
       <Route path="/activity" element={<ActivityHistory />} />
       <Route path="/notifications" element={<Notifications />} />
       <Route path="/accept-invitation" element={<AcceptInvitation />} />
+      <Route path="/company-profile" element={<CompanyProfile />} />
+      <Route path="/role-labels" element={<RoleLabels />} />
+      <Route path="/ownership" element={<OwnershipAndAccount />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
