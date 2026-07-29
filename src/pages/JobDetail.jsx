@@ -11,13 +11,12 @@ import { SECTION_MAP, SEVERITY_LEVELS } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import { Image } from '@/components/ui/image';
 
-// Section display order for the single-page layout
 const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'documentation', 'quality'];
 
 const RESULT_STYLES = {
-  'Pass': 'border-green-500 text-green-700 bg-green-50',
-  'Fail': 'border-red-500 text-red-700 bg-red-50',
-  'Not Applicable': 'border-neutral-400 text-neutral-600 bg-neutral-100',
+  'Pass': 'border-app-success text-app-success bg-app-success-bg',
+  'Fail': 'border-app-danger text-app-danger bg-app-danger-bg',
+  'Not Applicable': 'border-app-border text-app-text-muted bg-app-elevated',
 };
 
 export default function JobDetail() {
@@ -53,7 +52,6 @@ export default function JobDetail() {
       setContentBySection(bySection);
       if (j) addRecentlyViewed(j.id, j.title);
     } catch (err) {
-      // Job not found — stale ID, go back to jobs list
       navigate('/');
     }
     setLoading(false);
@@ -109,29 +107,29 @@ export default function JobDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-neutral-200 border-t-blue-600 rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-screen bg-app-bg">
+        <div className="w-8 h-8 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />
       </div>
     );
   }
-  if (!job) return <div className="p-4 text-center text-neutral-400">Job not found.</div>;
+  if (!job) return <div className="p-4 text-center text-app-text-muted">Job not found.</div>;
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* Sticky header — sits below notch/Dynamic Island via safe-area-inset-top */}
+    <div className="min-h-screen bg-app-bg">
+      {/* Sticky header */}
       <div
-        className="bg-white border-b border-neutral-200 sticky top-0 z-40"
+        className="bg-app-surface border-b border-app-border sticky top-0 z-40"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)}><ArrowLeft size={22} className="text-neutral-700" /></button>
-          <h1 className="font-semibold text-neutral-900 flex-1 truncate">{job.title}</h1>
+          <button onClick={() => navigate(-1)}><ArrowLeft size={22} className="text-app-text-2" /></button>
+          <h1 className="font-semibold text-app-text flex-1 truncate">{job.title}</h1>
           <button onClick={() => toggleFavorite(job.id)}>
-            <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-neutral-300'} />
+            <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
           </button>
           {isAdmin && (
             <button onClick={() => setEditMode(e => !e)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${editMode ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-700'}`}>
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
               <Pencil size={14} />{editMode ? 'Done' : 'Edit'}
             </button>
           )}
@@ -140,16 +138,16 @@ export default function JobDetail() {
 
       {/* Job metadata */}
       <div className="px-4 pt-4 pb-2">
-        <div className="bg-white border border-neutral-200 rounded-xl p-4">
-          <p className="text-xs text-blue-600 font-semibold uppercase mb-1">{job.trade} · {job.category}</p>
-          <p className="text-sm text-neutral-600 mb-3">{job.shortDescription}</p>
-          <div className="flex flex-wrap gap-3 text-xs text-neutral-500">
+        <div className="bg-app-card border border-app-border rounded-xl p-4">
+          <p className="text-xs text-app-accent font-semibold uppercase mb-1">{job.trade} · {job.category}</p>
+          <p className="text-sm text-app-text-2 mb-3">{job.shortDescription}</p>
+          <div className="flex flex-wrap gap-3 text-xs text-app-text-muted">
             <span className="flex items-center gap-1"><Clock size={12} />{job.estimatedDuration}</span>
-            <span className="px-2 py-0.5 bg-neutral-100 rounded-full">{job.skillLevel}</span>
+            <span className="px-2 py-0.5 bg-app-elevated rounded-full">{job.skillLevel}</span>
           </div>
           {job.tags?.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
-              {job.tags.map(t => <span key={t} className="text-xs px-2 py-0.5 bg-neutral-100 text-neutral-500 rounded-full">#{t}</span>)}
+              {job.tags.map(t => <span key={t} className="text-xs px-2 py-0.5 bg-app-elevated text-app-text-muted rounded-full">#{t}</span>)}
             </div>
           )}
         </div>
@@ -180,7 +178,6 @@ export default function JobDetail() {
         );
       })}
 
-      {/* Bottom spacer: clear the home indicator on sub-pages (no tab nav) */}
       <div style={{ height: 'calc(24px + env(safe-area-inset-bottom))' }} />
 
       {(editItem || showAddFor) && (
@@ -195,27 +192,26 @@ export default function JobDetail() {
   );
 }
 
-/* ── Section wrapper ─────────────────────────────────────────────────────── */
 function SectionBlock({ sectionType, sectionDef, items, isAdmin, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onAdd, onPhotoUpload }) {
   const Icon = sectionDef.icon;
   return (
     <div className="px-4 pt-5">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Icon size={16} className="text-blue-600" />
+          <div className="w-8 h-8 bg-app-info-bg rounded-lg flex items-center justify-center flex-shrink-0">
+            <Icon size={16} className="text-app-accent" />
           </div>
-          <h2 className="font-bold text-neutral-900 text-base">{sectionDef.title}</h2>
+          <h2 className="font-bold text-app-text text-base">{sectionDef.title}</h2>
         </div>
         {isAdmin && editMode && (
-          <button onClick={onAdd} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium">
+          <button onClick={onAdd} className="flex items-center gap-1 px-2.5 py-1 bg-app-accent text-app-accent-text rounded-lg text-xs font-medium">
             <Plus size={13} /> Add
           </button>
         )}
       </div>
       {items.length === 0 ? (
-        <div className="bg-white border border-dashed border-neutral-200 rounded-xl p-5 text-center">
-          <p className="text-xs text-neutral-400">{isAdmin && editMode ? 'Tap Add to create the first item.' : 'No content yet.'}</p>
+        <div className="bg-app-card border border-dashed border-app-border rounded-xl p-5 text-center">
+          <p className="text-xs text-app-text-muted">{isAdmin && editMode ? 'Tap Add to create the first item.' : 'No content yet.'}</p>
         </div>
       ) : (
         <SectionRenderer sectionType={sectionType} items={items} isAdmin={isAdmin} editMode={editMode}
@@ -226,25 +222,23 @@ function SectionBlock({ sectionType, sectionDef, items, isAdmin, editMode, sessi
   );
 }
 
-/* ── Admin controls bar ──────────────────────────────────────────────────── */
 function AdminBar({ item, index, total, onEdit, onDelete, onReorder }) {
   return (
-    <div className="flex items-center gap-1 pt-2 mt-2 border-t border-neutral-100">
-      <button onClick={() => onEdit(item)} className="px-2 py-1 text-xs text-blue-600 font-medium flex items-center gap-1"><Pencil size={11} /> Edit</button>
-      <button onClick={() => onDelete(item.id)} className="px-2 py-1 text-xs text-red-500 font-medium flex items-center gap-1"><Trash2 size={11} /> Delete</button>
+    <div className="flex items-center gap-1 pt-2 mt-2 border-t border-app-divider">
+      <button onClick={() => onEdit(item)} className="px-2 py-1 text-xs text-app-accent font-medium flex items-center gap-1"><Pencil size={11} /> Edit</button>
+      <button onClick={() => onDelete(item.id)} className="px-2 py-1 text-xs text-app-danger font-medium flex items-center gap-1"><Trash2 size={11} /> Delete</button>
       <div className="flex-1" />
-      <button onClick={() => onReorder(index, -1)} disabled={index === 0} className="p-1 text-neutral-400 disabled:opacity-25"><ArrowUp size={13} /></button>
-      <button onClick={() => onReorder(index, 1)} disabled={index === total - 1} className="p-1 text-neutral-400 disabled:opacity-25"><ArrowDown size={13} /></button>
+      <button onClick={() => onReorder(index, -1)} disabled={index === 0} className="p-1 text-app-text-muted disabled:opacity-25"><ArrowUp size={13} /></button>
+      <button onClick={() => onReorder(index, 1)} disabled={index === total - 1} className="p-1 text-app-text-muted disabled:opacity-25"><ArrowDown size={13} /></button>
     </div>
   );
 }
 
-/* ── Photo upload button ─────────────────────────────────────────────────── */
 function PhotoUpload({ itemId, onPhotoUpload }) {
   const ref = useRef();
   return (
     <>
-      <button onClick={() => ref.current?.click()} className="flex items-center gap-1 text-xs text-blue-600 mt-1.5">
+      <button onClick={() => ref.current?.click()} className="flex items-center gap-1 text-xs text-app-accent mt-1.5">
         <Upload size={11} /> Upload photo
       </button>
       <input ref={ref} type="file" accept="image/*" className="hidden"
@@ -253,7 +247,6 @@ function PhotoUpload({ itemId, onPhotoUpload }) {
   );
 }
 
-/* ── Section renderer router ─────────────────────────────────────────────── */
 function SectionRenderer(props) {
   const { sectionType } = props;
   if (sectionType === 'tools') return <ToolsView {...props} />;
@@ -266,34 +259,33 @@ function SectionRenderer(props) {
   return null;
 }
 
-/* ── 1. Tools ────────────────────────────────────────────────────────────── */
 function ToolsView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const gathered = session[`${sessionPrefix}_tools_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-app-card border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-app-success' : 'border-app-border'}`}>
             <div className="flex gap-3 p-3">
-              <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-neutral-100 overflow-hidden">
+              <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-app-elevated overflow-hidden border border-app-border">
                 {item.metadata?.photoUrl
                   ? <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
                   : <div className="w-full h-full flex items-center justify-center text-2xl">🔧</div>}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-1 mb-0.5">
-                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-app-text-muted' : 'text-app-text'}`}>{item.title}</h4>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-app-info-bg text-app-info' : 'bg-app-elevated text-app-text-muted'}`}>
                     {item.isRequired ? 'Required' : 'Optional'}
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500">Qty: {item.metadata?.quantity || 1}</p>
-                {item.body && <p className="text-xs text-neutral-400 mt-0.5">{item.body}</p>}
+                <p className="text-xs text-app-text-muted">Qty: {item.metadata?.quantity || 1}</p>
+                {item.body && <p className="text-xs text-app-text-muted mt-0.5">{item.body}</p>}
                 {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
               {!editMode && (
                 <button onClick={() => setSessionItem(`${sessionPrefix}_tools_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
-                  {gathered ? <CheckCircle2 size={22} className="text-green-500" /> : <Circle size={22} className="text-neutral-300" />}
+                  {gathered ? <CheckCircle2 size={22} className="text-app-success" /> : <Circle size={22} className="text-app-text-disabled" />}
                 </button>
               )}
             </div>
@@ -305,35 +297,34 @@ function ToolsView({ items, editMode, session, setSessionItem, sessionPrefix, on
   );
 }
 
-/* ── 2. Materials ────────────────────────────────────────────────────────── */
 function MaterialsView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder, onPhotoUpload }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const gathered = session[`${sessionPrefix}_materials_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-app-card border rounded-xl overflow-hidden ${gathered && !editMode ? 'border-app-success' : 'border-app-border'}`}>
             <div className="flex gap-3 p-3">
-              <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-neutral-100 overflow-hidden">
+              <div className="flex-shrink-0 w-16 h-16 rounded-lg bg-app-elevated overflow-hidden border border-app-border">
                 {item.metadata?.photoUrl
                   ? <Image src={item.metadata.photoUrl} className="w-full h-full" fittingType="fill" />
                   : <div className="w-full h-full flex items-center justify-center text-2xl">📦</div>}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-1 mb-0.5">
-                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                  <h4 className={`font-semibold text-sm ${gathered && !editMode ? 'line-through text-app-text-muted' : 'text-app-text'}`}>{item.title}</h4>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${item.isRequired ? 'bg-app-info-bg text-app-info' : 'bg-app-elevated text-app-text-muted'}`}>
                     {item.isRequired ? 'Required' : 'Optional'}
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500">Qty: {item.metadata?.quantity || 1}{item.metadata?.unit ? ` ${item.metadata.unit}` : ''}</p>
-                {item.metadata?.specification && <p className="text-xs text-blue-600 mt-0.5">{item.metadata.specification}</p>}
-                {item.body && <p className="text-xs text-neutral-400 mt-0.5">{item.body}</p>}
+                <p className="text-xs text-app-text-muted">Qty: {item.metadata?.quantity || 1}{item.metadata?.unit ? ` ${item.metadata.unit}` : ''}</p>
+                {item.metadata?.specification && <p className="text-xs text-app-accent mt-0.5">{item.metadata.specification}</p>}
+                {item.body && <p className="text-xs text-app-text-muted mt-0.5">{item.body}</p>}
                 {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
               {!editMode && (
                 <button onClick={() => setSessionItem(`${sessionPrefix}_materials_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
-                  {gathered ? <CheckCircle2 size={22} className="text-green-500" /> : <Circle size={22} className="text-neutral-300" />}
+                  {gathered ? <CheckCircle2 size={22} className="text-app-success" /> : <Circle size={22} className="text-app-text-disabled" />}
                 </button>
               )}
             </div>
@@ -345,14 +336,13 @@ function MaterialsView({ items, editMode, session, setSessionItem, sessionPrefix
   );
 }
 
-/* ── 3. Scope ────────────────────────────────────────────────────────────── */
 function ScopeView({ items, editMode, onEdit, onDelete, onReorder }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => (
-        <div key={item.id} className="bg-white border border-neutral-200 rounded-xl p-4">
-          <h4 className="font-semibold text-sm text-neutral-900 mb-1">{item.title}</h4>
-          <p className={`text-sm whitespace-pre-wrap leading-relaxed ${item.isCritical ? 'text-orange-700' : 'text-neutral-600'}`}>{item.body}</p>
+        <div key={item.id} className="bg-app-card border border-app-border rounded-xl p-4">
+          <h4 className="font-semibold text-sm text-app-text mb-1">{item.title}</h4>
+          <p className={`text-sm whitespace-pre-wrap leading-relaxed ${item.isCritical ? 'text-app-warning' : 'text-app-text-2'}`}>{item.body}</p>
           {editMode && <AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} />}
         </div>
       ))}
@@ -360,36 +350,35 @@ function ScopeView({ items, editMode, onEdit, onDelete, onReorder }) {
   );
 }
 
-/* ── 4. Procedure ────────────────────────────────────────────────────────── */
 function ProcedureView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   return (
     <div className="space-y-3">
       {items.map((item, i) => {
         const done = session[`${sessionPrefix}_proc_${item.id}`];
         return (
-          <div key={item.id} className={`bg-white border rounded-xl p-4 ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+          <div key={item.id} className={`bg-app-card border rounded-xl p-4 ${done && !editMode ? 'border-app-success' : 'border-app-border'}`}>
             <div className="flex items-start gap-3">
               {!editMode && (
                 <button onClick={() => setSessionItem(`${sessionPrefix}_proc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
-                  {done ? <CheckCircle2 size={20} className="text-green-500" /> : <Circle size={20} className="text-neutral-300" />}
+                  {done ? <CheckCircle2 size={20} className="text-app-success" /> : <Circle size={20} className="text-app-text-disabled" />}
                 </button>
               )}
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">{i + 1}</span>
-                  <h4 className={`font-semibold text-sm ${done && !editMode ? 'line-through text-neutral-400' : 'text-neutral-900'}`}>{item.title}</h4>
+                  <span className="flex-shrink-0 w-6 h-6 bg-app-accent text-app-accent-text rounded-full flex items-center justify-center text-xs font-bold">{i + 1}</span>
+                  <h4 className={`font-semibold text-sm ${done && !editMode ? 'line-through text-app-text-muted' : 'text-app-text'}`}>{item.title}</h4>
                 </div>
-                <p className="text-sm text-neutral-600 ml-8 leading-relaxed">{item.body}</p>
+                <p className="text-sm text-app-text-2 ml-8 leading-relaxed">{item.body}</p>
                 {item.metadata?.warning && (
-                  <div className="ml-8 mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-1.5">
-                    <AlertTriangle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-red-700"><span className="font-semibold">Warning:</span> {item.metadata.warning}</p>
+                  <div className="ml-8 mt-2 px-3 py-2 bg-app-danger-bg border border-app-danger rounded-lg flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="text-app-danger flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-app-danger"><span className="font-semibold">Warning:</span> {item.metadata.warning}</p>
                   </div>
                 )}
                 {item.metadata?.tip && (
-                  <div className="ml-8 mt-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-1.5">
-                    <Info size={13} className="text-blue-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-blue-700"><span className="font-semibold">Tip:</span> {item.metadata.tip}</p>
+                  <div className="ml-8 mt-1.5 px-3 py-2 bg-app-info-bg border border-app-info rounded-lg flex items-start gap-1.5">
+                    <Info size={13} className="text-app-info flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-app-info"><span className="font-semibold">Tip:</span> {item.metadata.tip}</p>
                   </div>
                 )}
               </div>
@@ -402,27 +391,34 @@ function ProcedureView({ items, editMode, session, setSessionItem, sessionPrefix
   );
 }
 
-/* ── 5. Safety ───────────────────────────────────────────────────────────── */
 function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const ackKey = `${sessionPrefix}_safety_ack`;
   const acknowledged = session[ackKey];
+
+  const SEV_STYLES = {
+    Critical: { bg: 'bg-app-danger-bg', border: 'border-app-danger', text: 'text-app-danger', icon: ShieldAlert },
+    Warning: { bg: 'bg-app-warning-bg', border: 'border-app-warning', text: 'text-app-warning', icon: AlertTriangle },
+    Caution: { bg: 'bg-app-warning-bg', border: 'border-app-warning', text: 'text-app-warning', icon: AlertCircle },
+    Information: { bg: 'bg-app-info-bg', border: 'border-app-info', text: 'text-app-info', icon: Info },
+  };
+
   return (
     <div>
       <div className="space-y-3 mb-4">
         {items.map((item, i) => {
-          const severity = SEVERITY_LEVELS.find(s => s.value === item.metadata?.severity) || SEVERITY_LEVELS[0];
-          const SevIcon = severity.icon;
+          const sev = SEV_STYLES[item.metadata?.severity] || SEV_STYLES.Information;
+          const SevIcon = sev.icon;
           return (
-            <div key={item.id} className="bg-white border border-neutral-200 rounded-xl p-4">
-              <div className={`p-3 rounded-lg border ${severity.bg} ${severity.border}`}>
+            <div key={item.id} className="bg-app-card border border-app-border rounded-xl p-4">
+              <div className={`p-3 rounded-lg border ${sev.bg} ${sev.border}`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <SevIcon size={15} className={severity.color} />
-                  <span className={`text-xs font-bold uppercase tracking-wide ${severity.color}`}>{severity.value}</span>
+                  <SevIcon size={15} className={sev.text} />
+                  <span className={`text-xs font-bold uppercase tracking-wide ${sev.text}`}>{item.metadata?.severity || 'Information'}</span>
                 </div>
-                <h4 className="font-semibold text-sm text-neutral-900 mb-1">{item.title}</h4>
-                <p className="text-sm text-neutral-700 leading-relaxed">{item.body}</p>
+                <h4 className="font-semibold text-sm text-app-text mb-1">{item.title}</h4>
+                <p className="text-sm text-app-text-2 leading-relaxed">{item.body}</p>
                 {item.metadata?.requiredAction && (
-                  <p className="text-xs text-neutral-700 mt-2 pt-2 border-t border-neutral-200">
+                  <p className="text-xs text-app-text-2 mt-2 pt-2 border-t border-app-divider">
                     <span className="font-semibold">Required Action:</span> {item.metadata.requiredAction}
                   </p>
                 )}
@@ -433,12 +429,12 @@ function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, o
         })}
       </div>
       {!editMode && (
-        <div className={`rounded-xl p-4 border-2 ${acknowledged ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-300'}`}>
+        <div className={`rounded-xl p-4 border-2 ${acknowledged ? 'bg-app-success-bg border-app-success' : 'bg-app-card border-app-border'}`}>
           <label className="flex items-center gap-3 cursor-pointer">
             <button onClick={() => setSessionItem(ackKey, !acknowledged)}>
-              {acknowledged ? <CheckCircle2 size={24} className="text-green-500" /> : <Circle size={24} className="text-neutral-300" />}
+              {acknowledged ? <CheckCircle2 size={24} className="text-app-success" /> : <Circle size={24} className="text-app-text-disabled" />}
             </button>
-            <span className="text-sm font-medium text-neutral-900">I have reviewed all safety requirements for this job.</span>
+            <span className="text-sm font-medium text-app-text">I have reviewed all safety requirements for this job.</span>
           </label>
         </div>
       )}
@@ -446,62 +442,58 @@ function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, o
   );
 }
 
-/* ── 6. Documentation ────────────────────────────────────────────────────── */
 function DocumentationView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const completed = items.filter(i => session[`${sessionPrefix}_doc_${i.id}`]).length;
   return (
     <div>
       {items.length > 0 && (
-        <div className="mb-3 bg-blue-50 rounded-xl p-3">
+        <div className="mb-3 bg-app-info-bg border border-app-border rounded-xl p-3">
           <div className="flex justify-between mb-1">
-            <span className="text-xs font-semibold text-blue-700">{completed} of {items.length} complete</span>
-            <span className="text-xs text-blue-500">{Math.round((completed / items.length) * 100)}%</span>
+            <span className="text-xs font-semibold text-app-info">{completed} of {items.length} complete</span>
+            <span className="text-xs text-app-info">{Math.round((completed / items.length) * 100)}%</span>
           </div>
-          <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${(completed / items.length) * 100}%` }} />
+          <div className="h-1.5 bg-app-elevated rounded-full overflow-hidden">
+            <div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${(completed / items.length) * 100}%` }} />
           </div>
         </div>
       )}
       <div className="space-y-2.5">
         {items.map((item, i) => {
-          const done = session[`${sessionPrefix}_doc_${item.id}`];
+          const done = session[`${sessionPrefix}_doc_${i.id}`];
           const docType = item.metadata?.documentationType || 'Note';
           return (
-            <div key={item.id} className={`bg-white border rounded-xl p-4 ${done && !editMode ? 'border-green-200' : 'border-neutral-200'}`}>
+            <div key={item.id} className={`bg-app-card border rounded-xl p-4 ${done && !editMode ? 'border-app-success' : 'border-app-border'}`}>
               <div className="flex items-start gap-3">
                 {!editMode && (
                   <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
-                    {done ? <CheckCircle2 size={20} className="text-green-500" /> : <Circle size={20} className="text-neutral-300" />}
+                    {done ? <CheckCircle2 size={20} className="text-app-success" /> : <Circle size={20} className="text-app-text-disabled" />}
                   </button>
                 )}
                 <div className="flex-1">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-xs px-1.5 py-0.5 bg-neutral-100 text-neutral-600 rounded">{docType}</span>
-                    {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">Required</span>}
+                    <span className="text-xs px-1.5 py-0.5 bg-app-elevated text-app-text-muted rounded">{docType}</span>
+                    {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-app-info-bg text-app-info rounded">Required</span>}
                   </div>
-                  <h4 className="font-semibold text-sm text-neutral-900">{item.title}</h4>
-                  {item.body && <p className="text-xs text-neutral-500 mt-0.5">{item.body}</p>}
+                  <h4 className="font-semibold text-sm text-app-text">{item.title}</h4>
+                  {item.body && <p className="text-xs text-app-text-muted mt-0.5">{item.body}</p>}
                   {!editMode && !done && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {docType.includes('photo') && (
                         <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)}
-                          className="text-xs px-2.5 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-1">
+                          className="text-xs px-2.5 py-1 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1">
                           <Camera size={11} /> Add Photo
                         </button>
                       )}
-                      {docType === 'Measurement' && (
-                        <input placeholder="Enter measurement" className="text-xs px-2 py-1 border border-neutral-200 rounded-lg flex-1 min-w-0"
-                          onBlur={e => { if (e.target.value) setSessionItem(`${sessionPrefix}_doc_${item.id}`, true); }} />
-                      )}
-                      {docType === 'Note' && (
-                        <input placeholder="Add note" className="text-xs px-2 py-1 border border-neutral-200 rounded-lg flex-1 min-w-0"
+                      {(docType === 'Measurement' || docType === 'Note') && (
+                        <input placeholder={docType === 'Measurement' ? 'Enter measurement' : 'Add note'}
+                          className="text-xs px-2 py-1 bg-app-input border border-app-border rounded-lg flex-1 min-w-0 text-app-text placeholder:text-app-text-muted"
                           onBlur={e => { if (e.target.value) setSessionItem(`${sessionPrefix}_doc_${item.id}`, true); }} />
                       )}
                       <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, true)}
-                        className="text-xs px-2.5 py-1 border border-neutral-200 text-neutral-600 rounded-lg">Mark Done</button>
+                        className="text-xs px-2.5 py-1 border border-app-border text-app-text-2 rounded-lg">Mark Done</button>
                     </div>
                   )}
-                  {!editMode && done && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check size={11} /> Completed</p>}
+                  {!editMode && done && <p className="text-xs text-app-success mt-1 flex items-center gap-1"><Check size={11} /> Completed</p>}
                 </div>
               </div>
               {editMode && <AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} />}
@@ -513,7 +505,6 @@ function DocumentationView({ items, editMode, session, setSessionItem, sessionPr
   );
 }
 
-/* ── 7. Quality ──────────────────────────────────────────────────────────── */
 function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, onEdit, onDelete, onReorder }) {
   const [finalNotes, setFinalNotes] = useState(session[`${sessionPrefix}_quality_notes`] || '');
   const [submitted, setSubmitted] = useState(!!session[`${sessionPrefix}_quality_submitted`]);
@@ -522,12 +513,12 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
 
   if (submitted && !editMode) {
     return (
-      <div className="bg-white border border-green-200 rounded-xl p-6 text-center">
-        <CheckCircle2 size={36} className="text-green-500 mx-auto mb-2" />
-        <h4 className="font-semibold text-neutral-900 mb-1">Checklist Submitted</h4>
-        <p className="text-xs text-neutral-500">Quality inspection completed and saved.</p>
+      <div className="bg-app-card border border-app-success rounded-xl p-6 text-center">
+        <CheckCircle2 size={36} className="text-app-success mx-auto mb-2" />
+        <h4 className="font-semibold text-app-text mb-1">Checklist Submitted</h4>
+        <p className="text-xs text-app-text-muted">Quality inspection completed and saved.</p>
         <button onClick={() => { setSubmitted(false); setSessionItem(`${sessionPrefix}_quality_submitted`, false); }}
-          className="mt-3 text-xs text-blue-600 underline">Review again</button>
+          className="mt-3 text-xs text-app-accent underline">Review again</button>
       </div>
     );
   }
@@ -539,13 +530,13 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
           const result = session[`${sessionPrefix}_quality_${item.id}_result`];
           const failNote = session[`${sessionPrefix}_quality_${item.id}_note`];
           return (
-            <div key={item.id} className="bg-white border border-neutral-200 rounded-xl p-4">
+            <div key={item.id} className="bg-app-card border border-app-border rounded-xl p-4">
               <div className="flex gap-1.5 mb-1.5">
-                {item.isCritical && <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">Critical</span>}
-                {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">Required</span>}
+                {item.isCritical && <span className="text-xs px-1.5 py-0.5 bg-app-danger-bg text-app-danger rounded font-medium">Critical</span>}
+                {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-app-info-bg text-app-info rounded font-medium">Required</span>}
               </div>
-              <h4 className="font-semibold text-sm text-neutral-900 mb-1">{item.title}</h4>
-              {item.body && <p className="text-xs text-neutral-500 mb-2">{item.body}</p>}
+              <h4 className="font-semibold text-sm text-app-text mb-1">{item.title}</h4>
+              {item.body && <p className="text-xs text-app-text-muted mb-2">{item.body}</p>}
               {!editMode && (
                 <>
                   <div className="flex gap-2">
@@ -553,7 +544,7 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
                       <button key={r} onClick={() => {
                         setSessionItem(`${sessionPrefix}_quality_${item.id}_result`, r);
                         if (r !== 'Fail') setSessionItem(`${sessionPrefix}_quality_${item.id}_note`, undefined);
-                      }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${result === r ? RESULT_STYLES[r] : 'border-neutral-200 text-neutral-500 bg-white'}`}>
+                      }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${result === r ? RESULT_STYLES[r] : 'border-app-border text-app-text-muted bg-app-card'}`}>
                         {r === 'Not Applicable' ? 'N/A' : r}
                       </button>
                     ))}
@@ -561,7 +552,7 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
                   {result === 'Fail' && (
                     <input placeholder="Required: Explain the failure" value={failNote || ''}
                       onChange={e => setSessionItem(`${sessionPrefix}_quality_${item.id}_note`, e.target.value)}
-                      className="mt-2 w-full px-3 py-1.5 border border-red-200 rounded-lg text-xs" />
+                      className="mt-2 w-full px-3 py-1.5 bg-app-input border border-app-danger rounded-lg text-xs text-app-text placeholder:text-app-text-muted" />
                   )}
                 </>
               )}
@@ -571,17 +562,18 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
         })}
       </div>
       {!editMode && items.length > 0 && (
-        <div className="mt-4 bg-white border border-neutral-200 rounded-xl p-4">
-          <h4 className="font-semibold text-sm text-neutral-900 mb-2">Final Notes</h4>
+        <div className="mt-4 bg-app-card border border-app-border rounded-xl p-4">
+          <h4 className="font-semibold text-sm text-app-text mb-2">Final Notes</h4>
           <textarea value={finalNotes} onChange={e => setFinalNotes(e.target.value)} rows={3}
-            placeholder="Add final notes..." className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm" />
+            placeholder="Add final notes..."
+            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted" />
           <button onClick={() => { setSessionItem(`${sessionPrefix}_quality_submitted`, true); setSessionItem(`${sessionPrefix}_quality_notes`, finalNotes); setSubmitted(true); }}
             disabled={!allAnswered || failedWithoutNote}
-            className="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold disabled:bg-neutral-300">
+            className="w-full mt-3 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold disabled:bg-app-disabled disabled:text-app-text-disabled">
             Submit Quality Checklist
           </button>
           {(!allAnswered || failedWithoutNote) && (
-            <p className="text-xs text-orange-600 mt-1.5 text-center">
+            <p className="text-xs text-app-warning mt-1.5 text-center">
               {!allAnswered ? 'All items must be answered.' : 'Failed items require a note.'}
             </p>
           )}

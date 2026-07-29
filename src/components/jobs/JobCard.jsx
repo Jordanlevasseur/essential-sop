@@ -1,48 +1,55 @@
 import React from 'react';
 import { Star, Clock } from 'lucide-react';
-import { SECTION_MAP } from '@/lib/constants';
 
 const SKILL_COLORS = {
-  Entry: 'bg-green-100 text-green-700',
-  Intermediate: 'bg-blue-100 text-blue-700',
-  Advanced: 'bg-red-100 text-red-700',
+  Entry: 'text-app-success bg-app-success-bg',
+  Intermediate: 'text-app-warning bg-app-warning-bg',
+  Advanced: 'text-app-danger bg-app-danger-bg',
 };
 
-const TRADE_ICONS = {
+const TRADE_EMOJI = {
   Plumbing: '🔧', Carpentry: '🪚', Electrical: '⚡', Drywall: '🧱',
-  Roofing: '🏠', Inspection: '🔍', Waterproofing: '💧', HVAC: '❄️', Painting: '🎨', General: '🔨',
+  Inspection: '🔍', Waterproofing: '💧', Roofing: '🏠', HVAC: '❄️', Painting: '🎨',
 };
 
 export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
-  const icon = TRADE_ICONS[job.trade] || '📋';
-
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl p-4 cursor-pointer active:bg-neutral-50 transition-colors" onClick={onClick}>
+    <div
+      onClick={onClick}
+      className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity"
+    >
       <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-12 h-12 bg-neutral-100 rounded-lg flex items-center justify-center text-2xl">
-          {icon}
+        <div className="flex-shrink-0 w-10 h-10 bg-app-elevated rounded-lg flex items-center justify-center text-xl">
+          {TRADE_EMOJI[job.trade] || '🔨'}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-neutral-900 line-clamp-1">{job.title}</h3>
-            <button onClick={(e) => { e.stopPropagation(); onFavToggle(); }} className="flex-shrink-0">
-              <Star size={18} className={isFav ? 'text-yellow-500 fill-yellow-500' : 'text-neutral-300'} />
+            <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
+            <button
+              onClick={e => { e.stopPropagation(); onFavToggle(); }}
+              className="flex-shrink-0 mt-0.5"
+            >
+              <Star size={18} className={isFav ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
             </button>
           </div>
-          <p className="text-xs text-blue-600 font-medium mb-1">{job.trade} · {job.category}</p>
-          <p className="text-xs text-neutral-500 line-clamp-2 mb-2">{job.shortDescription}</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SKILL_COLORS[job.skillLevel] || 'bg-neutral-100 text-neutral-600'}`}>
-              {job.skillLevel}
-            </span>
-            <span className="text-xs text-neutral-400 flex items-center gap-1">
-              <Clock size={11} /> {job.estimatedDuration}
-            </span>
+          <p className="text-xs text-app-accent font-medium mt-0.5">{job.trade} · {job.category}</p>
+          <p className="text-xs text-app-text-muted mt-1 line-clamp-2">{job.shortDescription}</p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {job.skillLevel && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SKILL_COLORS[job.skillLevel] || 'text-app-text-2 bg-app-elevated'}`}>
+                {job.skillLevel}
+              </span>
+            )}
+            {job.estimatedDuration && (
+              <span className="text-xs text-app-text-muted flex items-center gap-1">
+                <Clock size={11} />{job.estimatedDuration}
+              </span>
+            )}
           </div>
           {match && (
-            <div className="mt-2 px-2 py-1 bg-blue-50 rounded text-xs text-blue-700">
-              Matched in {match.section}: {match.item}
-            </div>
+            <p className="text-xs text-app-info mt-1.5">
+              Found in {match.section}: "{match.item}"
+            </p>
           )}
         </div>
       </div>

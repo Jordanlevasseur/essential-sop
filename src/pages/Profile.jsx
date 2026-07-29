@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/lib/AppContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
-import { Star, Clock, Type, Moon, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight } from 'lucide-react';
 import { SORT_OPTIONS } from '@/lib/constants';
 
 export default function Profile() {
   const navigate = useNavigate();
   const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites } = useApp();
+  const { appearance, setAppearance } = useTheme();
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
 
@@ -25,63 +27,79 @@ export default function Profile() {
     }
   };
 
+  const APPEARANCE_OPTIONS = [
+    { value: 'system', label: 'System', icon: Monitor },
+    { value: 'light', label: 'Light', icon: Sun },
+    { value: 'dark', label: 'Dark', icon: Moon },
+  ];
+
   return (
     <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-neutral-900 mb-4">Profile</h1>
+      <h1 className="text-2xl font-bold text-app-text mb-4">Profile</h1>
 
-      <div className="bg-white border border-neutral-200 rounded-xl p-4 mb-4 flex items-center gap-3">
-        <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-          <span className="text-xl font-bold text-blue-600">{user.name?.charAt(0) || 'U'}</span>
+      {/* User card */}
+      <div className="bg-app-card border border-app-border rounded-xl p-4 mb-4 flex items-center gap-3">
+        <div className="w-14 h-14 bg-app-info-bg rounded-full flex items-center justify-center flex-shrink-0">
+          <span className="text-xl font-bold text-app-accent">{user.name?.charAt(0) || 'U'}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="font-semibold text-neutral-900 truncate">{user.name}</h2>
-          <p className="text-sm text-neutral-500 truncate">{user.role}</p>
-          <p className="text-xs text-neutral-400 truncate">{user.company}</p>
+          <h2 className="font-semibold text-app-text truncate">{user.name}</h2>
+          <p className="text-sm text-app-text-2 truncate">{user.role}</p>
+          <p className="text-xs text-app-text-muted truncate">{user.company}</p>
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${userMode === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+        <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${userMode === 'admin' ? 'bg-app-info-bg text-app-info' : 'bg-app-info-bg text-app-accent'}`}>
           {userMode === 'admin' ? 'Admin' : 'Technician'}
         </div>
       </div>
 
       <Section title="Saved Content">
         <Row icon={Star} label="Favorite Jobs" value={favorites.length} onClick={() => navigate('/')} />
+        <Divider />
         <Row icon={Clock} label="Recently Viewed" value={recentlyViewed.length} onClick={() => navigate('/')} />
       </Section>
 
       <Section title="Preferences">
+        {/* Text Size */}
         <div className="px-4 py-3">
           <div className="flex items-center gap-2 mb-2">
-            <Type size={16} className="text-neutral-400" />
-            <span className="text-sm text-neutral-700">Text Size</span>
+            <Type size={16} className="text-app-text-muted" />
+            <span className="text-sm text-app-text">Text Size</span>
           </div>
           <div className="flex gap-2">
             {['small', 'medium', 'large'].map(s => (
               <button key={s} onClick={() => updatePreferences({ textSize: s })}
-                className={`flex-1 py-1.5 rounded-lg text-sm capitalize ${preferences.textSize === s ? 'bg-blue-600 text-white' : 'bg-neutral-100 text-neutral-600'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-sm capitalize font-medium transition-colors ${preferences.textSize === s ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
                 {s}
               </button>
             ))}
           </div>
         </div>
         <Divider />
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Moon size={16} className="text-neutral-400" />
-            <span className="text-sm text-neutral-700">Dark Mode</span>
-          </div>
-          <button onClick={() => updatePreferences({ darkMode: !preferences.darkMode })}
-            className={`w-11 h-6 rounded-full transition-colors ${preferences.darkMode ? 'bg-blue-600' : 'bg-neutral-200'}`}>
-            <div className={`w-5 h-5 bg-white rounded-full transition-transform ${preferences.darkMode ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
-          </button>
-        </div>
-        <Divider />
+        {/* Appearance */}
         <div className="px-4 py-3">
           <div className="flex items-center gap-2 mb-2">
-            <ArrowUpDown size={16} className="text-neutral-400" />
-            <span className="text-sm text-neutral-700">Default Job Sort</span>
+            <Monitor size={16} className="text-app-text-muted" />
+            <span className="text-sm text-app-text">Appearance</span>
+          </div>
+          <div className="flex gap-2">
+            {APPEARANCE_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <button key={value} onClick={() => setAppearance(value)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium flex flex-col items-center gap-1 transition-colors ${appearance === value ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
+                <Icon size={16} />
+                <span className="text-xs">{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <Divider />
+        {/* Default Sort */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowUpDown size={16} className="text-app-text-muted" />
+            <span className="text-sm text-app-text">Default Job Sort</span>
           </div>
           <select value={preferences.defaultSort} onChange={e => updatePreferences({ defaultSort: e.target.value })}
-            className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm">
+            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text">
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
@@ -109,7 +127,7 @@ export default function Profile() {
         </button>
       </Section>
 
-      <p className="text-xs text-neutral-400 text-center mt-6">Essential SOP v1.0 · Prototype</p>
+      <p className="text-xs text-app-text-muted text-center mt-6">Essential SOP v1.0 · Prototype</p>
     </div>
   );
 }
@@ -117,23 +135,23 @@ export default function Profile() {
 function Section({ title, children }) {
   return (
     <div className="mb-4">
-      <h3 className="text-xs font-semibold text-neutral-500 uppercase mb-2 px-1">{title}</h3>
-      <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">{children}</div>
+      <h3 className="text-xs font-semibold text-app-text-muted uppercase mb-2 px-1">{title}</h3>
+      <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">{children}</div>
     </div>
   );
 }
 
 function Divider() {
-  return <div className="h-px bg-neutral-100 mx-4" />;
+  return <div className="h-px bg-app-divider mx-4" />;
 }
 
 function Row({ icon: Icon, label, value, onClick, active }) {
   return (
-    <div onClick={onClick} className={`flex items-center gap-3 px-4 py-3 ${onClick ? 'cursor-pointer active:bg-neutral-50' : ''} ${active ? 'bg-blue-50' : ''}`}>
-      <Icon size={18} className={active ? 'text-blue-600' : 'text-neutral-400'} />
-      <span className={`text-sm flex-1 ${active ? 'text-blue-700 font-medium' : 'text-neutral-700'}`}>{label}</span>
-      {value !== undefined && <span className="text-sm text-neutral-400">{value}</span>}
-      {onClick && <ChevronRight size={16} className="text-neutral-300" />}
+    <div onClick={onClick} className={`flex items-center gap-3 px-4 py-3 ${onClick ? 'cursor-pointer active:opacity-70' : ''} ${active ? 'bg-app-info-bg' : ''}`}>
+      <Icon size={18} className={active ? 'text-app-accent' : 'text-app-text-muted'} />
+      <span className={`text-sm flex-1 ${active ? 'text-app-accent font-medium' : 'text-app-text'}`}>{label}</span>
+      {value !== undefined && <span className="text-sm text-app-text-muted">{value}</span>}
+      {onClick && <ChevronRight size={16} className="text-app-text-disabled" />}
     </div>
   );
 }

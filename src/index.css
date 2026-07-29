@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* Shadcn base tokens */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -23,6 +24,34 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
+
+    /* App semantic tokens — light */
+    --app-bg: 210 20% 97%;
+    --app-surface: 0 0% 100%;
+    --app-elevated: 0 0% 100%;
+    --app-card: 0 0% 100%;
+    --app-input-bg: 0 0% 100%;
+    --app-border: 220 13% 90%;
+    --app-divider: 220 13% 93%;
+    --app-text-primary: 222 20% 10%;
+    --app-text-secondary: 220 10% 40%;
+    --app-text-muted: 220 8% 58%;
+    --app-text-disabled: 220 8% 75%;
+    --app-accent: 217 91% 50%;
+    --app-accent-text: 0 0% 100%;
+    --app-success: 142 71% 29%;
+    --app-success-bg: 142 76% 94%;
+    --app-warning: 38 92% 40%;
+    --app-warning-bg: 48 100% 94%;
+    --app-danger: 0 84% 45%;
+    --app-danger-bg: 0 100% 95%;
+    --app-info: 205 87% 35%;
+    --app-info-bg: 205 100% 94%;
+    --app-disabled-bg: 220 14% 94%;
+    --app-overlay: 0 0% 0% / 0.4;
+    --app-nav-bg: 0 0% 100%;
+    --app-nav-active: 217 91% 50%;
+    --app-nav-inactive: 220 9% 60%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -44,25 +73,53 @@
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 222 20% 10%;
+    --foreground: 210 17% 92%;
+    --card: 222 18% 14%;
+    --card-foreground: 210 17% 92%;
+    --popover: 222 18% 14%;
+    --popover-foreground: 210 17% 92%;
+    --primary: 210 17% 92%;
+    --primary-foreground: 222 20% 10%;
+    --secondary: 222 16% 20%;
+    --secondary-foreground: 210 17% 92%;
+    --muted: 222 16% 20%;
+    --muted-foreground: 215 13% 60%;
+    --accent: 222 16% 20%;
+    --accent-foreground: 210 17% 92%;
+    --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --border: 222 14% 22%;
+    --input: 222 14% 22%;
+    --ring: 215 60% 60%;
+
+    /* App semantic tokens — dark */
+    --app-bg: 222 20% 10%;
+    --app-surface: 222 18% 14%;
+    --app-elevated: 222 16% 18%;
+    --app-card: 222 18% 14%;
+    --app-input-bg: 222 16% 18%;
+    --app-border: 222 14% 24%;
+    --app-divider: 222 14% 20%;
+    --app-text-primary: 210 17% 92%;
+    --app-text-secondary: 215 13% 68%;
+    --app-text-muted: 215 11% 50%;
+    --app-text-disabled: 215 10% 38%;
+    --app-accent: 217 91% 60%;
+    --app-accent-text: 0 0% 100%;
+    --app-success: 142 60% 45%;
+    --app-success-bg: 142 40% 14%;
+    --app-warning: 38 85% 55%;
+    --app-warning-bg: 38 60% 14%;
+    --app-danger: 0 72% 55%;
+    --app-danger-bg: 0 55% 14%;
+    --app-info: 205 80% 55%;
+    --app-info-bg: 205 55% 14%;
+    --app-disabled-bg: 222 14% 22%;
+    --app-overlay: 0 0% 0% / 0.6;
+    --app-nav-bg: 222 18% 14%;
+    --app-nav-active: 217 91% 60%;
+    --app-nav-inactive: 215 11% 50%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
