@@ -26,7 +26,8 @@ export default function Jobs() {
       base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
     ]).then(([j, c]) => {
       setJobs(j || []);
-      setAllContent(c || []);
+      // Exclude documentation records — same as Assistant
+      setAllContent((c || []).filter(item => item.sectionType !== 'documentation'));
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [companyId]);
