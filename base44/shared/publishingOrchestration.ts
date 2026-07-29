@@ -85,7 +85,6 @@ export interface PublishParams {
   changeSummary?: string;
   distributionPolicyOverride?: DistributionPolicy;
   selectedCompanyIds?: string[];
-  _forceFailCompanyIds?: string[]; // TEST-ONLY: inject failures for specific companies
 }
 
 export interface PublishResult {
