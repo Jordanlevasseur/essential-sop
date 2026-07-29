@@ -9,10 +9,20 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
  *
  * Request payload: { jobId: string }
  *
- * Response: { job, sections, contentBySection }
+ * Response: { job, sections, contentBySection, capabilities }
  *   - job: Job record (companyId, title, trade, category, etc.)
  *   - sections: array of section descriptor objects ({ sectionType, title, sortOrder })
  *   - contentBySection: { [sectionType]: SectionContent[] }
+ *   - capabilities: explicit action permissions the frontend must consume instead of
+ *     inferring from job origin fields. The backend is the single source of truth.
+ *     {
+ *       canEditContent: boolean,
+ *       canCreateContent: boolean,
+ *       canDeleteContent: boolean,
+ *       canReorderContent: boolean,
+ *       canChangeSectionStatus: boolean,
+ *       canEditJobMetadata: boolean
+ *     }
  *
  * Resolution paths:
  *
@@ -66,13 +76,35 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // ── Derive capabilities from membership role + job origin ────────────────
+    // The backend is the single authority on what a user may do to this Job.
+    // The frontend must consume these flags; it must NOT infer permissions from
+    // job.sourceType, sourceMasterId, sourceVersionId, or isCustomized.
+    const membership = memberships[0];
+    const isCompanyAdmin = membership.role === 'general_manager' || membership.role === 'project_manager';
+    const isProvisionedSOP = job.sourceType === 'essential_sop' && !job.isCustomized;
+
+    const capabilities = {
+      // Content mutation — fully blocked for provisioned SOPs regardless of role.
+      // For company jobs, requires admin-level company role.
+      canEditContent:         isCompanyAdmin && !isProvisionedSOP,
+      canCreateContent:       isCompanyAdmin && !isProvisionedSOP,
+      canDeleteContent:       isCompanyAdmin && !isProvisionedSOP,
+      canReorderContent:      isCompanyAdmin && !isProvisionedSOP,
+      // Section completion status lives on JobSection records which don't exist
+      // for provisioned SOPs — always false for them.
+      canChangeSectionStatus: isCompanyAdmin && !isProvisionedSOP,
+      // Job-level metadata edits follow the same rule.
+      canEditJobMetadata:     isCompanyAdmin && !isProvisionedSOP,
+    };
+
     // ── Resolution: Essential SOP provisioned job (uncustomized) ────────────
-    if (job.sourceType === 'essential_sop' && !job.isCustomized) {
-      return await resolveEssentialSOPJob(job, SR);
+    if (isProvisionedSOP) {
+      return await resolveEssentialSOPJob(job, SR, capabilities);
     }
 
     // ── Resolution: Company-created job (Version 4.0 path, unchanged) ───────
-    return await resolveCompanyJob(job, SR);
+    return await resolveCompanyJob(job, SR, capabilities);
 
   } catch (error: any) {
     return Response.json({ error: 'An unexpected error occurred.' }, { status: 500 });
@@ -81,7 +113,7 @@ export default async function(req: Request): Promise<Response> {
 
 // ── Version 4.0 company-owned Job resolution (unchanged) ───────────────────
 
-async function resolveCompanyJob(job: any, SR: any): Promise<Response> {
+async function resolveCompanyJob(job: any, SR: any, capabilities: any): Promise<Response> {
   const [sections, rawContent] = await Promise.all([
     SR.entities.JobSection.filter({ jobId: job.id }, 'sortOrder', 10),
     SR.entities.SectionContent.filter({ jobId: job.id }, 'sortOrder', 500),
@@ -102,6 +134,7 @@ async function resolveCompanyJob(job: any, SR: any): Promise<Response> {
     job,
     sections: (sections || []).filter((s: any) => s.sectionType !== 'documentation'),
     contentBySection,
+    capabilities,
   });
 }
 
@@ -109,7 +142,7 @@ async function resolveCompanyJob(job: any, SR: any): Promise<Response> {
 // Reads platform-owned section content from the pinned published version.
 // Does NOT expose draft content. Does NOT silently switch versions.
 
-async function resolveEssentialSOPJob(job: any, SR: any): Promise<Response> {
+async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Promise<Response> {
   const versionId = job.sourceVersionId;
   if (!versionId) {
     return Response.json({ error: 'Provisioned job is missing a version reference.' }, { status: 409 });
@@ -186,13 +219,11 @@ async function resolveEssentialSOPJob(job: any, SR: any): Promise<Response> {
     contentBySection[st] = items;
   }
 
-  // Return the company Job's stable identity + platform content
-  // Strip internal platform-admin fields from the job object returned to the frontend
-  const { sourceMasterId: _sm, sourceVersionId: _sv, ...publicJobFields } = job;
-  const safeJob = {
-    ...publicJobFields,
-    sourceType: 'essential_sop', // keep so frontend can detect if needed
-  };
+  // Return the company Job's stable identity + platform content.
+  // Strip ALL internal platform-admin origin fields — the frontend must not use them
+  // for permission inference. Capabilities object is the authoritative contract.
+  const { sourceMasterId: _sm, sourceVersionId: _sv, sourceType: _st, isCustomized: _ic,
+          customizedAt: _ca, customizedBy: _cb, ...publicJobFields } = job;
 
-  return Response.json({ job: safeJob, sections, contentBySection });
+  return Response.json({ job: publicJobFields, sections, contentBySection, capabilities });
 }

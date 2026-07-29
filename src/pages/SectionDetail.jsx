@@ -12,9 +12,10 @@ export default function SectionDetail() {
   const { isAdmin, session, setSessionItem, clearSessionForJob, user } = useApp();
   const [job, setJob] = useState(null);
   const [section, setSection] = useState(null);
-  // Editing only available for company-owned Jobs; provisioned Essential SOP Jobs are read-only
-  // until customization is implemented in a future edit.
-  const canEdit = isAdmin && !(job?.sourceType === 'essential_sop' && !job?.isCustomized);
+  const [capabilities, setCapabilities] = useState(null);
+  // The backend is the single authority on what actions are available.
+  // The frontend must not infer permissions from job origin fields.
+  const canEdit = isAdmin && (capabilities?.canEditContent ?? false);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState(null);
@@ -24,10 +25,11 @@ export default function SectionDetail() {
     try {
       // All Job content is resolved through the centralized resolveJob backend.
       const res = await base44.functions.invoke('resolveJob', { jobId });
-      const { job: j, sections: secs, contentBySection: cbs } = res.data;
+      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps } = res.data;
       setJob(j);
       setSection((secs || []).find(s => s.sectionType === sectionType) || null);
       setItems((cbs?.[sectionType] || []).sort((a, b) => a.sortOrder - b.sortOrder));
+      setCapabilities(caps || null);
     } catch (_) {
       // fall through — items stays empty
     }
@@ -37,14 +39,21 @@ export default function SectionDetail() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const updateSectionStatus = (newItems) => {
-    if (!section) return;
+    if (!section || !capabilities?.canChangeSectionStatus) return;
     const status = newItems.length === 0 ? 'Empty' : newItems.length >= 4 ? 'Complete' : 'In Progress';
     if (section.completionStatus !== status) {
       base44.entities.JobSection.update(section.id, { completionStatus: status }).then(updated => setSection(updated));
     }
   };
 
+  // Backend mutation guard — second gate independent of frontend capability flags.
+  const assertMutationAllowed = async () => {
+    const res = await base44.functions.invoke('validateJobMutation', { jobId });
+    if (!res.data?.allowed) throw new Error(res.data?.reason || 'Mutation not permitted');
+  };
+
   const handleSaveItem = async (data) => {
+    await assertMutationAllowed();
     if (editItem) {
       const updated = await base44.entities.SectionContent.update(editItem.id, data);
       setItems(prev => { const n = prev.map(i => i.id === editItem.id ? updated : i); updateSectionStatus(n); return n; });
@@ -59,17 +68,20 @@ export default function SectionDetail() {
   };
 
   const handleDelete = async (id) => {
+    await assertMutationAllowed();
     await base44.entities.SectionContent.delete(id);
     setItems(prev => { const n = prev.filter(i => i.id !== id); updateSectionStatus(n); return n; });
   };
 
   const handleDuplicate = async (item) => {
+    await assertMutationAllowed();
     const { id, created_date, updated_date, created_by_id, ...data } = item;
     const created = await base44.entities.SectionContent.create({ ...data, title: `${item.title} (Copy)`, sortOrder: items.length });
     setItems(prev => [...prev, created]);
   };
 
   const handleReorder = async (index, dir) => {
+    await assertMutationAllowed();
     const newItems = [...items];
     const swapIndex = index + dir;
     if (swapIndex < 0 || swapIndex >= newItems.length) return;

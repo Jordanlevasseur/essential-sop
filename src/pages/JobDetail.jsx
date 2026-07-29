@@ -17,15 +17,14 @@ export default function JobDetail() {
   const { isFavorite, toggleFavorite, addRecentlyViewed, isAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
   const isProjectLead = activeMembership?.role === 'project_lead';
-  // Provisioned Essential SOP jobs resolve content from the Master Library — they have
-  // no company SectionContent records, so in-place editing is not available until
-  // the job has been customized. The backend is the authority; we surface this as
-  // a read-only mode for the edit controls only.
-  const isReadOnlyJob = job?.sourceType === 'essential_sop' && !job?.isCustomized;
-  const canEdit = isAdmin && !isReadOnlyJob;
+  // The backend is the single authority on what actions are available.
+  // The frontend must not infer permissions from job origin fields.
+  // capabilities is null until the resolver responds; treat null as read-only.
+  const canEdit = isAdmin && (capabilities?.canEditContent ?? false);
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
+  const [capabilities, setCapabilities] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -39,11 +38,12 @@ export default function JobDetail() {
       // All Job content is resolved through the centralized resolveJob backend.
       // The frontend does not determine how content is assembled — the backend does.
       const res = await base44.functions.invoke('resolveJob', { jobId });
-      const { job: j, sections: secs, contentBySection: cbs } = res.data;
+      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps } = res.data;
 
       setJob(j);
       setSections(secs || []);
       setContentBySection(cbs || {});
+      setCapabilities(caps || null);
 
       if (j && activeCompany && j.companyId && j.companyId !== activeCompany.id) {
         navigate('/');
@@ -66,9 +66,17 @@ export default function JobDetail() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Backend mutation guard — called before every content write.
+  // Provides a server-side safety net independent of frontend capability flags.
+  const assertMutationAllowed = async () => {
+    const res = await base44.functions.invoke('validateJobMutation', { jobId });
+    if (!res.data?.allowed) throw new Error(res.data?.reason || 'Mutation not permitted');
+  };
+
   const handleSaveItem = async (data) => {
     const st = editSectionType || showAddFor;
     if (!st) return;
+    await assertMutationAllowed();
     const sectionRecord = sections.find(s => s.sectionType === st);
     if (editItem) {
       const updated = await base44.entities.SectionContent.update(editItem.id, data);
@@ -88,11 +96,13 @@ export default function JobDetail() {
   };
 
   const handleDelete = async (sectionType, id) => {
+    await assertMutationAllowed();
     await base44.entities.SectionContent.delete(id);
     setContentBySection(prev => ({ ...prev, [sectionType]: (prev[sectionType] || []).filter(i => i.id !== id) }));
   };
 
   const handleReorder = async (sectionType, index, dir) => {
+    await assertMutationAllowed();
     const items = [...(contentBySection[sectionType] || [])];
     const swap = index + dir;
     if (swap < 0 || swap >= items.length) return;
