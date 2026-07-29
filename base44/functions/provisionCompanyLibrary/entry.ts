@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { requirePlatformAdmin, writePlatformAudit } from '../../shared/esopAdminAuth.js';
+import { requirePlatformSuperAdmin, writePlatformAudit } from '../../shared/platformAuth.ts';
 
 /**
  * provisionCompanyLibrary — Company Library Provisioning Engine
@@ -25,7 +25,7 @@ export default async function(req: Request): Promise<Response> {
   try {
     // ── Authorization ────────────────────────────────────────────────────────
     const base44 = createClientFromRequest(req);
-    const { user, error: authError } = await requirePlatformAdmin(base44);
+    const { user, error: authError } = await requirePlatformSuperAdmin(base44);
     if (authError) return authError;
 
     // ── Input validation ─────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ export default async function(req: Request): Promise<Response> {
     // ── Platform audit log ───────────────────────────────────────────────────
     await writePlatformAudit(SR, {
       actingUserId: user.id,
-      actingUserRole: user.role,
+      actingUserRole: 'SUPER_ADMIN',
       action: 'company_library_provisioned',
       extra: {
         metadata: {

@@ -35,6 +35,8 @@ import OwnershipAndAccount from '@/pages/OwnershipAndAccount';
 import MasterLibrary from '@/pages/admin/MasterLibrary';
 import MasterSOPEditor from '@/pages/admin/MasterSOPEditor';
 import EsopAdminGuard from '@/components/admin/EsopAdminGuard';
+import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard';
+import { PlatformProvider } from '@/lib/PlatformContext';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -61,16 +63,18 @@ const AuthenticatedApp = () => {
 
   // Render the main app
   return (
-    <CompanyProvider>
-      <AppProvider>
-        <SeededApp />
-      </AppProvider>
-    </CompanyProvider>
+    <PlatformProvider>
+      <CompanyProvider>
+        <AppProvider>
+          <SeededApp />
+        </AppProvider>
+      </CompanyProvider>
+    </PlatformProvider>
   );
 };
 
 const SeededApp = () => {
-  const { isReady, seedError } = useApp();
+  const { isReady, seedError, isPlatformSuperAdmin } = useApp();
   const { loadingCompany, hasCompany } = useCompany();
 
   if (seedError) {
@@ -92,7 +96,11 @@ const SeededApp = () => {
     );
   }
 
-  if (!hasCompany) {
+  // Platform Super Admins may access /admin/* routes without a CompanyMembership.
+  // They are not redirected to NoCompanyScreen — platform routes are independent
+  // of company context. The route guard (PlatformSuperAdminGuard) handles
+  // auth enforcement on those routes.
+  if (!hasCompany && !isPlatformSuperAdmin) {
     return <NoCompanyScreen />;
   }
 

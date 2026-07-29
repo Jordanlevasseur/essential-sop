@@ -1,0 +1,68 @@
+{
+  "name": "PlatformMembership",
+  "type": "object",
+  "description": "Grants Essential SOP platform administration authority to a user. Independent of CompanyMembership. All client writes blocked; reads scoped to own record only. Mutations occur only through protected backend services.",
+  "rls": {
+    "read": {
+      "data.userId": "{{user.id}}"
+    },
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "userId": {
+      "type": "string",
+      "description": "The user who holds this platform membership."
+    },
+    "platformRole": {
+      "type": "string",
+      "enum": [
+        "SUPER_ADMIN"
+      ],
+      "description": "The platform role granted. Currently only SUPER_ADMIN is defined."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "SUSPENDED"
+      ],
+      "default": "ACTIVE",
+      "description": "ACTIVE = full platform access. SUSPENDED = access revoked without deleting the record."
+    },
+    "grantedByUserId": {
+      "type": "string",
+      "description": "userId of the platform admin who granted this membership. Null for bootstrap records."
+    },
+    "suspendedByUserId": {
+      "type": "string",
+      "description": "userId of the platform admin who suspended this membership."
+    },
+    "suspendedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "suspensionReason": {
+      "type": "string"
+    },
+    "grantedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "userId",
+    "platformRole",
+    "status",
+    "grantedAt"
+  ]
+}

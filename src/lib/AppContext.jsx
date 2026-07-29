@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { base44 } from '@/api/base44Client';
 import { ensureSeeded } from './seedData';
 import { useCompany } from '@/lib/CompanyContext';
+import { usePlatform } from '@/lib/PlatformContext';
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
@@ -17,8 +18,26 @@ const STORAGE_KEYS = {
 
 const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'updated' };
 
+// ── Company capability builder ────────────────────────────────────────────────
+function buildCompanyCapabilities(membership) {
+  const role = membership?.status === 'active' ? (membership?.role || '') : '';
+  const isAdmin = role === 'general_manager' || role === 'project_manager';
+  const isLead  = role === 'project_lead';
+  return {
+    canAccessCompany:        !!role,
+    canManageCompany:        role === 'general_manager',
+    canManageCompanyMembers: role === 'general_manager',
+    canCustomizeCompanyJobs: isAdmin,
+    canRestoreCompanyJobs:   isAdmin,
+    canDecideMasterUpdates:  isAdmin,
+    canViewActivityHistory:  isAdmin,
+    canRequestEdits:         isAdmin || isLead,
+  };
+}
+
 export function AppProvider({ children }) {
-  const { activeCompany, isGeneralManager, hasCompany } = useCompany();
+  const { activeCompany, activeMembership, isGeneralManager, hasCompany } = useCompany();
+  const { isPlatformSuperAdmin, platformCapabilities } = usePlatform();
   const companyId = activeCompany?.id;
 
   const [isReady, setIsReady] = useState(false);
@@ -72,12 +91,9 @@ export function AppProvider({ children }) {
       .catch((err) => { setSeedError(err?.message || 'Failed to initialize'); setIsReady(true); });
   }, [companyId]);
 
-  // Sync admin mode to isGeneralManager
-  useEffect(() => {
-    if (isGeneralManager && userMode !== 'admin') {
-      // Don't auto-set — let user control this via Profile
-    }
-  }, [isGeneralManager]);
+  // technicianViewMode: presentation-only toggle for prototype testing.
+  // It does NOT grant any backend permissions or change authorization.
+  // Renamed from 'admin'/'technician' modes to avoid implying role authority.
 
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.mode, userMode); }, [userMode]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favorites)); }, [favorites]);
@@ -120,12 +136,36 @@ export function AppProvider({ children }) {
 
   const textSizeClass = preferences.textSize === 'small' ? 'text-sm' : preferences.textSize === 'large' ? 'text-lg' : 'text-base';
 
-  // isAdmin respects both the prototype mode switch AND the company role
-  const isAdmin = userMode === 'admin' || isGeneralManager;
+  // ── Explicit, separate capability sets ────────────────────────────────────
+  // Company capabilities derived from CompanyMembership only.
+  const companyCapabilities = buildCompanyCapabilities(activeMembership);
+
+  // isCompanyAdmin: true only when the active company membership is GM or PM.
+  // Never combines with platform authority.
+  const isCompanyAdmin = isGeneralManager || activeMembership?.role === 'project_manager';
+
+  // technicianViewMode: presentation-only toggle for prototype UI testing.
+  // Does NOT grant any backend permissions. Renamed to clarify it is not a role switch.
+  const technicianViewMode = userMode === 'technician';
+
+  // DEPRECATED: isAdmin kept temporarily for backward compatibility with
+  // existing company UI components that check it. It maps to company-admin
+  // status only — never to platform authority.
+  // TODO: Remove in a subsequent edit by updating all consuming components.
+  const isAdmin = isCompanyAdmin;
 
   return (
     <AppContext.Provider value={{
       isReady, seedError, userMode, switchMode,
+      // Company authority (explicit)
+      isCompanyAdmin,
+      companyCapabilities,
+      // Platform authority (explicit) — sourced from PlatformContext
+      isPlatformSuperAdmin,
+      platformCapabilities,
+      // Prototype presentation mode — NOT an authorization signal
+      technicianViewMode,
+      // Legacy alias — company-admin only, never platform. Kept for existing UI compatibility.
       isAdmin,
       isGeneralManager,
       favorites, toggleFavorite, isFavorite,

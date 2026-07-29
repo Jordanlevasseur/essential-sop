@@ -1,5 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { requireEsopAdmin, requirePlatformAdmin, writePlatformAudit } from '../../shared/esopAdminAuth.js';
+import { requirePlatformSuperAdmin, writePlatformAudit } from '../../shared/platformAuth.ts';
 
 /**
  * manageMasterSOP — All Essential SOP Master Library and platform role operations.
@@ -38,11 +38,11 @@ export default async function(req) {
     const now = new Date().toISOString();
     const SR = base44.asServiceRole;
 
-    // ── MANAGE ROLE (admin only) ─────────────────────────────────────────────
-    // Only an existing admin may assign or remove platform roles.
-    // Users may never modify their own platform role.
+    // ── MANAGE ROLE (platform super admin only) ──────────────────────────────
+    // Only an active PlatformMembership(SUPER_ADMIN) may grant or revoke
+    // platform memberships. Users may never modify their own platform membership.
     if (action === 'manage_role') {
-      const { user, error: authError } = await requirePlatformAdmin(base44);
+      const { user, error: authError } = await requirePlatformSuperAdmin(base44);
       if (authError) return authError;
 
       const { targetUserId, role, operation } = body; // operation: 'assign' | 'remove'
@@ -57,51 +57,98 @@ export default async function(req) {
       if (!operation || !['assign', 'remove'].includes(operation)) {
         return Response.json({ error: 'operation must be assign or remove' }, { status: 400 });
       }
-      const ALLOWED_PLATFORM_ROLES = ['admin', 'esop_admin', 'user'];
-      if (!ALLOWED_PLATFORM_ROLES.includes(role)) {
-        return Response.json({ error: `Invalid platform role. Allowed: ${ALLOWED_PLATFORM_ROLES.join(', ')}` }, { status: 400 });
-      }
+      // manage_role now operates on PlatformMembership, not User.role.
+      // operation: 'assign' creates/reactivates a PlatformMembership(SUPER_ADMIN)
+      // operation: 'remove' suspends the existing PlatformMembership
 
-      // Self-modification guard — 403
+      if (!targetUserId || typeof targetUserId !== 'string' || !targetUserId.trim()) {
+        return Response.json({ error: 'targetUserId is required' }, { status: 400 });
+      }
+      if (!operation || !['assign', 'remove'].includes(operation)) {
+        return Response.json({ error: 'operation must be assign or remove' }, { status: 400 });
+      }
+      // Self-modification guard
       if (targetUserId === user.id) {
-        return Response.json({ error: 'Users may not modify their own platform role' }, { status: 403 });
+        return Response.json({ error: 'Users may not modify their own platform membership' }, { status: 403 });
       }
 
-      // Target user lookup — controlled 404, never a raw throw
       let targetUser;
-      try {
-        targetUser = await SR.entities.User.get(targetUserId);
-      } catch (_) {
-        return Response.json({ error: 'Target user not found' }, { status: 404 });
+      try { targetUser = await SR.entities.User.get(targetUserId); } catch (_) {}
+      if (!targetUser) return Response.json({ error: 'Target user not found' }, { status: 404 });
+
+      const existingMemberships = await SR.entities.PlatformMembership.filter({ userId: targetUserId });
+      const existing = existingMemberships?.[0] || null;
+
+      if (operation === 'assign') {
+        if (existing) {
+          // Reactivate if suspended
+          if (existing.status === 'ACTIVE') {
+            return Response.json({ success: true, alreadyActive: true, membershipId: existing.id });
+          }
+          await SR.entities.PlatformMembership.update(existing.id, {
+            status: 'ACTIVE',
+            grantedByUserId: user.id,
+            grantedAt: now,
+            suspendedAt: null,
+            suspendedByUserId: null,
+            suspensionReason: null,
+            updatedAt: now,
+          });
+          await writePlatformAudit(SR, {
+            actingUserId: user.id,
+            actingUserRole: 'SUPER_ADMIN',
+            action: 'platform_role_assigned',
+            targetUserId,
+            newPlatformRole: 'SUPER_ADMIN',
+            newPlatformStatus: 'ACTIVE',
+            previousPlatformStatus: 'SUSPENDED',
+          });
+          return Response.json({ success: true, membershipId: existing.id });
+        }
+        const membership = await SR.entities.PlatformMembership.create({
+          userId: targetUserId,
+          platformRole: 'SUPER_ADMIN',
+          status: 'ACTIVE',
+          grantedByUserId: user.id,
+          grantedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await writePlatformAudit(SR, {
+          actingUserId: user.id,
+          actingUserRole: 'SUPER_ADMIN',
+          action: 'platform_role_assigned',
+          targetUserId,
+          newPlatformRole: 'SUPER_ADMIN',
+          newPlatformStatus: 'ACTIVE',
+        });
+        return Response.json({ success: true, membershipId: membership.id });
       }
-      if (!targetUser) {
-        return Response.json({ error: 'Target user not found' }, { status: 404 });
+
+      // operation === 'remove' — suspend
+      if (!existing || existing.status === 'SUSPENDED') {
+        return Response.json({ success: true, alreadySuspended: true });
       }
-
-      const previousRole = targetUser.role || 'user';
-      const newRole = operation === 'remove' ? 'user' : role;
-
-      // Apply role change, then immediately write audit.
-      // Both must succeed together; if the audit write fails we surface a 500
-      // rather than silently leaving an un-audited role change.
-      await SR.entities.User.update(targetUserId, { role: newRole });
-
+      await SR.entities.PlatformMembership.update(existing.id, {
+        status: 'SUSPENDED',
+        suspendedByUserId: user.id,
+        suspendedAt: now,
+        updatedAt: now,
+      });
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
-        action: operation === 'assign' ? 'platform_role_assigned' : 'platform_role_removed',
-        extra: {
-          targetUserId,
-          targetRole: role,
-          metadata: { operation, previousRole, newRole },
-        },
+        actingUserRole: 'SUPER_ADMIN',
+        action: 'platform_role_removed',
+        targetUserId,
+        previousPlatformRole: 'SUPER_ADMIN',
+        previousPlatformStatus: 'ACTIVE',
+        newPlatformStatus: 'SUSPENDED',
       });
-
-      return Response.json({ success: true, targetUserId, previousRole, newRole });
+      return Response.json({ success: true, suspended: true, membershipId: existing.id });
     }
 
-    // ── All remaining actions require esop_admin or admin ───────────────────
-    const { user, error: authError } = await requireEsopAdmin(base44);
+    // ── All remaining actions require an active PlatformMembership(SUPER_ADMIN) ─
+    const { user, error: authError } = await requirePlatformSuperAdmin(base44);
     if (authError) return authError;
 
     // ── LIST ────────────────────────────────────────────────────────────────
@@ -153,7 +200,7 @@ export default async function(req) {
       }
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_created',
         extra: { masterId: master.id, masterTitle: master.title },
       });
@@ -188,7 +235,7 @@ export default async function(req) {
 
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_draft_updated',
         extra: { masterId, masterTitle: master.title, metadata: { fieldsUpdated: !!fields, sectionUpdated: !!sectionId } },
       });
@@ -211,7 +258,7 @@ export default async function(req) {
       // Write audit BEFORE deletion so title is still available
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_deleted',
         extra: { masterId, masterTitle: master.title },
       });
@@ -250,7 +297,7 @@ export default async function(req) {
       }
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_duplicated',
         extra: { masterId: newMaster.id, masterTitle: newMaster.title, metadata: { sourceMasterId: masterId } },
       });
@@ -298,7 +345,7 @@ export default async function(req) {
 
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_version_published',
         extra: {
           masterId,
@@ -322,7 +369,7 @@ export default async function(req) {
       await SR.entities.EssentialSOPMaster.update(masterId, { status: 'archived', updatedAt: now });
       await writePlatformAudit(SR, {
         actingUserId: user.id,
-        actingUserRole: user.role,
+        actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_archived',
         extra: { masterId, masterTitle: master.title },
       });
