@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText } from 'lucide-react';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
+import { resolveLegalLink } from '@/lib/appSettings';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -119,6 +120,18 @@ export default function Profile() {
         <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />
         <Divider />
         <Row icon={LogOut} label="Sign Out" onClick={() => { localStorage.clear(); window.location.href = '/'; }} />
+      </Section>
+
+      <Section title="Legal">
+        <Row icon={FileText} label="Privacy Policy" onClick={() => {
+          const r = resolveLegalLink('privacyPolicyUrl', '/privacy-policy');
+          if (!r.external) navigate(r.route);
+        }} />
+        <Divider />
+        <Row icon={ScrollText} label="Terms of Service" onClick={() => {
+          const r = resolveLegalLink('termsOfServiceUrl', '/terms-of-service');
+          if (!r.external) navigate(r.route);
+        }} />
       </Section>
 
       {/* Danger zone */}

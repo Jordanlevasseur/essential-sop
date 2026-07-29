@@ -8,6 +8,7 @@ import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
 import { safeReturnTo } from "@/lib/authReturnTo";
+import { resolveLegalLink } from "@/lib/appSettings";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -50,6 +51,23 @@ export default function Login() {
           >
             Create one
           </Link>
+          <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-border">
+            <button
+              type="button"
+              onClick={() => { const r = resolveLegalLink('privacyPolicyUrl', '/privacy-policy'); if (!r.external) window.location.href = r.route; }}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Privacy Policy
+            </button>
+            <span className="text-muted-foreground text-xs">·</span>
+            <button
+              type="button"
+              onClick={() => { const r = resolveLegalLink('termsOfServiceUrl', '/terms-of-service'); if (!r.external) window.location.href = r.route; }}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Terms of Service
+            </button>
+          </div>
         </>
       }
     >

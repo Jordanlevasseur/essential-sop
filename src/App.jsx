@@ -15,6 +15,8 @@ import SectionDetail from '@/pages/SectionDetail';
 import CreateJob from '@/pages/CreateJob';
 import Assistant from '@/pages/Assistant';
 import Profile from '@/pages/Profile';
+import PrivacyPolicy from '@/pages/PrivacyPolicy';
+import TermsOfService from '@/pages/TermsOfService';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -79,6 +81,9 @@ const SeededApp = () => {
         <Route path="/jobs/:jobId/:sectionType" element={<SectionDetail />} />
         <Route path="/create-job" element={<CreateJob />} />
       </Route>
+      {/* Legal pages — accessible without the bottom nav wrapper */}
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/terms-of-service" element={<TermsOfService />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
