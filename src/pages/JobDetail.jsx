@@ -17,6 +17,12 @@ export default function JobDetail() {
   const { isFavorite, toggleFavorite, addRecentlyViewed, isAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
   const isProjectLead = activeMembership?.role === 'project_lead';
+  // Provisioned Essential SOP jobs resolve content from the Master Library — they have
+  // no company SectionContent records, so in-place editing is not available until
+  // the job has been customized. The backend is the authority; we surface this as
+  // a read-only mode for the edit controls only.
+  const isReadOnlyJob = job?.sourceType === 'essential_sop' && !job?.isCustomized;
+  const canEdit = isAdmin && !isReadOnlyJob;
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
@@ -30,29 +36,21 @@ export default function JobDetail() {
 
   const loadData = useCallback(async () => {
     try {
-      const [j, secs, contents] = await Promise.all([
-        base44.entities.Job.get(jobId),
-        base44.entities.JobSection.filter({ jobId }, 'sortOrder', 10),
-        base44.entities.SectionContent.filter({ jobId }, 'sortOrder', 500),
-      ]);
+      // All Job content is resolved through the centralized resolveJob backend.
+      // The frontend does not determine how content is assembled — the backend does.
+      const res = await base44.functions.invoke('resolveJob', { jobId });
+      const { job: j, sections: secs, contentBySection: cbs } = res.data;
+
       setJob(j);
       setSections(secs || []);
-      const bySection = {};
-      for (const item of (contents || [])) {
-        // Skip archived documentation records
-        if (item.sectionType === 'documentation') continue;
-        if (!bySection[item.sectionType]) bySection[item.sectionType] = [];
-        bySection[item.sectionType].push(item);
-      }
-      for (const key of Object.keys(bySection)) {
-        bySection[key].sort((a, b) => a.sortOrder - b.sortOrder);
-      }
-      setContentBySection(bySection);
+      setContentBySection(cbs || {});
+
       if (j && activeCompany && j.companyId && j.companyId !== activeCompany.id) {
         navigate('/');
         return;
       }
       if (j) addRecentlyViewed(j.id, j.title);
+
       // Check for active temporary edit grant (Project Lead)
       const user = await base44.auth.me().catch(() => null);
       if (user) {
@@ -125,7 +123,7 @@ export default function JobDetail() {
           <button onClick={() => toggleFavorite(job.id)} className="icon-btn no-select touch-active" aria-label="Toggle favorite">
             <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
           </button>
-          {isAdmin && (
+          {canEdit && (
             <button
               onClick={() => setEditMode(e => !e)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active transition-colors ${editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}
@@ -180,7 +178,7 @@ export default function JobDetail() {
               sectionType={sectionType}
               sectionDef={def}
               items={items}
-              isAdmin={isAdmin}
+              isAdmin={canEdit}
               editMode={editMode}
               onEdit={(item) => { setEditItem(item); setEditSectionType(sectionType); }}
               onDelete={(id) => handleDelete(sectionType, id)}

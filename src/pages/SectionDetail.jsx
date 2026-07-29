@@ -12,22 +12,26 @@ export default function SectionDetail() {
   const { isAdmin, session, setSessionItem, clearSessionForJob, user } = useApp();
   const [job, setJob] = useState(null);
   const [section, setSection] = useState(null);
+  // Editing only available for company-owned Jobs; provisioned Essential SOP Jobs are read-only
+  // until customization is implemented in a future edit.
+  const canEdit = isAdmin && !(job?.sourceType === 'essential_sop' && !job?.isCustomized);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
 
-  const loadData = useCallback(() => {
-    Promise.all([
-      base44.entities.Job.get(jobId),
-      base44.entities.JobSection.filter({ jobId, sectionType }, 'sortOrder', 1),
-      base44.entities.SectionContent.filter({ jobId, sectionType }, 'sortOrder', 200),
-    ]).then(([j, secs, contents]) => {
+  const loadData = useCallback(async () => {
+    try {
+      // All Job content is resolved through the centralized resolveJob backend.
+      const res = await base44.functions.invoke('resolveJob', { jobId });
+      const { job: j, sections: secs, contentBySection: cbs } = res.data;
       setJob(j);
-      setSection(secs?.[0] || null);
-      setItems((contents || []).sort((a, b) => a.sortOrder - b.sortOrder));
-      setLoading(false);
-    }).catch(() => setLoading(false));
+      setSection((secs || []).find(s => s.sectionType === sectionType) || null);
+      setItems((cbs?.[sectionType] || []).sort((a, b) => a.sortOrder - b.sortOrder));
+    } catch (_) {
+      // fall through — items stays empty
+    }
+    setLoading(false);
   }, [jobId, sectionType]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -97,7 +101,7 @@ export default function SectionDetail() {
             <p className="text-xs text-neutral-400 truncate">{job?.title}</p>
             <h1 className="font-semibold text-neutral-900 truncate">{sectionTitle}</h1>
           </div>
-          {isAdmin && (
+          {canEdit && (
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-1">
               <Plus size={16} /> Add
             </button>
@@ -111,13 +115,13 @@ export default function SectionDetail() {
         {items.length === 0 ? (
           <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center">
             <p className="text-neutral-400 text-sm">No content in this section yet.</p>
-            {isAdmin && <p className="text-xs text-blue-600 mt-1">Tap "Add" to create the first item.</p>}
+            {canEdit && <p className="text-xs text-blue-600 mt-1">Tap "Add" to create the first item.</p>}
           </div>
         ) : (
           <SectionContentRenderer
             sectionType={sectionType}
             items={items}
-            isAdmin={isAdmin}
+            isAdmin={canEdit}
             session={session}
             setSessionItem={setSessionItem}
             sessionPrefix={`${jobId}_${sectionType}`}
@@ -130,7 +134,7 @@ export default function SectionDetail() {
         )}
       </div>
 
-      {(showAdd || editItem) && (
+      {canEdit && (showAdd || editItem) && (
         <ContentEditDialog
           sectionType={sectionType}
           item={editItem}
