@@ -32,6 +32,9 @@ import AcceptInvitation from '@/pages/AcceptInvitation';
 import CompanyProfile from '@/pages/CompanyProfile';
 import RoleLabels from '@/pages/RoleLabels';
 import OwnershipAndAccount from '@/pages/OwnershipAndAccount';
+import MasterLibrary from '@/pages/admin/MasterLibrary';
+import MasterSOPEditor from '@/pages/admin/MasterSOPEditor';
+import EsopAdminGuard from '@/components/admin/EsopAdminGuard';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -117,6 +120,9 @@ const SeededApp = () => {
       <Route path="/company-profile" element={<CompanyProfile />} />
       <Route path="/role-labels" element={<RoleLabels />} />
       <Route path="/ownership" element={<OwnershipAndAccount />} />
+      {/* Essential SOP Admin — internal platform administration only */}
+      <Route path="/admin/master-library" element={<EsopAdminGuard><MasterLibrary /></EsopAdminGuard>} />
+      <Route path="/admin/master-library/:masterId" element={<EsopAdminGuard><MasterSOPEditor /></EsopAdminGuard>} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

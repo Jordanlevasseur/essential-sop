@@ -2,10 +2,11 @@
   "properties": {
     "role": {
       "type": "string",
-      "description": "The role of the user in the app",
+      "description": "The role of the user in the app. 'esop_admin' grants access to the Essential SOP Master Library administration system.",
       "enum": [
         "admin",
-        "user"
+        "user",
+        "esop_admin"
       ]
     }
   },
