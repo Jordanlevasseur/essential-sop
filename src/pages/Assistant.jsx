@@ -17,7 +17,7 @@ export default function Assistant() {
   const { activeCompany } = useCompany();
   const companyId = activeCompany?.id;
   const [jobs, setJobs] = useState([]);
-  const [allContent, setAllContent] = useState([]);
+  const [contentIndex, setContentIndex] = useState([]);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -26,17 +26,17 @@ export default function Assistant() {
 
   useEffect(() => {
     if (!companyId) { setLoading(false); return; }
-    setJobs([]); setAllContent([]); setMessages([]);
+    setJobs([]); setContentIndex([]); setMessages([]);
     setLoading(true);
-    Promise.all([
-      base44.entities.Job.filter({ companyId }, '-updated_date', 200),
-      base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
-    ]).then(([j, c]) => {
-      setJobs(j || []);
-      // Exclude archived documentation records
-      setAllContent((c || []).filter(item => item.sectionType !== 'documentation'));
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    // Use resolver-backed service so provisioned SOP content (including overrides)
+    // is visible to search. No merge logic lives in this component.
+    base44.functions.invoke('resolveJobsForAssistant', { companyId })
+      .then(res => {
+        setJobs(res?.data?.jobs || []);
+        setContentIndex(res?.data?.contentIndex || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [companyId]);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
@@ -48,11 +48,11 @@ export default function Assistant() {
     setMessages(prev => [...prev, { role: 'user', text: q }]);
     setSearching(true);
     setTimeout(() => {
-      const result = searchJobs(q, jobs, allContent);
+      const result = searchJobs(q, jobs, contentIndex);
       setSearching(false);
       setMessages(prev => [...prev, result]);
     }, 500);
-  }, [input, searching, jobs, allContent]);
+  }, [input, searching, jobs, contentIndex]);
 
   if (loading) {
     return (
@@ -156,7 +156,10 @@ export default function Assistant() {
   );
 }
 
-function searchJobs(query, jobs, allContent) {
+// Search function now operates on the resolver-backed contentIndex.
+// The contentIndex includes provisioned SOP content (master + override) from the server.
+// No merge logic here — results come pre-resolved.
+function searchJobs(query, jobs, contentIndex) {
   const q = query.toLowerCase();
   const keywords = q.split(/\s+/).filter(w => w.length > 2);
   const matchingJobs = new Set();
@@ -170,10 +173,10 @@ function searchJobs(query, jobs, allContent) {
   }
 
   const contentByJob = {};
-  for (const item of allContent) {
+  for (const item of contentIndex) {
     if (!contentByJob[item.jobId]) contentByJob[item.jobId] = [];
     contentByJob[item.jobId].push(item);
-    const itemText = [item.title, item.body, item.metadata?.specification || '', item.metadata?.requiredAction || ''].join(' ').toLowerCase();
+    const itemText = [item.title, item.body || ''].join(' ').toLowerCase();
     if (keywords.some(k => itemText.includes(k))) matchingJobs.add(item.jobId);
   }
 
@@ -196,8 +199,7 @@ function searchJobs(query, jobs, allContent) {
     if (isRespiratorQuery) {
       const respiratorItems = contents.filter(c =>
         c.title.toLowerCase().includes('respirator') ||
-        c.body?.toLowerCase().includes('respirator') ||
-        c.metadata?.requiredAction?.toLowerCase().includes('respirator')
+        (c.body || '').toLowerCase().includes('respirator')
       );
       if (respiratorItems.length > 0) {
         jobParts.push('Requires a respirator — see Safety section.');
@@ -209,8 +211,7 @@ function searchJobs(query, jobs, allContent) {
       if (isToolsQuery || (!isProcedureQuery && !isQualityQuery && !isSafetyQuery && !isMaterialsQuery)) {
         const tools = contents.filter(c => c.sectionType === 'tools');
         if (tools.length > 0) {
-          const reqTools = tools.filter(t => t.isRequired).map(t => t.title).join(', ');
-          jobParts.push(`Tools: ${reqTools || tools.map(t => t.title).join(', ')}`);
+          jobParts.push(`Tools: ${tools.map(t => t.title).join(', ')}`);
           if (tools[0]) sources.push({ jobId, jobTitle: job.title, sectionType: 'tools', section: 'Tools', item: tools[0].title });
         }
       }
@@ -224,8 +225,7 @@ function searchJobs(query, jobs, allContent) {
       if (isSafetyQuery || (!isToolsQuery && !isProcedureQuery && !isQualityQuery && !isMaterialsQuery)) {
         const safety = contents.filter(c => c.sectionType === 'safety');
         if (safety.length > 0) {
-          const critical = safety.filter(s => s.isCritical);
-          jobParts.push(`Safety: ${critical.length} critical item(s) — ${critical.map(s => s.title).join(', ')}`);
+          jobParts.push(`Safety: ${safety.length} item(s) — ${safety.map(s => s.title).join(', ')}`);
           sources.push({ jobId, jobTitle: job.title, sectionType: 'safety', section: 'Safety', item: safety[0].title });
         }
       }
@@ -239,8 +239,7 @@ function searchJobs(query, jobs, allContent) {
       if (isMaterialsQuery) {
         const mats = contents.filter(c => c.sectionType === 'materials');
         if (mats.length > 0) {
-          const reqMats = mats.filter(m => m.isRequired).map(m => `${m.title} (${m.metadata?.quantity || 1} ${m.metadata?.unit || ''})`).join(', ');
-          jobParts.push(`Materials: ${reqMats}`);
+          jobParts.push(`Materials: ${mats.map(m => m.title).join(', ')}`);
           sources.push({ jobId, jobTitle: job.title, sectionType: 'materials', section: 'Materials', item: mats[0].title });
         }
       }

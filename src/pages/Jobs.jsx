@@ -9,11 +9,11 @@ import FilterSheet from '@/components/jobs/FilterSheet';
 
 export default function Jobs() {
   const navigate = useNavigate();
-  const { isAdmin, favorites, toggleFavorite, isFavorite, preferences } = useApp();
+  const { isAdmin, toggleFavorite, isFavorite, preferences } = useApp();
   const { activeCompany } = useCompany();
   const companyId = activeCompany?.id;
   const [jobs, setJobs] = useState([]);
-  const [allContent, setAllContent] = useState([]);
+  const [contentIndex, setContentIndex] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -21,15 +21,16 @@ export default function Jobs() {
 
   useEffect(() => {
     if (!companyId) return;
-    Promise.all([
-      base44.entities.Job.filter({ companyId }, '-updated_date', 200),
-      base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
-    ]).then(([j, c]) => {
-      setJobs(j || []);
-      // Exclude documentation records — same as Assistant
-      setAllContent((c || []).filter(item => item.sectionType !== 'documentation'));
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    setLoading(true);
+    // Use resolver-backed service so provisioned SOP Jobs show company-overridden titles.
+    // No merge logic lives here — all resolution happens server-side.
+    base44.functions.invoke('resolveJobsForCompany', { companyId })
+      .then(res => {
+        setJobs(res?.data?.jobs || []);
+        setContentIndex(res?.data?.contentIndex || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [companyId]);
 
   const publishedJobs = useMemo(() => jobs.filter(j => !j.isArchived && j.status === 'Published'), [jobs]);
@@ -41,17 +42,18 @@ export default function Jobs() {
     const results = [];
     const matchMap = {};
 
+    // Match against resolved job metadata (title already override-resolved from server)
     for (const job of publishedJobs) {
       const jobFields = [job.title, job.shortDescription, job.trade, job.category, ...(job.tags || [])].join(' ').toLowerCase();
       if (jobFields.includes(q)) { results.push({ job, match: null }); matchMap[job.id] = true; }
     }
 
+    // Match against resolved content index (includes SOP master + override content)
     const contentByJob = {};
-    for (const item of allContent) {
+    for (const item of contentIndex) {
       if (!contentByJob[item.jobId]) contentByJob[item.jobId] = {};
-      const section = item.sectionType;
-      if (!contentByJob[item.jobId][section]) contentByJob[item.jobId][section] = [];
-      contentByJob[item.jobId][section].push(item);
+      if (!contentByJob[item.jobId][item.sectionType]) contentByJob[item.jobId][item.sectionType] = [];
+      contentByJob[item.jobId][item.sectionType].push(item);
     }
 
     for (const job of publishedJobs) {
@@ -73,7 +75,7 @@ export default function Jobs() {
       if (foundMatch) results.push({ job, match: foundMatch });
     }
     return results;
-  }, [search, publishedJobs, allContent]);
+  }, [search, publishedJobs, contentIndex]);
 
   const filteredJobs = useMemo(() => {
     let list = searchResults ? searchResults.map(r => r.job) : publishedJobs;
@@ -81,13 +83,13 @@ export default function Jobs() {
     if (filters.skillLevel) list = list.filter(j => j.skillLevel === filters.skillLevel);
     if (filters.category) list = list.filter(j => j.category === filters.category);
     if (preferences.defaultSort === 'title') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
-    else if (preferences.defaultSort === 'trade') list = [...list].sort((a, b) => a.trade.localeCompare(b.trade));
+    else if (preferences.defaultSort === 'trade') list = [...list].sort((a, b) => (a.trade || '').localeCompare(b.trade || ''));
     else list = [...list].sort((a, b) => new Date(b.updated_date) - new Date(a.updated_date));
     return list;
   }, [searchResults, publishedJobs, filters, preferences.defaultSort]);
 
-  const trades = [...new Set(publishedJobs.map(j => j.trade))];
-  const categories = [...new Set(publishedJobs.map(j => j.category))];
+  const trades = [...new Set(publishedJobs.map(j => j.trade).filter(Boolean))];
+  const categories = [...new Set(publishedJobs.map(j => j.category).filter(Boolean))];
 
   if (loading) {
     return (

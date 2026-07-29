@@ -1,7 +1,13 @@
 {
   "name": "JobOverride",
   "type": "object",
-  "description": "Company-owned override for a provisioned Essential SOP Job. Stores only company-owned changes; never duplicates the full Master. One record per company+job combination, enforced by application logic.",
+  "description": "Company-owned override for a provisioned Essential SOP Job. All client writes (create, update, delete) are BLOCKED via RLS \u2014 only service-role writes via saveJobOverride are permitted. Reads are also blocked at entity level; the frontend receives override metadata exclusively through resolveJob and resolveJobsForCompany resolver responses.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "companyId": {
       "type": "string",
@@ -10,6 +16,10 @@
     "jobId": {
       "type": "string",
       "description": "The stable company Job ID (Job.id). Never changes."
+    },
+    "deterministicKey": {
+      "type": "string",
+      "description": "Stable key 'override_${companyId}_${jobId}' stored at creation. Used for duplicate detection after a concurrent first-create race."
     },
     "sourceMasterId": {
       "type": "string",
@@ -21,7 +31,7 @@
     },
     "overrideData": {
       "type": "object",
-      "description": "The actual company override values. Allowed keys: title, shortDescription, sectionOverrides. sectionOverrides is a map of sectionType -> array of content items.",
+      "description": "The actual company override values. Allowed keys: title, shortDescription, sectionOverrides. Each sectionOverrides item carries a _itemId for stable nested identity.",
       "properties": {
         "title": {
           "type": "string"
@@ -31,7 +41,7 @@
         },
         "sectionOverrides": {
           "type": "object",
-          "description": "Map of sectionType to full replacement content array for that section."
+          "description": "Map of sectionType to full replacement content array. Each item must have a _itemId for stable identity across saves and reorders."
         }
       }
     },
@@ -40,7 +50,7 @@
       "items": {
         "type": "string"
       },
-      "description": "List of field names the company has overridden. Used for display and future restore."
+      "description": "List of field names the company has overridden."
     },
     "revision": {
       "type": "number",
@@ -49,11 +59,20 @@
     },
     "mutationKey": {
       "type": "string",
-      "description": "Client-supplied idempotency key. Prevents duplicate saves from retries."
+      "description": "Idempotency key from the first save."
     },
     "lastMutationKey": {
       "type": "string",
       "description": "The most recently applied mutation key. Rejects re-submission of the same key."
+    },
+    "auditPending": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if the override was saved but the ActivityLog audit write failed. Enables retry to complete the missing audit record without re-applying the override."
+    },
+    "auditPendingRevision": {
+      "type": "number",
+      "description": "The revision for which the audit record is pending. Used to reconstruct the correct audit entry on retry."
     },
     "createdByUserId": {
       "type": "string",
