@@ -1,0 +1,49 @@
+{
+  "name": "ActivityLog",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "actingUserId": {
+      "type": "string"
+    },
+    "actionType": {
+      "type": "string",
+      "enum": [
+        "plan_selected",
+        "plan_upgraded",
+        "plan_downgraded",
+        "downgrade_blocked",
+        "account_over_limit",
+        "account_within_limit",
+        "membership_activation_blocked"
+      ]
+    },
+    "previousPlan": {
+      "type": "string"
+    },
+    "newPlan": {
+      "type": "string"
+    },
+    "activeSeatCount": {
+      "type": "number"
+    },
+    "seatLimit": {
+      "type": "number"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "companyId",
+    "actingUserId",
+    "actionType",
+    "timestamp"
+  ]
+}

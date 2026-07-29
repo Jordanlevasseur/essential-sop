@@ -29,6 +29,67 @@
     },
     "planPlaceholder": {
       "type": "string"
+    },
+    "subscriptionPlanCode": {
+      "type": "string",
+      "default": "contractor_plus"
+    },
+    "subscriptionStatus": {
+      "type": "string",
+      "enum": [
+        "prototype",
+        "trialing",
+        "active",
+        "past_due",
+        "cancelled",
+        "suspended"
+      ],
+      "default": "prototype"
+    },
+    "subscriptionSource": {
+      "type": "string",
+      "enum": [
+        "prototype",
+        "apple",
+        "web",
+        "manual",
+        "none"
+      ],
+      "default": "prototype"
+    },
+    "billingCustomerId": {
+      "type": "string"
+    },
+    "billingSubscriptionId": {
+      "type": "string"
+    },
+    "trialStartedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trialEndsAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "currentPeriodStartedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "currentPeriodEndsAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cancelAtPeriodEnd": {
+      "type": "boolean",
+      "default": false
+    },
+    "subscriptionCreatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subscriptionUpdatedAt": {
+      "type": "string",
+      "format": "date-time"
     }
   },
   "required": [
