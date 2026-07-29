@@ -195,7 +195,7 @@ export default function CreateJob() {
         {step === 2 && (
           <div className="space-y-4">
             <div className="bg-app-info-bg rounded-lg p-3 border border-app-border">
-              <p className="text-sm text-app-info">Seven sections have been created for <strong>{form.title}</strong>. Tap any section to add content.</p>
+              <p className="text-sm text-app-info">Six sections have been created for <strong>{form.title}</strong>. Tap any section to add content.</p>
             </div>
             <div className="space-y-2">
               {SECTION_DEFINITIONS.map(def => {
@@ -228,7 +228,7 @@ export default function CreateJob() {
               </button>
               <button onClick={() => navigate(`/jobs/${jobId}`)}
                 className="w-full py-3 border border-app-border rounded-lg text-sm font-medium text-app-text flex items-center justify-center gap-2">
-                <Eye size={16} /> Preview as Technician
+                <Eye size={16} /> Preview Job
               </button>
               <button onClick={() => setShowPublishConfirm(true)} disabled={saving}
                 className="w-full py-3 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled flex items-center justify-center gap-2">

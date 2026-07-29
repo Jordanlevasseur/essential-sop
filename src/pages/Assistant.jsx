@@ -9,7 +9,7 @@ const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
   'What tools are needed for an exterior door replacement?',
   'Summarize the crawlspace inspection procedure.',
-  'What photos are required for a water heater replacement?',
+  'What are the quality standards for a gutter repair?',
 ];
 
 export default function Assistant() {
@@ -31,7 +31,12 @@ export default function Assistant() {
     Promise.all([
       base44.entities.Job.filter({ companyId }, '-updated_date', 200),
       base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
-    ]).then(([j, c]) => { setJobs(j || []); setAllContent(c || []); setLoading(false); }).catch(() => setLoading(false));
+    ]).then(([j, c]) => {
+      setJobs(j || []);
+      // Exclude archived documentation records
+      setAllContent((c || []).filter(item => item.sectionType !== 'documentation'));
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [companyId]);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
@@ -183,7 +188,7 @@ function searchJobs(query, jobs, allContent) {
     const isRespiratorQuery = q.includes('respirator') || q.includes('respir');
     const isToolsQuery = q.includes('tool') || q.includes('equipment');
     const isProcedureQuery = q.includes('procedure') || q.includes('step') || q.includes('how') || q.includes('summarize');
-    const isPhotoQuery = q.includes('photo') || q.includes('documentation') || q.includes('picture');
+    const isQualityQuery = q.includes('quality') || q.includes('standard') || q.includes('acceptable');
     const isSafetyQuery = q.includes('safety') || q.includes('hazard') || q.includes('ppe');
     const isMaterialsQuery = q.includes('material') || q.includes('supply') || q.includes('product');
     let jobParts = [];
@@ -201,7 +206,7 @@ function searchJobs(query, jobs, allContent) {
         });
       } else { continue; }
     } else {
-      if (isToolsQuery || (!isProcedureQuery && !isPhotoQuery && !isSafetyQuery && !isMaterialsQuery)) {
+      if (isToolsQuery || (!isProcedureQuery && !isQualityQuery && !isSafetyQuery && !isMaterialsQuery)) {
         const tools = contents.filter(c => c.sectionType === 'tools');
         if (tools.length > 0) {
           const reqTools = tools.filter(t => t.isRequired).map(t => t.title).join(', ');
@@ -209,14 +214,14 @@ function searchJobs(query, jobs, allContent) {
           if (tools[0]) sources.push({ jobId, jobTitle: job.title, sectionType: 'tools', section: 'Tools', item: tools[0].title });
         }
       }
-      if (isProcedureQuery || (!isToolsQuery && !isPhotoQuery && !isSafetyQuery && !isMaterialsQuery)) {
+      if (isProcedureQuery || (!isToolsQuery && !isQualityQuery && !isSafetyQuery && !isMaterialsQuery)) {
         const steps = contents.filter(c => c.sectionType === 'procedure');
         if (steps.length > 0) {
           jobParts.push(`Procedure: ${steps.length} steps starting with "${steps[0].title}"`);
           sources.push({ jobId, jobTitle: job.title, sectionType: 'procedure', section: 'Procedure', item: steps[0].title });
         }
       }
-      if (isSafetyQuery || (!isToolsQuery && !isProcedureQuery && !isPhotoQuery && !isMaterialsQuery)) {
+      if (isSafetyQuery || (!isToolsQuery && !isProcedureQuery && !isQualityQuery && !isMaterialsQuery)) {
         const safety = contents.filter(c => c.sectionType === 'safety');
         if (safety.length > 0) {
           const critical = safety.filter(s => s.isCritical);
@@ -224,12 +229,11 @@ function searchJobs(query, jobs, allContent) {
           sources.push({ jobId, jobTitle: job.title, sectionType: 'safety', section: 'Safety', item: safety[0].title });
         }
       }
-      if (isPhotoQuery || (!isToolsQuery && !isProcedureQuery && !isSafetyQuery && !isMaterialsQuery)) {
-        const docs = contents.filter(c => c.sectionType === 'documentation');
-        if (docs.length > 0) {
-          const reqDocs = docs.filter(d => d.isRequired);
-          jobParts.push(`Documentation: ${reqDocs.length} required — ${reqDocs.map(d => d.title).join(', ')}`);
-          sources.push({ jobId, jobTitle: job.title, sectionType: 'documentation', section: 'Documentation', item: docs[0].title });
+      if (isQualityQuery || (!isToolsQuery && !isProcedureQuery && !isSafetyQuery && !isMaterialsQuery)) {
+        const quality = contents.filter(c => c.sectionType === 'quality');
+        if (quality.length > 0) {
+          jobParts.push(`Quality Standards: ${quality.map(q => q.title).slice(0, 3).join(', ')}`);
+          sources.push({ jobId, jobTitle: job.title, sectionType: 'quality', section: 'Quality Standards', item: quality[0].title });
         }
       }
       if (isMaterialsQuery) {

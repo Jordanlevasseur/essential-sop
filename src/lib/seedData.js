@@ -64,8 +64,10 @@ export async function resetDemoData(companyId) {
 
 export async function createJobWithSections(jobData, companyId) {
   const job = await base44.entities.Job.create({ ...jobData, companyId });
+  // Create exactly six sections — no documentation
+  const sixSections = SECTION_DEFINITIONS.filter(sd => sd.sectionType !== 'documentation');
   const sections = await base44.entities.JobSection.bulkCreate(
-    SECTION_DEFINITIONS.map(sd => ({
+    sixSections.map(sd => ({
       companyId,
       jobId: job.id,
       sectionType: sd.sectionType,

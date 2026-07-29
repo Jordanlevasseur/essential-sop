@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { SEVERITY_LEVELS, DOCUMENTATION_TYPES } from '@/lib/constants';
+import { SEVERITY_LEVELS } from '@/lib/constants';
 
 const fieldCls = 'w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent';
 
@@ -24,7 +24,6 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
   const isMaterial = sectionType === 'materials';
   const isProcedure = sectionType === 'procedure';
   const isSafety = sectionType === 'safety';
-  const isDoc = sectionType === 'documentation';
   const titleLabel = isTool ? 'Tool Name' : isMaterial ? 'Material Name' : isProcedure ? 'Step Title' : 'Title';
 
   return (
@@ -45,7 +44,7 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
           </Field>
 
           {!isTool && !isMaterial && (
-            <Field label={isProcedure ? 'Instructions' : isSafety ? 'Description' : isDoc ? 'Instructions' : 'Content'}>
+            <Field label={isProcedure ? 'Instructions' : isSafety ? 'Description' : 'Content'}>
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={3} className={fieldCls} />
             </Field>
           )}
@@ -97,14 +96,6 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
                 <textarea value={metadata.requiredAction || ''} onChange={e => setMeta('requiredAction', e.target.value)} rows={2} className={fieldCls} />
               </Field>
             </>
-          )}
-
-          {isDoc && (
-            <Field label="Documentation Type">
-              <select value={metadata.documentationType || 'Note'} onChange={e => setMeta('documentationType', e.target.value)} className={fieldCls}>
-                {DOCUMENTATION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
           )}
 
           <div className="flex gap-4 pt-1">
