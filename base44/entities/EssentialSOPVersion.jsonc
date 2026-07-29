@@ -1,0 +1,40 @@
+{
+  "name": "EssentialSOPVersion",
+  "type": "object",
+  "properties": {
+    "masterId": {
+      "type": "string",
+      "description": "References EssentialSOPMaster.id"
+    },
+    "versionNumber": {
+      "type": "number",
+      "description": "Monotonically increasing integer. Once published, this record is immutable."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "published",
+        "archived"
+      ],
+      "default": "draft"
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "publishedBy": {
+      "type": "string",
+      "description": "userId of the PlatformAdmin who published this version"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "masterId",
+    "versionNumber",
+    "status"
+  ]
+}

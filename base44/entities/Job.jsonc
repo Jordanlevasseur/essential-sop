@@ -49,6 +49,37 @@
     "isArchived": {
       "type": "boolean",
       "default": false
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": [
+        "company",
+        "essential_sop"
+      ],
+      "default": "company",
+      "description": "Hidden metadata: origin of this Job. 'company' = created directly by the company. 'essential_sop' = provisioned from the Essential SOP Master Library."
+    },
+    "sourceMasterId": {
+      "type": "string",
+      "description": "Hidden metadata: EssentialSOPMaster.id this Job was provisioned from. Null for company-created Jobs."
+    },
+    "sourceVersionId": {
+      "type": "string",
+      "description": "Hidden metadata: EssentialSOPVersion.id that was current when this Job was provisioned."
+    },
+    "isCustomized": {
+      "type": "boolean",
+      "default": false,
+      "description": "Hidden metadata: true once a company has edited any content on an Essential SOP-sourced Job."
+    },
+    "customizedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Hidden metadata: timestamp of first company edit on an Essential SOP-sourced Job."
+    },
+    "customizedBy": {
+      "type": "string",
+      "description": "Hidden metadata: userId who made the first customization."
     }
   },
   "required": [

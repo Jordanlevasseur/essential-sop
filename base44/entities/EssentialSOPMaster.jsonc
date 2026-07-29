@@ -1,0 +1,45 @@
+{
+  "name": "EssentialSOPMaster",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string",
+      "description": "URL-safe unique identifier, e.g. 'install-interior-door'"
+    },
+    "category": {
+      "type": "string"
+    },
+    "trade": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "archived"
+      ],
+      "default": "draft"
+    },
+    "currentPublishedVersionId": {
+      "type": "string",
+      "description": "ID of the currently active EssentialSOPVersion record"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "title",
+    "slug",
+    "status"
+  ]
+}

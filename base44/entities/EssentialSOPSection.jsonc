@@ -1,0 +1,69 @@
+{
+  "name": "EssentialSOPSection",
+  "type": "object",
+  "properties": {
+    "masterId": {
+      "type": "string",
+      "description": "References EssentialSOPMaster.id"
+    },
+    "versionId": {
+      "type": "string",
+      "description": "References EssentialSOPVersion.id \u2014 sections are locked to a specific version"
+    },
+    "sectionType": {
+      "type": "string",
+      "enum": [
+        "tools",
+        "materials",
+        "scope",
+        "procedure",
+        "safety",
+        "quality"
+      ],
+      "description": "Exactly the six section types used in company Jobs. No documentation, completion, or images."
+    },
+    "title": {
+      "type": "string"
+    },
+    "sortOrder": {
+      "type": "number",
+      "default": 0
+    },
+    "contentItems": {
+      "type": "array",
+      "description": "Ordered array of content items for this section. Structure mirrors SectionContent fields.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "isRequired": {
+            "type": "boolean"
+          },
+          "isCritical": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "masterId",
+    "versionId",
+    "sectionType",
+    "title"
+  ]
+}
