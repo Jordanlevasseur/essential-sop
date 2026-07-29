@@ -5,7 +5,8 @@ import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard } from 'lucide-react';
+import { getPlan, formatPrice } from '@/lib/plans';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
 import { resolveLegalLink } from '@/lib/appSettings';
@@ -15,6 +16,8 @@ export default function Profile() {
   const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin, companyId } = useApp();
   const { activeCompany, activeMembership, companies } = useCompany();
   const { appearance, setAppearance } = useTheme();
+  const currentPlan = getPlan(activeCompany?.subscriptionPlanCode);
+  const isHomeowner = activeCompany?.subscriptionPlanCode === 'homeowner';
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -60,6 +63,20 @@ export default function Profile() {
 
       {/* Company selector — only visible when user belongs to multiple companies */}
       <CompanySelector />
+
+      {/* Subscription — shown to all users; label adapts for Homeowner vs business */}
+      <Section title={isHomeowner ? 'Subscription' : 'Company · Subscription'}>
+        <button onClick={() => navigate('/subscription')} className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active">
+          <CreditCard size={18} className="text-app-text-muted" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-app-text">{currentPlan?.displayName || 'Subscription'}</p>
+            <p className="text-xs text-app-text-muted">
+              {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Prototype' : ''}
+            </p>
+          </div>
+          <ChevronRight size={16} className="text-app-text-disabled" />
+        </button>
+      </Section>
 
       <Section title="Saved Content">
         <Row icon={Star} label="Favorite Jobs" value={favorites.length} onClick={() => navigate('/')} />

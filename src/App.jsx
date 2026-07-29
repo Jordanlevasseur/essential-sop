@@ -21,6 +21,8 @@ import Profile from '@/pages/Profile';
 import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import TermsOfService from '@/pages/TermsOfService';
 import DeletionRequests from '@/pages/DeletionRequests';
+import Subscription from '@/pages/Subscription';
+import Plans from '@/pages/Plans';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -96,6 +98,8 @@ const SeededApp = () => {
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
       <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
+      <Route path="/subscription" element={<Subscription />} />
+      <Route path="/plans" element={<Plans />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
