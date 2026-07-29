@@ -106,7 +106,7 @@ export async function publishMasterSOPVersion(
   const { user, error: authError } = await requirePlatformSuperAdmin(base44);
   if (authError) return { error: authError };
 
-  const { masterId, publicationMutationKey, changeSummary, distributionPolicyOverride, selectedCompanyIds, _forceFailCompanyIds } = params;
+  const { masterId, publicationMutationKey, changeSummary, distributionPolicyOverride, selectedCompanyIds } = params;
 
   if (!masterId || !publicationMutationKey) {
     return { error: Response.json({ error: 'masterId and publicationMutationKey are required' }, { status: 400 }) };
@@ -413,7 +413,6 @@ export async function publishMasterSOPVersion(
       normalizedSelectedCompanyIds,
       actingUserId: user.id,
       now,
-      _forceFailCompanyIds,
     });
   } else if (eventType === 'NEW_VERSION' && distributionEvent) {
     // Subsequent publication: no Company Job provisioning in Edit 4.
@@ -549,9 +548,8 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
   normalizedSelectedCompanyIds: string[];
   actingUserId: string;
   now: string;
-  _forceFailCompanyIds?: string[]; // TEST-ONLY: inject failures for specific companies
 }): Promise<void> {
-  const { master, version, distributionEvent, effectivePolicy, normalizedSelectedCompanyIds, actingUserId, now, _forceFailCompanyIds } = params;
+  const { master, version, distributionEvent, effectivePolicy, normalizedSelectedCompanyIds, actingUserId, now } = params;
   const masterId = master.id;
   const versionId = version.id;
   const distributionEventId = distributionEvent.id;
@@ -700,31 +698,6 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
         } catch (_) {}
         processed++;
         skipped++;
-        continue;
-      }
-
-      // ── TEST-ONLY: forced failure injection ──────────────────────────────
-      if (_forceFailCompanyIds && _forceFailCompanyIds.includes(companyId)) {
-        try {
-          await SR.entities.ProvisioningRecord.create({
-            distributionEventId,
-            companyId,
-            masterId,
-            versionId,
-            provisioningKey,
-            operationType: 'CREATE_NEW_COMPANY_JOB',
-            status: 'FAILED',
-            companyJobId: null,
-            errorCode: 'TEST_FORCED_FAILURE',
-            errorMessage: 'Failure intentionally injected during testing to verify failure isolation.',
-            attemptCount: 1,
-            lastAttemptAt: now,
-            createdAt: now,
-            updatedAt: now,
-          });
-        } catch (_) {}
-        processed++;
-        failed++;
         continue;
       }
 

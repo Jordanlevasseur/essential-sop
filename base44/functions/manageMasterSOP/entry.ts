@@ -310,7 +310,6 @@ export default async function(req) {
         changeNotes, // legacy alias — accepted for backwards compatibility
         distributionPolicyOverride,
         selectedCompanyIds,
-        _forceFailCompanyIds, // TEST-ONLY
       } = body;
       if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
       if (!publicationMutationKey) return Response.json({ error: 'publicationMutationKey is required' }, { status: 400 });
@@ -321,7 +320,6 @@ export default async function(req) {
         changeSummary: changeSummary || changeNotes || '',
         distributionPolicyOverride,
         selectedCompanyIds,
-        _forceFailCompanyIds,
       });
       if (publishError) return publishError;
       return Response.json({
