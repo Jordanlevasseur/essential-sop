@@ -82,29 +82,28 @@ export default async function(req: Request): Promise<Response> {
     const overrideRecords = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: job.id });
     const override: any = overrideRecords?.[0] || null;
 
-    // ── Idempotency ────────────────────────────────────────────────────────────
-    // Check if this exact mutationKey was already applied
-    const currentJobVersionId = job.sourceVersionId;
-    const alreadyAdopted = currentJobVersionId === targetVersionId;
-    const idempotentMutationKey = override?.lastAdoptionMutationKey === mutationKey;
-
-    if (alreadyAdopted && idempotentMutationKey) {
+    // ── Idempotency — checked BEFORE concurrency/fingerprint guards ───────────
+    // lastAdoptionMutationKey is stored on the Job entity itself so it survives
+    // override deletion (empty rebase scenario).
+    // If the exact same mutationKey was previously completed successfully, return
+    // the original result without re-applying any changes.
+    if (job.lastAdoptionMutationKey === mutationKey) {
       const resolvedJob = await resolveJobInternal(job, SR, membership);
       const versionStatus = await getVersionStatusInternal(job, SR, isCompanyAdmin);
       return Response.json({ success: true, idempotent: true, resolvedJob, versionStatus });
     }
-    if (idempotentMutationKey && !alreadyAdopted) {
-      // Mutation key matches but version wasn't updated — partial failure; retry is safe
+
+    // ── Already-current: different key but job already on target ──────────────
+    // This is NOT idempotency — it is a new request that arrived after another
+    // adoption completed. Return ALREADY_CURRENT so callers know no action was taken.
+    if (job.sourceVersionId === targetVersionId) {
+      return Response.json({ success: false, code: 'ALREADY_CURRENT', error: 'Job is already on the target version.' }, { status: 409 });
     }
 
     // ── Concurrency checks ─────────────────────────────────────────────────────
     const currentOverrideRevision = override?.revision ?? 0;
     if (expectedOverrideRevision !== currentOverrideRevision) {
       return Response.json({ error: 'Override was modified. Reload and retry.', code: 'REVISION_CONFLICT', currentOverrideRevision }, { status: 409 });
-    }
-    if (job.sourceVersionId === targetVersionId) {
-      const resolvedJob = await resolveJobInternal(job, SR, membership);
-      return Response.json({ success: true, idempotent: true, resolvedJob });
     }
 
     // ── Recalculate preview server-side to verify fingerprint ─────────────────
@@ -236,9 +235,9 @@ export default async function(req: Request): Promise<Response> {
       }
     }
 
-    // Step B: Pin the new version on the Job
+    // Step B: Pin the new version on the Job + record idempotency key
     try {
-      await SR.entities.Job.update(job.id, { sourceVersionId: targetVersionId });
+      await SR.entities.Job.update(job.id, { sourceVersionId: targetVersionId, lastAdoptionMutationKey: mutationKey });
     } catch (jobUpdateErr: any) {
       // Step B failed — mark rebaseIncomplete for recovery if we updated/created an override
       if (savedOverride?.id) {
