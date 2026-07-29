@@ -17,6 +17,7 @@ import Assistant from '@/pages/Assistant';
 import Profile from '@/pages/Profile';
 import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import TermsOfService from '@/pages/TermsOfService';
+import DeletionRequests from '@/pages/DeletionRequests';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -84,6 +85,7 @@ const SeededApp = () => {
       {/* Legal pages — accessible without the bottom nav wrapper */}
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
+      <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

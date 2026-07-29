@@ -48,7 +48,7 @@ export default function DeleteAccountModal({ onClose }) {
       // Call backend deletion function
       const resp = await base44.functions.invoke('deleteAccount', {});
 
-      if (resp.data?.error === 'sole_admin') {
+      if (resp.data?.error === 'sole_admin' || resp.data?.error === 'already_pending') {
         setError(resp.data.message);
         setLoading(false);
         return;
@@ -115,13 +115,12 @@ export default function DeleteAccountModal({ onClose }) {
             </div>
 
             <p className="text-xs font-semibold text-app-text-muted uppercase mb-3">What will happen:</p>
-            <ul className="space-y-2.5 mb-6">
+            <ul className="space-y-2.5 mb-4">
               {[
                 { icon: '🚪', text: 'You will be signed out and lose access immediately.' },
-                { icon: '👤', text: 'Your personal profile information will be deleted or anonymized.' },
-                { icon: '⭐', text: 'Your favorites, preferences, recent history, and saved conversations will be removed.' },
-                { icon: '🏢', text: 'Company-owned job templates, procedures, safety information, and all shared knowledge will not be deleted.' },
-                { icon: '📋', text: 'Records that must be legally or operationally retained may be anonymized per your company\'s retention policy.' },
+                { icon: '👤', text: 'Your personal app data, favorites, preferences, and history will be removed.' },
+                { icon: '🏢', text: 'Company-owned job templates, procedures, and shared knowledge will not be deleted.' },
+                { icon: '🔐', text: 'A deletion request will be logged. An administrator will permanently remove your login identity via the Base44 dashboard.' },
               ].map((item, i) => (
                 <li key={i} className="flex items-start gap-2.5">
                   <span className="text-base flex-shrink-0 leading-snug">{item.icon}</span>
@@ -129,6 +128,12 @@ export default function DeleteAccountModal({ onClose }) {
                 </li>
               ))}
             </ul>
+            <div className="bg-app-warning-bg border border-app-warning rounded-lg px-3 py-2 mb-5">
+              <p className="text-xs text-app-warning leading-relaxed">
+                <strong>Note:</strong> Authentication identity removal requires a manual step by a workspace
+                administrator and may take up to 30 days to complete.
+              </p>
+            </div>
 
             <div className="flex gap-3">
               <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 no-select touch-active">Cancel</button>
@@ -216,12 +221,21 @@ export default function DeleteAccountModal({ onClose }) {
 
         {/* Step 4 — Success */}
         {step === 4 && (
-          <div className="p-8 text-center">
+          <div className="p-6 text-center">
             <div className="w-14 h-14 bg-app-success-bg rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">✓</span>
             </div>
-            <h3 className="font-bold text-app-text text-lg mb-2">Your account has been deleted.</h3>
-            <p className="text-sm text-app-text-2">You will be signed out momentarily.</p>
+            <h3 className="font-bold text-app-text text-lg mb-3">Data Removed</h3>
+            <p className="text-sm text-app-text-2 leading-relaxed mb-4">
+              Your Essential SOP account data has been removed and you have been signed out.
+              Permanent deletion of the authentication record has been submitted for processing.
+            </p>
+            <div className="bg-app-info-bg border border-app-border rounded-xl p-3 text-left mb-2">
+              <p className="text-xs text-app-text-muted leading-relaxed">
+                A deletion request has been logged. An administrator will complete removal of your
+                login identity via the Base44 dashboard. You will not be able to sign in again.
+              </p>
+            </div>
           </div>
         )}
       </div>

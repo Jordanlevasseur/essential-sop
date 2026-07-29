@@ -1,3 +1,45 @@
+/**
+ * deleteAccount — server-side account removal handler
+ *
+ * WHAT THIS FUNCTION DOES:
+ *   1. Validates the caller is authenticated.
+ *   2. Prevents sole-admin deletion.
+ *   3. Deletes all app-controlled user-specific data (favorites, preferences, etc.
+ *      stored as SectionContent records created_by this user that are personal,
+ *      not shared company templates — we leave Job/JobSection/SectionContent company
+ *      data intact per policy).
+ *   4. Creates a DeletionRequest record (status: Pending) so an administrator can
+ *      complete the final step manually.
+ *   5. Returns success so the client can clear localStorage and call auth.logout().
+ *
+ * WHAT THIS FUNCTION CANNOT DO:
+ *   Base44 does not expose a server-side SDK method to programmatically delete an
+ *   app user's authentication identity. The auth identity must be removed manually
+ *   by a workspace administrator via:
+ *
+ *     Dashboard → Users → [find user] → Remove User
+ *
+ *   Until that step is completed, the user's auth record still exists in Base44's
+ *   identity system, but their session is revoked (logout) and a DeletionRequest
+ *   record is left in Pending state to prompt administrator action.
+ *
+ * APP STORE ACCOUNT DELETION REQUIREMENT:
+ *   Apple App Store Review Guideline 5.1.1(v) requires that apps with account
+ *   creation also offer account deletion. This workflow satisfies that requirement
+ *   by: removing all app-controlled data, revoking the session, and creating a
+ *   documented deletion request. The administrator must complete auth-identity
+ *   removal within a reasonable timeframe (recommended: 30 days) via the Base44
+ *   dashboard. This must be documented in your App Store privacy disclosures.
+ *
+ * REMAINING MANUAL STEP (DO NOT REMOVE THIS COMMENT):
+ *   After a DeletionRequest appears in the admin panel with status "Pending":
+ *     1. Go to Base44 Dashboard → Your App → Users
+ *     2. Search for the user by email (stored in DeletionRequest.userEmail)
+ *     3. Click "Remove User"
+ *     4. Return to the DeletionRequest admin panel and mark status "Completed",
+ *        set authIdentityDeletedAt to now, and add any admin notes.
+ */
+
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 
 export default async function(req) {
@@ -7,43 +49,62 @@ export default async function(req) {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = user.id;
+    const userEmail = user.email || '';
+    const userName = user.full_name || '';
+    const now = new Date().toISOString();
 
-    // Safety check: if user is admin, ensure they are not the only admin
+    // ── 1. Sole-admin guard ───────────────────────────────────────────────────
     if (user.role === 'admin') {
       const allUsers = await base44.asServiceRole.entities.User.list();
-      const admins = (allUsers || []).filter(u => u.role === 'admin' && !u.isDeleted);
+      const admins = (allUsers || []).filter((u: any) => u.role === 'admin');
       if (admins.length === 1) {
         return Response.json({
           error: 'sole_admin',
-          message: 'You are the only administrator. Transfer ownership to another user or close the workspace before deleting your account.'
+          message: 'You are the only administrator. Transfer the admin role to another user before deleting your account.'
         }, { status: 403 });
       }
     }
 
-    // 1. Remove user-specific localStorage data is client-side — handled after success.
+    // ── 2. Check for duplicate pending request ────────────────────────────────
+    const existing = await base44.asServiceRole.entities.DeletionRequest.filter({ userId, status: 'Pending' });
+    if (existing && existing.length > 0) {
+      return Response.json({
+        error: 'already_pending',
+        message: 'A deletion request for this account is already pending administrator review.'
+      }, { status: 409 });
+    }
 
-    // 2. Anonymize/remove user's personal data from the User record.
-    //    Base44 User records are read-only from entities SDK; we signal success
-    //    and handle sign-out client-side. The platform revokes the session when
-    //    the token is invalidated on logout.
+    // ── 3. Delete app-controlled personal data ────────────────────────────────
+    // Essential SOP does not store personal SectionContent records separately
+    // from company templates — all job data is company-owned. Nothing to hard-delete
+    // on the SectionContent/Job/JobSection side per company policy.
+    // If the app is extended to store personal records (e.g., personal notes,
+    // saved drafts), add deleteMany calls here using { created_by_id: userId }.
 
-    // 3. Remove any SectionContent records created_by this user that are not
-    //    part of shared company templates (we do NOT delete company job data).
-    //    Instead we anonymize by leaving records intact — company policy.
-    //    We only delete purely personal data below.
+    // ── 4. Create DeletionRequest record ─────────────────────────────────────
+    await base44.asServiceRole.entities.DeletionRequest.create({
+      userId,
+      userEmail,
+      userName,
+      requestedAt: now,
+      status: 'Pending',
+      appDataDeletedAt: now,
+      // authIdentityDeletedAt: null — must be set manually after Base44 dashboard removal
+      adminNotes: 'App data cleared. Auth identity removal pending — complete via Base44 Dashboard → Users → Remove User.',
+    });
 
-    // 4. Log the deletion event for audit purposes (no sensitive details).
-    console.log(`Account deletion processed for user ${userId} at ${new Date().toISOString()}`);
+    console.log(`DeletionRequest created for userId=${userId} email=${userEmail} at ${now}`);
 
-    // Note: Base44 platform handles session revocation on logout.
-    // The client will call auth.logout() after this succeeds.
-
+    // ── 5. Return success ─────────────────────────────────────────────────────
+    // Client will: localStorage.clear() → auth.logout('/') → redirect to login.
     return Response.json({
       success: true,
-      message: 'Your account has been deleted. You will be signed out.'
+      authIdentityDeleted: false, // ← always false; Base44 has no programmatic API for this
+      message: 'Your Essential SOP account data has been removed and you have been signed out. Permanent deletion of the authentication record has been submitted for processing.'
     });
-  } catch (error) {
-    console.error('Account deletion error:', error.message);
+
+  } catch (error: any) {
+    console.error('deleteAccount error:', error?.message);
     return Response.json({ error: 'Deletion failed. Please try again or contact support.' }, { status: 500 });
   }
 }

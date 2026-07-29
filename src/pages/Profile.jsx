@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
-import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText } from 'lucide-react';
+import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList } from 'lucide-react';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
 import { resolveLegalLink } from '@/lib/appSettings';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites } = useApp();
+  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin } = useApp();
   const { appearance, setAppearance } = useTheme();
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
@@ -114,6 +114,12 @@ export default function Profile() {
         <Row icon={ShieldCheck} label="Switch to Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
         <Divider />
         <Row icon={RotateCcw} label={resetting ? 'Resetting...' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
+        {isAdmin && (
+          <>
+            <Divider />
+            <Row icon={ClipboardList} label="Account Deletion Requests" onClick={() => navigate('/admin/deletion-requests')} />
+          </>
+        )}
       </Section>
 
       <Section title="Account">

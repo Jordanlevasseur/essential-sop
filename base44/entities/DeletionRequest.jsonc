@@ -1,0 +1,49 @@
+{
+  "name": "DeletionRequest",
+  "type": "object",
+  "properties": {
+    "userId": {
+      "type": "string"
+    },
+    "userEmail": {
+      "type": "string"
+    },
+    "userName": {
+      "type": "string"
+    },
+    "requestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "Completed",
+        "Cancelled"
+      ],
+      "default": "Pending"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "adminNotes": {
+      "type": "string"
+    },
+    "appDataDeletedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authIdentityDeletedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "userId",
+    "userEmail",
+    "requestedAt",
+    "status"
+  ]
+}
