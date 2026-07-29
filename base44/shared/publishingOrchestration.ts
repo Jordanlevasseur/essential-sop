@@ -85,6 +85,7 @@ export interface PublishParams {
   changeSummary?: string;
   distributionPolicyOverride?: DistributionPolicy;
   selectedCompanyIds?: string[];
+  _forceFailCompanyIds?: string[]; // TEST-ONLY: inject failures for specific companies
 }
 
 export interface PublishResult {
@@ -106,7 +107,7 @@ export async function publishMasterSOPVersion(
   const { user, error: authError } = await requirePlatformSuperAdmin(base44);
   if (authError) return { error: authError };
 
-  const { masterId, publicationMutationKey, changeSummary, distributionPolicyOverride, selectedCompanyIds } = params;
+  const { masterId, publicationMutationKey, changeSummary, distributionPolicyOverride, selectedCompanyIds, _forceFailCompanyIds } = params;
 
   if (!masterId || !publicationMutationKey) {
     return { error: Response.json({ error: 'masterId and publicationMutationKey are required' }, { status: 400 }) };
@@ -402,11 +403,9 @@ export async function publishMasterSOPVersion(
     });
   }
 
-  // ── Step 11: NEW_SOP distribution to existing eligible companies ────────────
-  // Only runs when this is the first-ever publication of this master (NEW_SOP).
-  // NEW_VERSION publications intentionally skip this block — no existing Jobs are
-  // created or modified. Edit 5 will handle version adoption notifications.
+  // ── Step 11: NEW_SOP distribution / NEW_VERSION finalization ──────────────
   if (eventType === 'NEW_SOP' && distributionEvent) {
+    // First-ever publication: distribute to existing eligible companies.
     await _distributeNewSOPToExistingCompanies(SR, {
       master: updatedMaster,
       version,
@@ -415,6 +414,40 @@ export async function publishMasterSOPVersion(
       normalizedSelectedCompanyIds,
       actingUserId: user.id,
       now,
+      _forceFailCompanyIds,
+    });
+  } else if (eventType === 'NEW_VERSION' && distributionEvent) {
+    // Subsequent publication: no Company Job provisioning in Edit 4.
+    // The DistributionEvent must still be finalized in a terminal state.
+    const completedAt = new Date().toISOString();
+    try {
+      await SR.entities.DistributionEvent.update(distributionEvent.id, {
+        status: 'COMPLETED',
+        totalEligibleCompanies: 0,
+        processedCompanies: 0,
+        successfulCompanies: 0,
+        skippedCompanies: 0,
+        failedCompanies: 0,
+        completedAt,
+        updatedAt: completedAt,
+      });
+    } catch (_) {}
+    // Audit: NEW_VERSION publication completed — no Company Job distribution required.
+    await writePlatformAudit(SR, {
+      actingUserId: user.id,
+      actingUserRole: 'SUPER_ADMIN',
+      action: 'publication_completed',
+      extra: {
+        masterId,
+        masterTitle: updatedMaster.title,
+        versionId: version.id,
+        distributionEventId: distributionEvent.id,
+        metadata: {
+          phase: 'NEW_VERSION_NO_JOB_DISTRIBUTION',
+          eventType: 'NEW_VERSION',
+          reason: 'NEW_VERSION publications require no Company Job distribution in Edit 4. Edit 5 will handle version adoption notifications.',
+        },
+      },
     });
   }
 
@@ -517,8 +550,9 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
   normalizedSelectedCompanyIds: string[];
   actingUserId: string;
   now: string;
+  _forceFailCompanyIds?: string[]; // TEST-ONLY: inject failures for specific companies
 }): Promise<void> {
-  const { master, version, distributionEvent, effectivePolicy, normalizedSelectedCompanyIds, actingUserId, now } = params;
+  const { master, version, distributionEvent, effectivePolicy, normalizedSelectedCompanyIds, actingUserId, now, _forceFailCompanyIds } = params;
   const masterId = master.id;
   const versionId = version.id;
   const distributionEventId = distributionEvent.id;
@@ -667,6 +701,31 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
         } catch (_) {}
         processed++;
         skipped++;
+        continue;
+      }
+
+      // ── TEST-ONLY: forced failure injection ──────────────────────────────
+      if (_forceFailCompanyIds && _forceFailCompanyIds.includes(companyId)) {
+        try {
+          await SR.entities.ProvisioningRecord.create({
+            distributionEventId,
+            companyId,
+            masterId,
+            versionId,
+            provisioningKey,
+            operationType: 'CREATE_NEW_COMPANY_JOB',
+            status: 'FAILED',
+            companyJobId: null,
+            errorCode: 'TEST_FORCED_FAILURE',
+            errorMessage: 'Failure intentionally injected during testing to verify failure isolation.',
+            attemptCount: 1,
+            lastAttemptAt: now,
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (_) {}
+        processed++;
+        failed++;
         continue;
       }
 
