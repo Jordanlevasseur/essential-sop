@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Send, ExternalLink } from 'lucide-react';
 import { SECTION_MAP } from '@/lib/constants';
+import { useCompany } from '@/lib/CompanyContext';
 
 const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
@@ -13,6 +14,8 @@ const SUGGESTED_QUESTIONS = [
 
 export default function Assistant() {
   const navigate = useNavigate();
+  const { activeCompany } = useCompany();
+  const companyId = activeCompany?.id;
   const [jobs, setJobs] = useState([]);
   const [allContent, setAllContent] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,11 +25,14 @@ export default function Assistant() {
   const scrollRef = useRef(null);
 
   useEffect(() => {
+    if (!companyId) { setLoading(false); return; }
+    setJobs([]); setAllContent([]); setMessages([]);
+    setLoading(true);
     Promise.all([
-      base44.entities.Job.list('-updated_date', 200),
-      base44.entities.SectionContent.list('-sortOrder', 500),
+      base44.entities.Job.filter({ companyId }, '-updated_date', 200),
+      base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
     ]).then(([j, c]) => { setJobs(j || []); setAllContent(c || []); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+  }, [companyId]);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
 

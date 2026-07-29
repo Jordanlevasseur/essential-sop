@@ -1,0 +1,39 @@
+{
+  "name": "Company",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "accountType": {
+      "type": "string",
+      "default": "standard"
+    },
+    "logo": {
+      "type": "string"
+    },
+    "accentColor": {
+      "type": "string"
+    },
+    "ownerUserId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended",
+        "closed"
+      ],
+      "default": "active"
+    },
+    "planPlaceholder": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "ownerUserId",
+    "status"
+  ]
+}

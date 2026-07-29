@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
+import { useCompany } from '@/lib/CompanyContext';
 import {
   ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown,
   CheckCircle2, Circle, AlertTriangle, Info, AlertCircle, ShieldAlert,
@@ -23,6 +24,7 @@ export default function JobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { isFavorite, toggleFavorite, addRecentlyViewed, isAdmin, session, setSessionItem } = useApp();
+  const { activeCompany } = useCompany();
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
@@ -50,6 +52,11 @@ export default function JobDetail() {
         bySection[key].sort((a, b) => a.sortOrder - b.sortOrder);
       }
       setContentBySection(bySection);
+      // Security: verify the job belongs to the active company
+      if (j && activeCompany && j.companyId && j.companyId !== activeCompany.id) {
+        navigate('/');
+        return;
+      }
       if (j) addRecentlyViewed(j.id, j.title);
     } catch (err) {
       navigate('/');

@@ -2,6 +2,9 @@
   "name": "JobSection",
   "type": "object",
   "properties": {
+    "companyId": {
+      "type": "string"
+    },
     "jobId": {
       "type": "string"
     },
@@ -38,6 +41,7 @@
     }
   },
   "required": [
+    "companyId",
     "jobId",
     "sectionType",
     "title"

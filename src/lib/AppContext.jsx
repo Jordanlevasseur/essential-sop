@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { ensureSeeded } from './seedData';
+import { useCompany } from '@/lib/CompanyContext';
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
@@ -14,16 +15,12 @@ const STORAGE_KEYS = {
   user: 'esop_user',
 };
 
-const DEFAULT_USER = {
-  name: 'Mike Donovan',
-  role: 'Field Technician',
-  company: 'Summit Residential Builders',
-  avatar: '',
-};
-
 const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'updated' };
 
 export function AppProvider({ children }) {
+  const { activeCompany, isGeneralManager, hasCompany } = useCompany();
+  const companyId = activeCompany?.id;
+
   const [isReady, setIsReady] = useState(false);
   const [seedError, setSeedError] = useState(null);
   const [userMode, setUserMode] = useState(() => localStorage.getItem(STORAGE_KEYS.mode) || 'technician');
@@ -41,33 +38,46 @@ export function AppProvider({ children }) {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.session) || '{}'); } catch { return {}; }
   });
   const [user] = useState(() => {
-    try { return { ...DEFAULT_USER, ...JSON.parse(localStorage.getItem(STORAGE_KEYS.user) || '{}') }; } catch { return DEFAULT_USER; }
+    // Real user info comes from base44.auth.me() — this is just the display profile
+    return { name: 'Field User', role: 'Field Technician', company: activeCompany?.name || '', avatar: '' };
   });
 
   useEffect(() => {
-    // Clear stale localStorage IDs whenever app boots (handles re-seeds)
+    if (!companyId) {
+      setIsReady(true);
+      return;
+    }
+
+    // Clear stale localStorage IDs whenever companyId changes
     localStorage.removeItem(STORAGE_KEYS.recent);
     localStorage.removeItem(STORAGE_KEYS.favorites);
     localStorage.removeItem('esop_fav_init');
+    setFavorites([]);
+    setRecentlyViewed([]);
 
-    ensureSeeded()
+    ensureSeeded(companyId)
       .then(async () => {
-        if (!favoritesInitialized) {
-          try {
-            const jobs = await base44.entities.Job.list();
-            const defaultFavTitles = ['Water Heater Replacement', 'Exterior Door Replacement', 'Crawlspace Inspection'];
-            const favIds = (jobs || []).filter(j => defaultFavTitles.includes(j.title)).map(j => j.id);
-            if (favIds.length > 0) {
-              setFavorites(favIds);
-              localStorage.setItem('esop_fav_init', '1');
-            }
-          } catch {}
-          setFavoritesInitialized(true);
-        }
+        try {
+          const jobs = await base44.entities.Job.filter({ companyId }, '-updated_date', 200);
+          const defaultFavTitles = ['Water Heater Replacement', 'Exterior Door Replacement', 'Crawlspace Inspection'];
+          const favIds = (jobs || []).filter(j => defaultFavTitles.includes(j.title)).map(j => j.id);
+          if (favIds.length > 0) {
+            setFavorites(favIds);
+            setFavoritesInitialized(true);
+            localStorage.setItem('esop_fav_init', '1');
+          }
+        } catch {}
         setIsReady(true);
       })
       .catch((err) => { setSeedError(err?.message || 'Failed to initialize'); setIsReady(true); });
-  }, []);
+  }, [companyId]);
+
+  // Sync admin mode to isGeneralManager
+  useEffect(() => {
+    if (isGeneralManager && userMode !== 'admin') {
+      // Don't auto-set — let user control this via Profile
+    }
+  }, [isGeneralManager]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.mode, userMode); }, [userMode]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favorites)); }, [favorites]);
@@ -110,14 +120,21 @@ export function AppProvider({ children }) {
 
   const textSizeClass = preferences.textSize === 'small' ? 'text-sm' : preferences.textSize === 'large' ? 'text-lg' : 'text-base';
 
+  // isAdmin respects both the prototype mode switch AND the company role
+  const isAdmin = userMode === 'admin' || isGeneralManager;
+
   return (
     <AppContext.Provider value={{
-      isReady, seedError, userMode, switchMode, isAdmin: userMode === 'admin',
+      isReady, seedError, userMode, switchMode,
+      isAdmin,
+      isGeneralManager,
       favorites, toggleFavorite, isFavorite,
       recentlyViewed, addRecentlyViewed,
       preferences, updatePreferences, textSizeClass,
       session, setSessionItem, clearSessionForJob,
       user,
+      companyId,
+      hasCompany,
     }}>
       {children}
     </AppContext.Provider>

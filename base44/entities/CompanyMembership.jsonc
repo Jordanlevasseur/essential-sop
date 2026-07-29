@@ -1,0 +1,49 @@
+{
+  "name": "CompanyMembership",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string"
+    },
+    "userId": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "general_manager",
+        "project_manager",
+        "project_lead",
+        "technician"
+      ],
+      "default": "technician"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "suspended",
+        "removed"
+      ],
+      "default": "active"
+    },
+    "joinedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "suspendedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "removedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "userId",
+    "role",
+    "status"
+  ]
+}

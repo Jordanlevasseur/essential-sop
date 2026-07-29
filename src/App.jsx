@@ -5,9 +5,12 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
+import { CompanyProvider } from '@/lib/CompanyContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
+import NoCompanyScreen from '@/components/NoCompanyScreen';
 import ScrollToTop from './components/ScrollToTop';
 import { AppProvider, useApp } from '@/lib/AppContext';
+import { useCompany } from '@/lib/CompanyContext';
 import Layout from '@/components/Layout';
 import Jobs from '@/pages/Jobs';
 import JobDetail from '@/pages/JobDetail';
@@ -44,14 +47,17 @@ const AuthenticatedApp = () => {
 
   // Render the main app
   return (
-    <AppProvider>
-      <SeededApp />
-    </AppProvider>
+    <CompanyProvider>
+      <AppProvider>
+        <SeededApp />
+      </AppProvider>
+    </CompanyProvider>
   );
 };
 
 const SeededApp = () => {
   const { isReady, seedError } = useApp();
+  const { loadingCompany, hasCompany } = useCompany();
 
   if (seedError) {
     return (
@@ -64,12 +70,16 @@ const SeededApp = () => {
     );
   }
 
-  if (!isReady) {
+  if (loadingCompany || !isReady) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-neutral-200 border-t-blue-600 rounded-full animate-spin"></div>
       </div>
     );
+  }
+
+  if (!hasCompany) {
+    return <NoCompanyScreen />;
   }
 
   return (

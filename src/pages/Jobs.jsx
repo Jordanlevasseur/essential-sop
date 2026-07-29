@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
+import { useCompany } from '@/lib/CompanyContext';
 import { Search, SlidersHorizontal, Plus, Star, X } from 'lucide-react';
 import JobCard from '@/components/jobs/JobCard';
 import FilterSheet from '@/components/jobs/FilterSheet';
@@ -9,6 +10,8 @@ import FilterSheet from '@/components/jobs/FilterSheet';
 export default function Jobs() {
   const navigate = useNavigate();
   const { isAdmin, favorites, toggleFavorite, isFavorite, preferences } = useApp();
+  const { activeCompany } = useCompany();
+  const companyId = activeCompany?.id;
   const [jobs, setJobs] = useState([]);
   const [allContent, setAllContent] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,15 +20,16 @@ export default function Jobs() {
   const [filters, setFilters] = useState({ trade: '', skillLevel: '', category: '' });
 
   useEffect(() => {
+    if (!companyId) return;
     Promise.all([
-      base44.entities.Job.list('-updated_date', 200),
-      base44.entities.SectionContent.list('-sortOrder', 500),
+      base44.entities.Job.filter({ companyId }, '-updated_date', 200),
+      base44.entities.SectionContent.filter({ companyId }, '-sortOrder', 500),
     ]).then(([j, c]) => {
       setJobs(j || []);
       setAllContent(c || []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, []);
+  }, [companyId]);
 
   const publishedJobs = useMemo(() => jobs.filter(j => !j.isArchived && j.status === 'Published'), [jobs]);
   const favoriteJobs = useMemo(() => publishedJobs.filter(j => isFavorite(j.id)), [publishedJobs, isFavorite]);
@@ -94,7 +98,8 @@ export default function Jobs() {
 
   return (
     <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-app-text mb-4">Jobs</h1>
+      <h1 className="text-2xl font-bold text-app-text mb-1">Jobs</h1>
+      {activeCompany && <p className="text-xs text-app-text-muted mb-4">{activeCompany.name}</p>}
 
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">

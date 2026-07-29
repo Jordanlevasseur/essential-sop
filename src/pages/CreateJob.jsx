@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
+import { useCompany } from '@/lib/CompanyContext';
 import { createJobWithSections } from '@/lib/seedData';
 import { ArrowLeft, Check, Eye, Save, Send } from 'lucide-react';
 import { SECTION_DEFINITIONS, TRADES, CATEGORIES, SKILL_LEVELS } from '@/lib/constants';
@@ -12,7 +13,8 @@ export default function CreateJob() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
-  const { } = useApp();
+  const { companyId } = useApp();
+  const { activeCompany } = useCompany();
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -58,7 +60,7 @@ export default function CreateJob() {
       if (jobId) {
         await base44.entities.Job.update(jobId, { ...form, status: 'Draft' });
       } else {
-        const { job } = await createJobWithSections({ ...form, status: 'Draft' });
+        const { job } = await createJobWithSections({ ...form, status: 'Draft' }, companyId);
         setJobId(job.id);
         const secs = await base44.entities.JobSection.filter({ jobId: job.id }, 'sortOrder', 10);
         setSections(secs || []);
@@ -78,7 +80,7 @@ export default function CreateJob() {
       if (jobId) {
         await base44.entities.Job.update(jobId, { ...form, status: 'Published' });
       } else {
-        const { job } = await createJobWithSections({ ...form, status: 'Published' });
+        const { job } = await createJobWithSections({ ...form, status: 'Published' }, companyId);
         setJobId(job.id);
       }
       setShowPublishConfirm(false);

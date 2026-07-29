@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
+import { useCompany } from '@/lib/CompanyContext';
+import CompanySelector from '@/components/CompanySelector';
 import { Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw, Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2, AlertTriangle, FileText, ScrollText, ClipboardList } from 'lucide-react';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
@@ -10,7 +12,8 @@ import { resolveLegalLink } from '@/lib/appSettings';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin } = useApp();
+  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin, companyId } = useApp();
+  const { activeCompany, activeMembership, companies } = useCompany();
   const { appearance, setAppearance } = useTheme();
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
@@ -20,7 +23,7 @@ export default function Profile() {
     if (!confirm('This will delete all jobs and restore the original demo data. Continue?')) return;
     setResetting(true);
     try {
-      await resetDemoData();
+      await resetDemoData(companyId);
       setResetDone(true);
       setTimeout(() => { window.location.href = '/'; }, 1500);
     } catch (e) {
@@ -47,13 +50,16 @@ export default function Profile() {
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-app-text truncate">{user.name}</h2>
-          <p className="text-sm text-app-text-2 truncate">{user.role}</p>
-          <p className="text-xs text-app-text-muted truncate">{user.company}</p>
+          <p className="text-sm text-app-text-2 truncate">{activeMembership?.role?.replace('_', ' ') || user.role}</p>
+          <p className="text-xs text-app-text-muted truncate">{activeCompany?.name || user.company}</p>
         </div>
         <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${userMode === 'admin' ? 'bg-app-info-bg text-app-info' : 'bg-app-info-bg text-app-accent'}`}>
           {userMode === 'admin' ? 'Admin' : 'Technician'}
         </div>
       </div>
+
+      {/* Company selector — only visible when user belongs to multiple companies */}
+      <CompanySelector />
 
       <Section title="Saved Content">
         <Row icon={Star} label="Favorite Jobs" value={favorites.length} onClick={() => navigate('/')} />

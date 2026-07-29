@@ -2,6 +2,9 @@
   "name": "Job",
   "type": "object",
   "properties": {
+    "companyId": {
+      "type": "string"
+    },
     "title": {
       "type": "string"
     },
@@ -49,6 +52,7 @@
     }
   },
   "required": [
+    "companyId",
     "title"
   ]
 }
