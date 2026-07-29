@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Send, ExternalLink } from 'lucide-react';
@@ -30,9 +30,9 @@ export default function Assistant() {
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
 
-  const handleAsk = async (question) => {
+  const handleAsk = useCallback((question) => {
     const q = (question || input).trim();
-    if (!q) return;
+    if (!q || searching) return;
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: q }]);
     setSearching(true);
@@ -41,7 +41,7 @@ export default function Assistant() {
       setSearching(false);
       setMessages(prev => [...prev, result]);
     }, 500);
-  };
+  }, [input, searching, jobs, allContent]);
 
   if (loading) {
     return (
@@ -52,16 +52,16 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-app-bg">
+    <div className="flex flex-col bg-app-bg" style={{ height: '100dvh' }}>
       <div
-        className="bg-app-surface border-b border-app-border px-4 py-4"
+        className="bg-app-surface border-b border-app-border px-4 py-4 flex-shrink-0"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <h1 className="text-xl font-bold text-app-text">Assistant</h1>
         <p className="text-xs text-app-text-muted mt-1">Ask questions about your company's jobs, procedures, tools, materials, safety requirements, and documentation.</p>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 overscroll-contain">
         {messages.length === 0 && !searching && (
           <div className="space-y-2">
             <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Suggested Questions</p>
@@ -118,16 +118,25 @@ export default function Assistant() {
       </div>
 
       <div
-        className="bg-app-surface border-t border-app-border p-3"
+        className="bg-app-surface border-t border-app-border p-3 flex-shrink-0"
         style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       >
         <div className="flex gap-2">
-          <input value={input} onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAsk()}
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !searching && handleAsk()}
             placeholder="Ask a question..."
-            className="flex-1 px-4 py-2.5 bg-app-input border border-app-border rounded-full text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-          <button onClick={() => handleAsk()} disabled={!input.trim()}
-            className="w-10 h-10 bg-app-accent text-app-accent-text rounded-full flex items-center justify-center disabled:bg-app-disabled disabled:text-app-text-disabled flex-shrink-0">
+            aria-label="Ask a question"
+            enterKeyHint="send"
+            className="flex-1 px-4 py-2.5 bg-app-input border border-app-border rounded-full text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
+          />
+          <button
+            onClick={() => handleAsk()}
+            disabled={!input.trim() || searching}
+            aria-label="Send message"
+            className="w-10 h-10 bg-app-accent text-app-accent-text rounded-full flex items-center justify-center disabled:bg-app-disabled disabled:text-app-text-disabled flex-shrink-0 touch-active"
+          >
             <Send size={16} />
           </button>
         </div>

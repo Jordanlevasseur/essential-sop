@@ -100,10 +100,12 @@ export default function Jobs() {
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
           <input
-            type="text"
+            type="search"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search jobs, tools, materials, procedures..."
+            aria-label="Search jobs"
+            enterKeyHint="search"
             className="w-full pl-10 pr-9 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
           {search && (

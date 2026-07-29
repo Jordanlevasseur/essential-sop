@@ -108,25 +108,17 @@ export default function Profile() {
       </Section>
 
       <Section title="Prototype Controls">
-        <button onClick={() => switchMode('technician')} className="w-full">
-          <Row icon={HardHat} label="Switch to Technician View" active={userMode === 'technician'} />
-        </button>
+        <Row icon={HardHat} label="Switch to Technician View" active={userMode === 'technician'} onClick={() => switchMode('technician')} />
         <Divider />
-        <button onClick={() => switchMode('admin')} className="w-full">
-          <Row icon={ShieldCheck} label="Switch to Administrator View" active={userMode === 'admin'} />
-        </button>
+        <Row icon={ShieldCheck} label="Switch to Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
         <Divider />
-        <button onClick={handleReset} disabled={resetting} className="w-full">
-          <Row icon={RotateCcw} label={resetting ? 'Resetting...' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} />
-        </button>
+        <Row icon={RotateCcw} label={resetting ? 'Resetting...' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
       </Section>
 
       <Section title="Account">
         <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />
         <Divider />
-        <button onClick={() => { localStorage.clear(); window.location.href = '/'; }} className="w-full">
-          <Row icon={LogOut} label="Sign Out" />
-        </button>
+        <Row icon={LogOut} label="Sign Out" onClick={() => { localStorage.clear(); window.location.href = '/'; }} />
       </Section>
 
       {/* Danger zone */}
@@ -168,12 +160,16 @@ function Divider() {
 }
 
 function Row({ icon: Icon, label, value, onClick, active }) {
+  const Wrapper = onClick ? 'button' : 'div';
   return (
-    <div onClick={onClick} className={`flex items-center gap-3 px-4 py-3 ${onClick ? 'cursor-pointer active:opacity-70' : ''} ${active ? 'bg-app-info-bg' : ''}`}>
-      <Icon size={18} className={active ? 'text-app-accent' : 'text-app-text-muted'} />
+    <Wrapper
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 text-left no-select ${onClick ? 'touch-active' : ''} ${active ? 'bg-app-info-bg' : ''}`}
+    >
+      <Icon size={18} className={active ? 'text-app-accent' : 'text-app-text-muted'} aria-hidden="true" />
       <span className={`text-sm flex-1 ${active ? 'text-app-accent font-medium' : 'text-app-text'}`}>{label}</span>
       {value !== undefined && <span className="text-sm text-app-text-muted">{value}</span>}
-      {onClick && <ChevronRight size={16} className="text-app-text-disabled" />}
-    </div>
+      {onClick && <ChevronRight size={16} className="text-app-text-disabled" aria-hidden="true" />}
+    </Wrapper>
   );
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
 import { Briefcase, MessageSquare, User } from 'lucide-react';
+import OfflineBanner from '@/components/OfflineBanner';
 
 const TABS = [
   { to: '/', label: 'Jobs', icon: Briefcase, end: true },
@@ -16,13 +17,14 @@ export default function Layout() {
 
   return (
     <div
-      className="min-h-screen bg-app-bg flex flex-col"
+      className="min-h-screen bg-app-bg flex flex-col relative"
       style={{
         paddingTop: 'env(safe-area-inset-top)',
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',
       }}
     >
+      <OfflineBanner />
       <main
         className="flex-1 max-w-2xl w-full mx-auto"
         style={{
@@ -36,6 +38,7 @@ export default function Layout() {
 
       {!isSubPage && (
         <nav
+          aria-label="Main navigation"
           className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-50"
           style={{
             paddingBottom: 'env(safe-area-inset-bottom)',
@@ -49,12 +52,17 @@ export default function Layout() {
                 key={to}
                 to={to}
                 end={end}
+                aria-label={label}
                 className={({ isActive }) =>
                   `flex-1 flex flex-col items-center gap-1 py-3 transition-colors no-select touch-active ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
                 }
               >
-                <Icon size={22} strokeWidth={2} />
-                <span className="text-xs font-medium">{label}</span>
+                {({ isActive }) => (
+                  <>
+                    <Icon size={22} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
+                    <span className={`text-xs ${isActive ? 'font-semibold' : 'font-medium'}`}>{label}</span>
+                  </>
+                )}
               </NavLink>
             ))}
           </div>

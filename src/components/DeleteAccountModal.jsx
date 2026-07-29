@@ -79,7 +79,11 @@ export default function DeleteAccountModal({ onClose }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4" onClick={step < 4 ? onClose : undefined}>
       <div className="absolute inset-0 bg-black/60" />
       <div
-        className="relative bg-app-surface rounded-2xl w-full max-w-md border border-app-border shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete Account"
+        className="relative bg-app-surface rounded-2xl w-full max-w-md border border-app-border shadow-xl overflow-y-auto"
+        style={{ maxHeight: 'calc(95dvh - env(safe-area-inset-top))' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -89,7 +93,7 @@ export default function DeleteAccountModal({ onClose }) {
               <Trash2 size={18} className="text-app-danger" />
               <h2 className="font-bold text-app-text">Delete Account</h2>
             </div>
-            <button onClick={onClose} className="p-1 text-app-text-muted">
+            <button onClick={onClose} className="icon-btn text-app-text-muted no-select" aria-label="Close">
               <X size={20} />
             </button>
           </div>

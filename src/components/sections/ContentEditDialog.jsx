@@ -31,15 +31,15 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
     <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50" />
       <div
-        className="relative bg-app-surface rounded-t-2xl overflow-y-auto"
-        style={{ maxHeight: 'calc(90vh - env(safe-area-inset-top))' }}
+        className="relative bg-app-surface rounded-t-2xl flex flex-col"
+        style={{ maxHeight: 'calc(92dvh - env(safe-area-inset-top))' }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-app-surface border-b border-app-border px-4 py-3 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-app-surface border-b border-app-border px-4 py-3 flex items-center justify-between rounded-t-2xl">
           <h2 className="font-semibold text-app-text">{item ? 'Edit Item' : 'Add Item'}</h2>
-          <button onClick={onClose}><X size={20} className="text-app-text-muted" /></button>
+          <button onClick={onClose} className="icon-btn no-select" aria-label="Close"><X size={20} className="text-app-text-muted" /></button>
         </div>
-        <div className="p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <Field label={titleLabel}>
             <input value={title} onChange={e => setTitle(e.target.value)} className={fieldCls} />
           </Field>
@@ -119,11 +119,11 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
           </div>
         </div>
         <div
-          className="sticky bottom-0 bg-app-surface border-t border-app-border p-4 flex gap-3"
+          className="flex-shrink-0 bg-app-surface border-t border-app-border p-4 flex gap-3"
           style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
-          <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2">Cancel</button>
-          <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled">Save</button>
+          <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2 no-select touch-active">Cancel</button>
+          <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled no-select touch-active">Save</button>
         </div>
       </div>
     </div>
