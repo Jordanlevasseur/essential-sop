@@ -68,13 +68,14 @@ export default async function(req: Request): Promise<Response> {
     }
 
     // ── Provisioned SOP guard ────────────────────────────────────────────────
-    // Essential SOP Jobs that have not been customized are platform-owned content.
-    // No company-side mutation is permitted — this is enforced here regardless of
-    // what the frontend shows or any client-side capability check.
-    if (job.sourceType === 'essential_sop' && !job.isCustomized) {
+    // Essential SOP Jobs (provisioned or customized) may NOT be mutated through
+    // direct company-content write paths (SectionContent/JobSection).
+    // The authorized write path for Essential SOPs is saveJobOverride, not this path.
+    // This guard remains fully enforced regardless of isCustomized state.
+    if (job.sourceType === 'essential_sop') {
       return Response.json({
         allowed: false,
-        reason: 'Platform-provisioned Essential SOP content may not be modified through company write paths.',
+        reason: 'Essential SOP Jobs must be customized through the override system, not through direct content writes.',
       }, { status: 403 });
     }
 

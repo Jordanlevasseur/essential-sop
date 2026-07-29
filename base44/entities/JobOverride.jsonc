@@ -1,0 +1,81 @@
+{
+  "name": "JobOverride",
+  "type": "object",
+  "description": "Company-owned override for a provisioned Essential SOP Job. Stores only company-owned changes; never duplicates the full Master. One record per company+job combination, enforced by application logic.",
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "Company that owns this override. Never supplied by the frontend \u2014 always derived server-side."
+    },
+    "jobId": {
+      "type": "string",
+      "description": "The stable company Job ID (Job.id). Never changes."
+    },
+    "sourceMasterId": {
+      "type": "string",
+      "description": "The EssentialSOPMaster.id this Job was provisioned from. Captured at override creation for audit."
+    },
+    "sourceVersionId": {
+      "type": "string",
+      "description": "The EssentialSOPVersion.id pinned at provisioning time. Captured at override creation for audit."
+    },
+    "overrideData": {
+      "type": "object",
+      "description": "The actual company override values. Allowed keys: title, shortDescription, sectionOverrides. sectionOverrides is a map of sectionType -> array of content items.",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "shortDescription": {
+          "type": "string"
+        },
+        "sectionOverrides": {
+          "type": "object",
+          "description": "Map of sectionType to full replacement content array for that section."
+        }
+      }
+    },
+    "customizedFields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of field names the company has overridden. Used for display and future restore."
+    },
+    "revision": {
+      "type": "number",
+      "default": 1,
+      "description": "Monotonically increasing revision counter. Used for optimistic concurrency."
+    },
+    "mutationKey": {
+      "type": "string",
+      "description": "Client-supplied idempotency key. Prevents duplicate saves from retries."
+    },
+    "lastMutationKey": {
+      "type": "string",
+      "description": "The most recently applied mutation key. Rejects re-submission of the same key."
+    },
+    "createdByUserId": {
+      "type": "string",
+      "description": "User who created this override."
+    },
+    "lastModifiedByUserId": {
+      "type": "string",
+      "description": "User who last saved this override."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "sourceMasterId",
+    "sourceVersionId"
+  ]
+}

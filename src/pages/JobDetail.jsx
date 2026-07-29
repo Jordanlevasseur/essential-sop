@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
-import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert, Edit3 } from 'lucide-react';
+import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert, Edit3, Sliders } from 'lucide-react';
+import JobCustomizeEditor from '@/components/jobs/JobCustomizeEditor';
 import { SECTION_MAP } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
@@ -25,6 +26,7 @@ export default function JobDetail() {
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
   const [capabilities, setCapabilities] = useState(null);
+  const [overrideMeta, setOverrideMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -32,18 +34,20 @@ export default function JobDetail() {
   const [showAddFor, setShowAddFor] = useState(null);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [activeGrant, setActiveGrant] = useState(null);
+  const [showCustomizeEditor, setShowCustomizeEditor] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
       // All Job content is resolved through the centralized resolveJob backend.
       // The frontend does not determine how content is assembled — the backend does.
       const res = await base44.functions.invoke('resolveJob', { jobId });
-      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps } = res.data;
+      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = res.data;
 
       setJob(j);
       setSections(secs || []);
       setContentBySection(cbs || {});
       setCapabilities(caps || null);
+      setOverrideMeta(ovr || null);
 
       if (j && activeCompany && j.companyId && j.companyId !== activeCompany.id) {
         navigate('/');
@@ -141,6 +145,12 @@ export default function JobDetail() {
               <Pencil size={14} />{editMode ? 'Done' : 'Edit'}
             </button>
           )}
+          {capabilities?.canCustomize && !editMode && (
+            <button onClick={() => setShowCustomizeEditor(true)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-accent text-app-accent bg-app-info-bg">
+              <Sliders size={14} /> {overrideMeta ? 'Edit Custom' : 'Customize'}
+            </button>
+          )}
           {isProjectLead && job?.status === 'Published' && !activeGrant && !editMode && (
             <button onClick={() => setShowRequestForm(true)}
               className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated">
@@ -172,6 +182,12 @@ export default function JobDetail() {
             {job.tags.map(t => (
               <span key={t} className="text-xs px-2 py-0.5 bg-app-elevated text-app-text-muted rounded-full">#{t}</span>
             ))}
+          </div>
+        )}
+        {overrideMeta && (
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-app-info">
+            <Sliders size={11} />
+            <span>Company customization applied — revision {overrideMeta.revision}</span>
           </div>
         )}
       </div>
@@ -219,6 +235,24 @@ export default function JobDetail() {
 
       {showRequestForm && job && (
         <EditRequestForm job={job} onClose={() => setShowRequestForm(false)} />
+      )}
+
+      {showCustomizeEditor && job && capabilities?.canCustomize && (
+        <JobCustomizeEditor
+          job={job}
+          contentBySection={contentBySection}
+          override={overrideMeta}
+          onSaved={(resolvedJob) => {
+            const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = resolvedJob;
+            setJob(j);
+            setSections(secs || []);
+            setContentBySection(cbs || {});
+            setCapabilities(caps || null);
+            setOverrideMeta(ovr || null);
+            setShowCustomizeEditor(false);
+          }}
+          onClose={() => setShowCustomizeEditor(false)}
+        />
       )}
 
       {(editItem || showAddFor) && (

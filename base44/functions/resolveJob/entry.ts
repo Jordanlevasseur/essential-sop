@@ -82,23 +82,24 @@ export default async function(req: Request): Promise<Response> {
     // job.sourceType, sourceMasterId, sourceVersionId, or isCustomized.
     const membership = memberships[0];
     const isCompanyAdmin = membership.role === 'general_manager' || membership.role === 'project_manager';
-    const isProvisionedSOP = job.sourceType === 'essential_sop' && !job.isCustomized;
+    const isEssentialSOP = job.sourceType === 'essential_sop';
+    // Legacy guard: only block direct-content mutations for provisioned SOPs.
+    // The override system (saveJobOverride) is the new authorized write path.
+    const isProvisionedSOP = isEssentialSOP;
 
     const capabilities = {
-      // Content mutation — fully blocked for provisioned SOPs regardless of role.
-      // For company jobs, requires admin-level company role.
+      // Direct SectionContent/JobSection mutations remain blocked for all Essential SOP Jobs.
       canEditContent:         isCompanyAdmin && !isProvisionedSOP,
       canCreateContent:       isCompanyAdmin && !isProvisionedSOP,
       canDeleteContent:       isCompanyAdmin && !isProvisionedSOP,
       canReorderContent:      isCompanyAdmin && !isProvisionedSOP,
-      // Section completion status lives on JobSection records which don't exist
-      // for provisioned SOPs — always false for them.
       canChangeSectionStatus: isCompanyAdmin && !isProvisionedSOP,
-      // Job-level metadata edits follow the same rule.
       canEditJobMetadata:     isCompanyAdmin && !isProvisionedSOP,
+      // New in Edit 4: authorized company admins may save overrides via saveJobOverride.
+      canCustomize:           isCompanyAdmin && isProvisionedSOP,
     };
 
-    // ── Resolution: Essential SOP provisioned job (uncustomized) ────────────
+    // ── Resolution: Essential SOP provisioned job (with or without company override) ──
     if (isProvisionedSOP) {
       return await resolveEssentialSOPJob(job, SR, capabilities);
     }
@@ -140,6 +141,7 @@ async function resolveCompanyJob(job: any, SR: any, capabilities: any): Promise<
 
 // ── Version 4.1 Essential SOP provisioned Job resolution ────────────────────
 // Reads platform-owned section content from the pinned published version.
+// Merges company override on top of Master content where present.
 // Does NOT expose draft content. Does NOT silently switch versions.
 
 async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Promise<Response> {
@@ -176,6 +178,13 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
     quality: 'Quality Standards',
   };
 
+  // ── Load company override (Edit 4) ───────────────────────────────────────
+  // May be null if the company has not yet customized this job.
+  const overrides = await SR.entities.JobOverride.filter(
+    { companyId: job.companyId, jobId: job.id }
+  );
+  const override: any = overrides?.[0] || null;
+
   // Build sections array in display order (mirrors JobSection shape for frontend compat)
   const sections = SECTION_DISPLAY_ORDER
     .map((st, i) => {
@@ -188,21 +197,24 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
         sectionType: st,
         title: masterSection.title || SECTION_TITLES[st] || st,
         sortOrder: i,
-        completionStatus: 'Empty', // read-only provisioned sections start empty
+        completionStatus: 'Empty',
       };
     })
     .filter(Boolean);
 
-  // Build contentBySection from EssentialSOPSection.contentItems
-  // Each contentItem is shaped like a SectionContent record.
-  // We re-map it to the same shape the frontend already expects.
+  // Build contentBySection — merge Master content with company override where present.
+  // Master remains unchanged. The company override is the only mutable layer.
   const contentBySection: Record<string, any[]> = {};
   for (const masterSection of (masterSections || [])) {
     const st = masterSection.sectionType;
     if (!st || st === 'documentation') continue;
-    const items = (masterSection.contentItems || []).map((item: any, idx: number) => ({
-      // Stable virtual ID using section + index (no company SectionContent records exist)
-      id: `${masterSection.id}_${idx}`,
+
+    // If the company has a section override, use it instead of master content.
+    const sectionOverride = override?.overrideData?.sectionOverrides?.[st];
+    const sourceItems = sectionOverride || masterSection.contentItems || [];
+
+    const items = sourceItems.map((item: any, idx: number) => ({
+      id: sectionOverride ? `override_${masterSection.id}_${idx}` : `${masterSection.id}_${idx}`,
       jobId: job.id,
       companyId: job.companyId,
       sectionId: masterSection.id,
@@ -219,11 +231,27 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
     contentBySection[st] = items;
   }
 
-  // Return the company Job's stable identity + platform content.
-  // Strip ALL internal platform-admin origin fields — the frontend must not use them
-  // for permission inference. Capabilities object is the authoritative contract.
+  // Apply title / shortDescription override if present.
+  const resolvedTitle = override?.overrideData?.title || job.title;
+  const resolvedShortDescription = override?.overrideData?.shortDescription || job.shortDescription;
+
+  // Return the company Job's stable identity + merged platform+company content.
+  // Strip ALL internal platform-admin origin fields — the frontend must not use them.
+  // Capabilities object is the authoritative contract.
   const { sourceMasterId: _sm, sourceVersionId: _sv, sourceType: _st, isCustomized: _ic,
           customizedAt: _ca, customizedBy: _cb, ...publicJobFields } = job;
 
-  return Response.json({ job: publicJobFields, sections, contentBySection, capabilities });
+  // Expose minimal override metadata so the UI can drive concurrency control.
+  // Never expose raw override content — the merged result is the authoritative payload.
+  const overrideMeta = override
+    ? { revision: override.revision, customizedFields: override.customizedFields }
+    : null;
+
+  return Response.json({
+    job: { ...publicJobFields, title: resolvedTitle, shortDescription: resolvedShortDescription },
+    sections,
+    contentBySection,
+    capabilities,
+    override: overrideMeta,
+  });
 }
