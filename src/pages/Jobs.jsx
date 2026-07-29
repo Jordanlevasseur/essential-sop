@@ -9,7 +9,7 @@ import FilterSheet from '@/components/jobs/FilterSheet';
 
 export default function Jobs() {
   const navigate = useNavigate();
-  const { isAdmin, toggleFavorite, isFavorite, preferences } = useApp();
+  const { isCompanyAdmin, toggleFavorite, isFavorite, preferences } = useApp();
   const { activeCompany } = useCompany();
   const companyId = activeCompany?.id;
   const [jobs, setJobs] = useState([]);
@@ -129,7 +129,7 @@ export default function Jobs() {
         >
           <SlidersHorizontal size={18} />
         </button>
-        {isAdmin && (
+        {isCompanyAdmin && (
           <button
             onClick={() => navigate('/create-job')}
             className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium"

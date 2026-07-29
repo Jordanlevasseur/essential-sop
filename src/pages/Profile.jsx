@@ -19,7 +19,7 @@ import { resolveLegalLink } from '@/lib/appSettings';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isAdmin, companyId } = useApp();
+  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isPlatformSuperAdmin, companyId } = useApp();
   const { activeCompany, activeMembership, companies, isGeneralManager } = useCompany();
   const { appearance, setAppearance } = useTheme();
   const currentPlan = getPlan(activeCompany?.subscriptionPlanCode);
@@ -68,8 +68,8 @@ export default function Profile() {
           <p className="text-sm text-app-text-2 truncate">{rl(activeMembership?.role) || user.role}</p>
           <p className="text-xs text-app-text-muted truncate">{activeCompany?.name || user.company}</p>
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${userMode === 'admin' ? 'bg-app-info-bg text-app-info' : 'bg-app-info-bg text-app-accent'}`}>
-          {userMode === 'admin' ? 'Admin' : 'View Only'}
+        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-app-disabled text-app-text-muted">
+          {userMode === 'admin' ? 'Demo: Admin' : 'Demo: View'}
         </div>
       </div>
 
@@ -199,19 +199,21 @@ export default function Profile() {
         </div>
       </Section>
 
-      <Section title="Prototype Controls">
-        <Row icon={HardHat} label="Switch to Technician View" active={userMode === 'technician'} onClick={() => switchMode('technician')} />
+      {/* Prototype Controls — presentation-only UI switchers. No backend permissions change. */}
+      <Section title="Prototype Controls (Presentation Only)">
+        <Row icon={HardHat} label="Technician View" active={userMode === 'technician'} onClick={() => switchMode('technician')} />
         <Divider />
-        <Row icon={ShieldCheck} label="Switch to Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
+        <Row icon={ShieldCheck} label="Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
         <Divider />
         <Row icon={RotateCcw} label={resetting ? 'Resetting…' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
-        {isAdmin && (
-          <>
-            <Divider />
-            <Row icon={ClipboardList} label="Account Deletion Requests" onClick={() => navigate('/admin/deletion-requests')} />
-          </>
-        )}
       </Section>
+
+      {/* Platform Admin — gated on verified PlatformMembership, not company role */}
+      {isPlatformSuperAdmin && (
+        <Section title="Platform Administration">
+          <Row icon={ClipboardList} label="Account Deletion Requests" onClick={() => navigate('/admin/deletion-requests')} />
+        </Section>
+      )}
 
       <Section title="Account">
         <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />

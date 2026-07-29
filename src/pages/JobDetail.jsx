@@ -16,13 +16,15 @@ const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'qu
 export default function JobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { isFavorite, toggleFavorite, addRecentlyViewed, isAdmin } = useApp();
+  const { isFavorite, toggleFavorite, addRecentlyViewed, isCompanyAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
   const isProjectLead = activeMembership?.role === 'project_lead';
   // The backend is the single authority on what actions are available.
   // The frontend must not infer permissions from job origin fields.
   // capabilities is null until the resolver responds; treat null as read-only.
-  const canEdit = isAdmin && (capabilities?.canEditContent ?? false);
+  // canEdit: company admin presentation toggle AND backend-verified capability both required.
+  // isCompanyAdmin is from CompanyMembership only — never from platform authority.
+  const canEdit = isCompanyAdmin && (capabilities?.canEditContent ?? false);
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});

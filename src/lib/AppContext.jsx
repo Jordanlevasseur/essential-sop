@@ -148,25 +148,17 @@ export function AppProvider({ children }) {
   // Does NOT grant any backend permissions. Renamed to clarify it is not a role switch.
   const technicianViewMode = userMode === 'technician';
 
-  // DEPRECATED: isAdmin kept temporarily for backward compatibility with
-  // existing company UI components that check it. It maps to company-admin
-  // status only — never to platform authority.
-  // TODO: Remove in a subsequent edit by updating all consuming components.
-  const isAdmin = isCompanyAdmin;
-
   return (
     <AppContext.Provider value={{
       isReady, seedError, userMode, switchMode,
-      // Company authority (explicit)
+      // Company authority (explicit) — derived from CompanyMembership only
       isCompanyAdmin,
       companyCapabilities,
-      // Platform authority (explicit) — sourced from PlatformContext
+      // Platform authority (explicit) — sourced from PlatformContext, independent of company
       isPlatformSuperAdmin,
       platformCapabilities,
       // Prototype presentation mode — NOT an authorization signal
       technicianViewMode,
-      // Legacy alias — company-admin only, never platform. Kept for existing UI compatibility.
-      isAdmin,
       isGeneralManager,
       favorites, toggleFavorite, isFavorite,
       recentlyViewed, addRecentlyViewed,
