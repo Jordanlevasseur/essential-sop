@@ -24,6 +24,16 @@
       ],
       "default": "draft"
     },
+    "distributionStatus": {
+      "type": "string",
+      "enum": [
+        "internal",
+        "customer_available",
+        "retired"
+      ],
+      "default": "internal",
+      "description": "Controls customer distribution eligibility. Only admin/esop_admin may change this. 'customer_available' = eligible for company provisioning. 'internal' = platform use only. 'retired' = no longer provisioned to new companies."
+    },
     "currentPublishedVersionId": {
       "type": "string",
       "description": "ID of the currently active EssentialSOPVersion record"

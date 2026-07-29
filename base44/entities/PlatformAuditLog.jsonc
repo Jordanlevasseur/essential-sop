@@ -20,7 +20,8 @@
         "master_sop_version_published",
         "master_sop_archived",
         "master_sop_deleted",
-        "master_sop_duplicated"
+        "master_sop_duplicated",
+        "company_library_provisioned"
       ]
     },
     "targetUserId": {

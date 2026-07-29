@@ -1,0 +1,95 @@
+{
+  "name": "CompanyLibraryProvisioningRun",
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "The company this provisioning run targeted."
+    },
+    "initiatedByUserId": {
+      "type": "string",
+      "description": "userId of the admin who triggered the run. Null for system-initiated runs."
+    },
+    "initiatedByType": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "system"
+      ],
+      "description": "Whether the run was triggered by a human admin or an automated system call."
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "started",
+        "completed",
+        "partially_completed",
+        "failed"
+      ],
+      "default": "started"
+    },
+    "eligibleMasterCount": {
+      "type": "number",
+      "default": 0
+    },
+    "existingProvisionedCount": {
+      "type": "number",
+      "default": 0
+    },
+    "createdCount": {
+      "type": "number",
+      "default": 0
+    },
+    "skippedCount": {
+      "type": "number",
+      "default": 0
+    },
+    "failedCount": {
+      "type": "number",
+      "default": 0
+    },
+    "errorSummary": {
+      "type": "string",
+      "description": "Non-sensitive summary of any errors during this run."
+    },
+    "createdJobIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "IDs of Job records created during this run."
+    },
+    "errors": {
+      "type": "array",
+      "description": "Per-SOP error details. Does not include stack traces or sensitive internals.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sourceMasterId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "companyId",
+    "initiatedByType",
+    "startedAt",
+    "status"
+  ]
+}
