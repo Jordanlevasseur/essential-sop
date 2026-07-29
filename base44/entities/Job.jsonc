@@ -65,7 +65,7 @@
     },
     "sourceVersionId": {
       "type": "string",
-      "description": "Hidden metadata: EssentialSOPVersion.id that was current when this Job was provisioned."
+      "description": "Hidden metadata: EssentialSOPVersion.id currently pinned to this Job."
     },
     "isCustomized": {
       "type": "boolean",
@@ -80,6 +80,10 @@
     "customizedBy": {
       "type": "string",
       "description": "Hidden metadata: userId who made the first customization."
+    },
+    "lastAdoptionMutationKey": {
+      "type": "string",
+      "description": "Idempotency key of the last successfully completed adoptMasterVersionWithResolutions call. Stored on the Job so it survives override deletion (empty rebase scenario). Used to detect and safely replay duplicate adoption requests."
     }
   },
   "required": [
