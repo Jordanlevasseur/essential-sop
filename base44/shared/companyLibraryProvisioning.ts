@@ -13,21 +13,67 @@
  * 2. Manual platform provisioning: triggered from provisionCompanyLibrary
  *    after requirePlatformSuperAdmin() succeeds. Source: MANUAL_PLATFORM_ADMIN.
  *
+ * 3. Future: publication distribution workflow. Source: FUTURE_DISTRIBUTION_EVENT.
+ *    (Not yet implemented — architecture supports it.)
+ *
  * ── ELIGIBILITY ───────────────────────────────────────────────────────────────
- * A Master SOP is eligible for initial company provisioning when ALL of:
+ * Policy eligibility is evaluated by isCompanyEligibleForMaster(), which is
+ * COMPLETELY INDEPENDENT of trigger source. The source identifies why provisioning
+ * was called; it never determines whether a company qualifies under the policy.
+ *
+ * A Master SOP is eligible for provisioning when ALL of:
  *   - Master.status === 'active'
  *   - Master.distributionStatus === 'customer_available'
  *   - Master.currentPublishedVersionId exists and is non-empty
  *   - The referenced EssentialSOPVersion exists and has status === 'published'
- *   - The effective distribution policy includes future companies:
- *       ALL_EXISTING_AND_FUTURE_COMPANIES → always eligible
- *       FUTURE_COMPANIES_ONLY              → always eligible
- *       SELECTED_COMPANIES                 → eligible only when companyId in defaultSelectedCompanyIds
- *       MANUAL                             → NOT eligible
+ *   - isCompanyEligibleForMaster() returns eligible === true:
  *
- * Source of truth for future-company policy: Master.defaultDistributionPolicy
- * and Master.defaultSelectedCompanyIds. DistributionEvent records publication
- * history but do NOT override the current Master policy for future-company eligibility.
+ *       ALL_EXISTING_AND_FUTURE_COMPANIES
+ *         → always eligible regardless of company creation date or trigger source.
+ *
+ *       FUTURE_COMPANIES_ONLY
+ *         → eligible only when company.created_date is AFTER the policy cutoff.
+ *         → Cutoff authority (in order):
+ *             1. Master.distributionPolicyUpdatedAt  (preferred — set when policy was last changed)
+ *             2. Master.created_date                 (fallback — set at master creation)
+ *         → This rule applies identically for COMPANY_CREATION and MANUAL_PLATFORM_ADMIN.
+ *         → A manual re-run does NOT bypass the timing rule.
+ *         → Skip reason: COMPANY_PREDATES_FUTURE_ONLY_CUTOFF
+ *
+ *       SELECTED_COMPANIES
+ *         → eligible whenever companyId is included in Master.defaultSelectedCompanyIds.
+ *         → Applies during COMPANY_CREATION (companyId known after Company record is created).
+ *         → Applies during MANUAL_PLATFORM_ADMIN.
+ *         → Applies for future distribution workflows.
+ *         → Source does NOT gate this — only list membership matters.
+ *         → Skip reason: COMPANY_NOT_SELECTED
+ *
+ *       MANUAL
+ *         → Never eligible for automatic provisioning.
+ *         → May only be provisioned through an explicit authorized action that
+ *           sets includeManual=true (not currently exposed on any endpoint).
+ *         → Skip reason: POLICY_MANUAL
+ *
+ * ── AUTHORITATIVE SELECTED-COMPANY FIELD ─────────────────────────────────────
+ * For initial company provisioning and manual reconciliation:
+ *   → Master.defaultSelectedCompanyIds  (current policy configuration on the Master)
+ * For future publication distribution events (Edit 4+):
+ *   → DistributionEvent.selectedCompanyIds (override for that specific publication)
+ * When a DistributionEvent is present and its policy is SELECTED_COMPANIES,
+ * its selectedCompanyIds takes precedence over the Master's defaultSelectedCompanyIds.
+ *
+ * ── FUTURE_COMPANIES_ONLY CUTOFF ─────────────────────────────────────────────
+ * The cutoff is the timestamp at which the FUTURE_COMPANIES_ONLY policy became
+ * effective for this master. Companies created AFTER this timestamp qualify.
+ * Authoritative source: Master.distributionPolicyUpdatedAt (set by manageMasterSOP
+ * when the policy is changed). Fallback: Master.created_date.
+ * Limitation: if distributionPolicyUpdatedAt was not recorded (masters predating
+ * Edit 2), the fallback is master.created_date, which may be earlier than the
+ * intended cutoff. This is documented as an open limitation.
+ *
+ * Source of truth for policy: Master.defaultDistributionPolicy and
+ * Master.defaultSelectedCompanyIds. DistributionEvent records publication
+ * history but do NOT override the current Master policy for initial provisioning.
  *
  * ── COMPANY JOB INVARIANT ─────────────────────────────────────────────────────
  * ONE COMPANY + ONE MASTER SOP = NO MORE THAN ONE NON-DELETED COMPANY JOB.
@@ -89,19 +135,97 @@
 
 import { writePlatformAudit } from './platformAuth.ts';
 
-// ── Policy constants ──────────────────────────────────────────────────────────
-const FUTURE_COMPANY_ELIGIBLE_POLICIES = new Set([
-  'ALL_EXISTING_AND_FUTURE_COMPANIES',
-  'FUTURE_COMPANIES_ONLY',
-]);
-
 // ── Deterministic provisioning key ────────────────────────────────────────────
 export function buildProvisioningKey(companyId: string, masterId: string): string {
   return `INITIAL_COMPANY_LIBRARY:${companyId}:${masterId}`;
 }
 
-// ── Provisioning source ────────────────────────────────────────────────────────
-export type ProvisioningSource = 'COMPANY_CREATION' | 'MANUAL_PLATFORM_ADMIN';
+// ── Provisioning source — identifies WHY provisioning was called ───────────────
+// Does NOT determine policy eligibility. Never used as a policy gate.
+export type ProvisioningSource = 'COMPANY_CREATION' | 'MANUAL_PLATFORM_ADMIN' | 'FUTURE_DISTRIBUTION_EVENT';
+
+// ── Skip reasons — policy exclusion is a normal eligibility result, not a failure ──
+export type SkipReason =
+  | 'ALREADY_PROVISIONED'
+  | 'POLICY_MANUAL'
+  | 'COMPANY_NOT_SELECTED'
+  | 'COMPANY_PREDATES_FUTURE_ONLY_CUTOFF'
+  | 'MASTER_NOT_CUSTOMER_AVAILABLE'
+  | 'MASTER_NOT_ACTIVE'
+  | 'NO_PUBLISHED_VERSION';
+
+// ── Eligibility result — returned by isCompanyEligibleForMaster ───────────────
+export interface EligibilityResult {
+  eligible: boolean;
+  skipReason?: SkipReason;
+}
+
+/**
+ * isCompanyEligibleForMaster — Pure policy eligibility function.
+ *
+ * Evaluates whether a company should receive a provisioned Job for a given
+ * master SOP. This function is COMPLETELY INDEPENDENT of trigger source.
+ * The caller's source (COMPANY_CREATION, MANUAL_PLATFORM_ADMIN, etc.) is
+ * irrelevant to the result — only the company, master policy, and optional
+ * distribution event context matter.
+ *
+ * Parameters:
+ *   companyCreatedDate        ISO string from Company.created_date
+ *   masterPolicy              Master.defaultDistributionPolicy
+ *   masterSelectedCompanyIds  Master.defaultSelectedCompanyIds
+ *   masterPolicyCutoffDate    Master.distributionPolicyUpdatedAt ?? Master.created_date
+ *                             (the timestamp after which new companies qualify for FUTURE_ONLY)
+ *   effectiveSelectedIds      Optional override (e.g. from DistributionEvent.selectedCompanyIds)
+ *                             When provided, takes precedence over masterSelectedCompanyIds
+ *                             for SELECTED_COMPANIES policy evaluation.
+ */
+export function isCompanyEligibleForMaster(params: {
+  companyId: string;
+  companyCreatedDate: string;
+  masterPolicy: string;
+  masterSelectedCompanyIds: string[];
+  masterPolicyCutoffDate: string;
+  effectiveSelectedIds?: string[] | null;
+}): EligibilityResult {
+  const {
+    companyId, companyCreatedDate, masterPolicy,
+    masterSelectedCompanyIds, masterPolicyCutoffDate,
+    effectiveSelectedIds,
+  } = params;
+
+  switch (masterPolicy) {
+    case 'ALL_EXISTING_AND_FUTURE_COMPANIES':
+      // Always eligible — no timing or list restriction.
+      return { eligible: true };
+
+    case 'FUTURE_COMPANIES_ONLY': {
+      // Eligible only when the company was created AFTER the policy cutoff.
+      // Cutoff: distributionPolicyUpdatedAt ?? master.created_date (caller resolves this).
+      const cutoff = new Date(masterPolicyCutoffDate).getTime();
+      const companyCreated = new Date(companyCreatedDate).getTime();
+      if (!isNaN(cutoff) && !isNaN(companyCreated) && companyCreated > cutoff) {
+        return { eligible: true };
+      }
+      return { eligible: false, skipReason: 'COMPANY_PREDATES_FUTURE_ONLY_CUTOFF' };
+    }
+
+    case 'SELECTED_COMPANIES': {
+      // Eligible when companyId is in the authoritative selected-company list.
+      // effectiveSelectedIds (e.g. from a DistributionEvent) takes precedence when provided.
+      const list = (effectiveSelectedIds != null ? effectiveSelectedIds : masterSelectedCompanyIds) || [];
+      if (list.includes(companyId)) {
+        return { eligible: true };
+      }
+      return { eligible: false, skipReason: 'COMPANY_NOT_SELECTED' };
+    }
+
+    case 'MANUAL':
+    default:
+      // Never auto-provisioned. Requires an explicit authorized manual-policy override
+      // (includeManual=true parameter — not currently exposed on any endpoint).
+      return { eligible: false, skipReason: 'POLICY_MANUAL' };
+  }
+}
 
 // ── Core params ───────────────────────────────────────────────────────────────
 export interface ProvisionCompanyLibraryCoreParams {
@@ -116,11 +240,12 @@ export interface ProvisioningItemResult {
   masterId: string;
   masterTitle: string;
   result: 'COMPLETED' | 'SKIPPED' | 'FAILED';
+  skipReason?: SkipReason;        // populated when result === 'SKIPPED' (policy exclusion or already provisioned)
   companyJobId: string | null;
   versionId: string | null;
   provisioningRecordId: string | null;
   provisioningKey: string;
-  errorCode?: string;
+  errorCode?: string;             // populated when result === 'FAILED' (infrastructure/data errors only)
   errorMessage?: string;
 }
 
@@ -145,6 +270,15 @@ export async function provisionCompanyLibraryCore(
 ): Promise<ProvisionCompanyLibraryCoreResult> {
   const { companyId, initiatedByUserId, source, SR } = params;
   const startedAt = new Date().toISOString();
+
+  // ── Load company record — needed for FUTURE_COMPANIES_ONLY timing ────────
+  let company: any = null;
+  try { company = await SR.entities.Company.get(companyId); } catch (_) {}
+  if (!company) {
+    return _buildFailResult(null); // Company not found — safe abort
+  }
+  // created_date is the authoritative company creation timestamp (built-in field)
+  const companyCreatedDate: string = company.created_date || startedAt;
 
   // ── Create CompanyLibraryProvisioningRun (started) ────────────────────────
   let runRecord: any = null;
@@ -201,17 +335,52 @@ export async function provisionCompanyLibraryCore(
     return failResult;
   }
 
-  // ── Step 2: Apply eligibility + policy filtering in memory ────────────────
-  const eligibleMasters = allMasters.filter((m: any) => {
-    if (!m.currentPublishedVersionId || !m.currentPublishedVersionId.trim()) return false;
-    const policy = m.defaultDistributionPolicy || 'MANUAL';
-    if (FUTURE_COMPANY_ELIGIBLE_POLICIES.has(policy)) return true;
-    if (policy === 'SELECTED_COMPANIES') {
-      return Array.isArray(m.defaultSelectedCompanyIds) && m.defaultSelectedCompanyIds.includes(companyId);
+  // ── Step 2: Apply policy eligibility in memory ────────────────────────────
+  // isCompanyEligibleForMaster() is source-independent — trigger source never gates eligibility.
+  // Policy-excluded masters are collected separately as pre-loop SKIPPED items (not FAILED).
+  const eligibleMasters: any[] = [];
+  const preSkippedItems: ProvisioningItemResult[] = [];
+
+  for (const m of allMasters) {
+    // Basic structural checks first (not policy)
+    if (!m.currentPublishedVersionId || !m.currentPublishedVersionId.trim()) {
+      preSkippedItems.push({
+        masterId: m.id, masterTitle: m.title,
+        result: 'SKIPPED', skipReason: 'NO_PUBLISHED_VERSION',
+        companyJobId: null, versionId: null,
+        provisioningRecordId: null,
+        provisioningKey: buildProvisioningKey(companyId, m.id),
+      });
+      continue;
     }
-    // MANUAL — not eligible
-    return false;
-  });
+
+    const policy = m.defaultDistributionPolicy || 'MANUAL';
+    // Cutoff for FUTURE_COMPANIES_ONLY: distributionPolicyUpdatedAt preferred, else created_date
+    const masterPolicyCutoffDate = m.distributionPolicyUpdatedAt || m.created_date || startedAt;
+
+    const eligibility = isCompanyEligibleForMaster({
+      companyId,
+      companyCreatedDate,
+      masterPolicy: policy,
+      masterSelectedCompanyIds: Array.isArray(m.defaultSelectedCompanyIds) ? m.defaultSelectedCompanyIds : [],
+      masterPolicyCutoffDate,
+      effectiveSelectedIds: null, // no DistributionEvent override at initial provisioning
+    });
+
+    if (eligibility.eligible) {
+      eligibleMasters.push(m);
+    } else {
+      // Policy exclusion — record as SKIPPED (not FAILED). No ProvisioningRecord written
+      // for pure policy exclusions to avoid polluting the record table with expected skips.
+      preSkippedItems.push({
+        masterId: m.id, masterTitle: m.title,
+        result: 'SKIPPED', skipReason: eligibility.skipReason,
+        companyJobId: null, versionId: m.currentPublishedVersionId || null,
+        provisioningRecordId: null,
+        provisioningKey: buildProvisioningKey(companyId, m.id),
+      });
+    }
+  }
 
   const totalEligible = eligibleMasters.length;
 
@@ -359,7 +528,8 @@ export async function provisionCompanyLibraryCore(
         companyJobIds.push(existingJob.id);
         items.push({
           masterId: master.id, masterTitle: master.title,
-          result: 'SKIPPED', companyJobId: existingJob.id,
+          result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
+          companyJobId: existingJob.id,
           versionId: existingRecord.versionId || versionId,
           provisioningRecordId: existingRecord.id, provisioningKey,
         });
@@ -372,10 +542,6 @@ export async function provisionCompanyLibraryCore(
     // ── Check existing Job (duplicate prevention) ──────────────────────────
     const existingJob = existingJobByMasterId.get(master.id);
     if (existingJob) {
-      // Job exists — determine outcome
-      const isUsable = !existingJob.isArchived;
-      const jobStatus = isUsable ? 'SKIPPED' : 'SKIPPED'; // archived = also skip (don't duplicate)
-
       // Partial-state recovery: if record is missing or FAILED but job exists, repair record
       const repairRecord = await _upsertProvisioningRecord(SR, {
         existingRecord,
@@ -389,7 +555,8 @@ export async function provisionCompanyLibraryCore(
       companyJobIds.push(existingJob.id);
       items.push({
         masterId: master.id, masterTitle: master.title,
-        result: 'SKIPPED', companyJobId: existingJob.id,
+        result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
+        companyJobId: existingJob.id,
         versionId: existingJob.sourceVersionId || versionId,
         provisioningRecordId: repairRecord?.id || existingRecord?.id || null,
         provisioningKey,
@@ -474,6 +641,9 @@ export async function provisionCompanyLibraryCore(
     : completed > 0 || skipped > 0 ? 'COMPLETED_WITH_ERRORS'
     : 'FAILED';
 
+  // Combine policy-skipped items (pre-loop) with per-master loop items
+  const allItems: ProvisioningItemResult[] = [...preSkippedItems, ...items];
+
   const result: ProvisionCompanyLibraryCoreResult = {
     provisioningRunId: runRecord?.id || null,
     overallStatus,
@@ -490,7 +660,7 @@ export async function provisionCompanyLibraryCore(
         errorCode: i.errorCode || 'UNKNOWN', errorMessage: i.errorMessage || 'Unknown error.',
       })),
     retryRecommended: failed > 0,
-    items,
+    items: allItems,
   };
 
   // ── Finalize provisioning run record ──────────────────────────────────────
