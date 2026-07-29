@@ -127,8 +127,8 @@ export default function DeleteAccountModal({ onClose }) {
             </ul>
 
             <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2">Cancel</button>
-              <button onClick={handleContinueToConfirm} className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold">Continue</button>
+              <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 no-select touch-active">Cancel</button>
+              <button onClick={handleContinueToConfirm} className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold no-select touch-active">Continue</button>
             </div>
           </div>
         )}

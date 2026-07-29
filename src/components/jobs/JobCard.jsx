@@ -16,7 +16,7 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
   return (
     <div
       onClick={onClick}
-      className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity"
+      className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 w-10 h-10 bg-app-elevated rounded-lg flex items-center justify-center text-xl">
@@ -27,7 +27,8 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
             <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
             <button
               onClick={e => { e.stopPropagation(); onFavToggle(); }}
-              className="flex-shrink-0 mt-0.5"
+              className="flex-shrink-0 mt-0.5 icon-btn no-select touch-active"
+              aria-label="Toggle favorite"
             >
               <Star size={18} className={isFav ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
             </button>

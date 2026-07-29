@@ -122,14 +122,14 @@ export default function JobDetail() {
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)}><ArrowLeft size={22} className="text-app-text-2" /></button>
-          <h1 className="font-semibold text-app-text flex-1 truncate">{job.title}</h1>
-          <button onClick={() => toggleFavorite(job.id)}>
+          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
+          <h1 className="font-semibold text-app-text flex-1 truncate no-select">{job.title}</h1>
+          <button onClick={() => toggleFavorite(job.id)} className="icon-btn no-select touch-active" aria-label="Toggle favorite">
             <Star size={20} className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
           </button>
           {isAdmin && (
             <button onClick={() => setEditMode(e => !e)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors no-select touch-active ${editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
               <Pencil size={14} />{editMode ? 'Done' : 'Edit'}
             </button>
           )}
@@ -204,7 +204,7 @@ function SectionBlock({ sectionType, sectionDef, items, isAdmin, editMode, sessi
           <h2 className="font-bold text-app-text text-base">{sectionDef.title}</h2>
         </div>
         {isAdmin && editMode && (
-          <button onClick={onAdd} className="flex items-center gap-1 px-2.5 py-1 bg-app-accent text-app-accent-text rounded-lg text-xs font-medium">
+          <button onClick={onAdd} className="flex items-center gap-1 px-2.5 py-1 bg-app-accent text-app-accent-text rounded-lg text-xs font-medium no-select touch-active">
             <Plus size={13} /> Add
           </button>
         )}
@@ -224,12 +224,12 @@ function SectionBlock({ sectionType, sectionDef, items, isAdmin, editMode, sessi
 
 function AdminBar({ item, index, total, onEdit, onDelete, onReorder }) {
   return (
-    <div className="flex items-center gap-1 pt-2 mt-2 border-t border-app-divider">
-      <button onClick={() => onEdit(item)} className="px-2 py-1 text-xs text-app-accent font-medium flex items-center gap-1"><Pencil size={11} /> Edit</button>
-      <button onClick={() => onDelete(item.id)} className="px-2 py-1 text-xs text-app-danger font-medium flex items-center gap-1"><Trash2 size={11} /> Delete</button>
+    <div className="flex items-center gap-1 pt-2 mt-2 border-t border-app-divider no-select">
+      <button onClick={e => { e.stopPropagation(); onEdit(item); }} className="px-2 py-1 text-xs text-app-accent font-medium flex items-center gap-1 touch-active"><Pencil size={11} /> Edit</button>
+      <button onClick={e => { e.stopPropagation(); onDelete(item.id); }} className="px-2 py-1 text-xs text-app-danger font-medium flex items-center gap-1 touch-active"><Trash2 size={11} /> Delete</button>
       <div className="flex-1" />
-      <button onClick={() => onReorder(index, -1)} disabled={index === 0} className="p-1 text-app-text-muted disabled:opacity-25"><ArrowUp size={13} /></button>
-      <button onClick={() => onReorder(index, 1)} disabled={index === total - 1} className="p-1 text-app-text-muted disabled:opacity-25"><ArrowDown size={13} /></button>
+      <button onClick={e => { e.stopPropagation(); onReorder(index, -1); }} disabled={index === 0} className="icon-btn text-app-text-muted disabled:opacity-25 touch-active" aria-label="Move up"><ArrowUp size={13} /></button>
+      <button onClick={e => { e.stopPropagation(); onReorder(index, 1); }} disabled={index === total - 1} className="icon-btn text-app-text-muted disabled:opacity-25 touch-active" aria-label="Move down"><ArrowDown size={13} /></button>
     </div>
   );
 }
@@ -284,7 +284,7 @@ function ToolsView({ items, editMode, session, setSessionItem, sessionPrefix, on
                 {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
               {!editMode && (
-                <button onClick={() => setSessionItem(`${sessionPrefix}_tools_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
+                <button onClick={e => { e.stopPropagation(); setSessionItem(`${sessionPrefix}_tools_${item.id}`, !gathered); }} className="flex-shrink-0 self-center ml-1 icon-btn no-select touch-active" aria-label={gathered ? 'Mark not gathered' : 'Mark gathered'}>
                   {gathered ? <CheckCircle2 size={22} className="text-app-success" /> : <Circle size={22} className="text-app-text-disabled" />}
                 </button>
               )}
@@ -323,7 +323,7 @@ function MaterialsView({ items, editMode, session, setSessionItem, sessionPrefix
                 {editMode && <PhotoUpload itemId={item.id} onPhotoUpload={onPhotoUpload} />}
               </div>
               {!editMode && (
-                <button onClick={() => setSessionItem(`${sessionPrefix}_materials_${item.id}`, !gathered)} className="flex-shrink-0 self-center ml-1">
+                <button onClick={e => { e.stopPropagation(); setSessionItem(`${sessionPrefix}_materials_${item.id}`, !gathered); }} className="flex-shrink-0 self-center ml-1 icon-btn no-select touch-active" aria-label={gathered ? 'Mark not gathered' : 'Mark gathered'}>
                   {gathered ? <CheckCircle2 size={22} className="text-app-success" /> : <Circle size={22} className="text-app-text-disabled" />}
                 </button>
               )}
@@ -341,8 +341,8 @@ function ScopeView({ items, editMode, onEdit, onDelete, onReorder }) {
     <div className="space-y-3">
       {items.map((item, i) => (
         <div key={item.id} className="bg-app-card border border-app-border rounded-xl p-4">
-          <h4 className="font-semibold text-sm text-app-text mb-1">{item.title}</h4>
-          <p className={`text-sm whitespace-pre-wrap leading-relaxed ${item.isCritical ? 'text-app-warning' : 'text-app-text-2'}`}>{item.body}</p>
+          <h4 className="font-semibold text-sm text-app-text mb-1 no-select">{item.title}</h4>
+          <p className={`text-sm whitespace-pre-wrap leading-relaxed selectable ${item.isCritical ? 'text-app-warning' : 'text-app-text-2'}`}>{item.body}</p>
           {editMode && <AdminBar item={item} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder} />}
         </div>
       ))}
@@ -359,7 +359,7 @@ function ProcedureView({ items, editMode, session, setSessionItem, sessionPrefix
           <div key={item.id} className={`bg-app-card border rounded-xl p-4 ${done && !editMode ? 'border-app-success' : 'border-app-border'}`}>
             <div className="flex items-start gap-3">
               {!editMode && (
-                <button onClick={() => setSessionItem(`${sessionPrefix}_proc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
+                <button onClick={e => { e.stopPropagation(); setSessionItem(`${sessionPrefix}_proc_${item.id}`, !done); }} className="flex-shrink-0 mt-0.5 icon-btn no-select touch-active" aria-label={done ? 'Mark incomplete' : 'Mark complete'}>
                   {done ? <CheckCircle2 size={20} className="text-app-success" /> : <Circle size={20} className="text-app-text-disabled" />}
                 </button>
               )}
@@ -368,7 +368,7 @@ function ProcedureView({ items, editMode, session, setSessionItem, sessionPrefix
                   <span className="flex-shrink-0 w-6 h-6 bg-app-accent text-app-accent-text rounded-full flex items-center justify-center text-xs font-bold">{i + 1}</span>
                   <h4 className={`font-semibold text-sm ${done && !editMode ? 'line-through text-app-text-muted' : 'text-app-text'}`}>{item.title}</h4>
                 </div>
-                <p className="text-sm text-app-text-2 ml-8 leading-relaxed">{item.body}</p>
+                <p className="text-sm text-app-text-2 ml-8 leading-relaxed selectable">{item.body}</p>
                 {item.metadata?.warning && (
                   <div className="ml-8 mt-2 px-3 py-2 bg-app-danger-bg border border-app-danger rounded-lg flex items-start gap-1.5">
                     <AlertTriangle size={13} className="text-app-danger flex-shrink-0 mt-0.5" />
@@ -416,7 +416,7 @@ function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, o
                   <span className={`text-xs font-bold uppercase tracking-wide ${sev.text}`}>{item.metadata?.severity || 'Information'}</span>
                 </div>
                 <h4 className="font-semibold text-sm text-app-text mb-1">{item.title}</h4>
-                <p className="text-sm text-app-text-2 leading-relaxed">{item.body}</p>
+                <p className="text-sm text-app-text-2 leading-relaxed selectable">{item.body}</p>
                 {item.metadata?.requiredAction && (
                   <p className="text-xs text-app-text-2 mt-2 pt-2 border-t border-app-divider">
                     <span className="font-semibold">Required Action:</span> {item.metadata.requiredAction}
@@ -430,8 +430,8 @@ function SafetyView({ items, editMode, session, setSessionItem, sessionPrefix, o
       </div>
       {!editMode && (
         <div className={`rounded-xl p-4 border-2 ${acknowledged ? 'bg-app-success-bg border-app-success' : 'bg-app-card border-app-border'}`}>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <button onClick={() => setSessionItem(ackKey, !acknowledged)}>
+          <label className="flex items-center gap-3 cursor-pointer no-select">
+            <button onClick={e => { e.stopPropagation(); setSessionItem(ackKey, !acknowledged); }} className="icon-btn touch-active flex-shrink-0" aria-label="Acknowledge safety requirements">
               {acknowledged ? <CheckCircle2 size={24} className="text-app-success" /> : <Circle size={24} className="text-app-text-disabled" />}
             </button>
             <span className="text-sm font-medium text-app-text">I have reviewed all safety requirements for this job.</span>
@@ -465,7 +465,7 @@ function DocumentationView({ items, editMode, session, setSessionItem, sessionPr
             <div key={item.id} className={`bg-app-card border rounded-xl p-4 ${done && !editMode ? 'border-app-success' : 'border-app-border'}`}>
               <div className="flex items-start gap-3">
                 {!editMode && (
-                  <button onClick={() => setSessionItem(`${sessionPrefix}_doc_${item.id}`, !done)} className="flex-shrink-0 mt-0.5">
+                  <button onClick={e => { e.stopPropagation(); setSessionItem(`${sessionPrefix}_doc_${item.id}`, !done); }} className="flex-shrink-0 mt-0.5 icon-btn no-select touch-active" aria-label={done ? 'Mark incomplete' : 'Mark complete'}>
                     {done ? <CheckCircle2 size={20} className="text-app-success" /> : <Circle size={20} className="text-app-text-disabled" />}
                   </button>
                 )}
@@ -541,10 +541,11 @@ function QualityView({ items, editMode, session, setSessionItem, sessionPrefix, 
                 <>
                   <div className="flex gap-2">
                     {['Pass', 'Fail', 'Not Applicable'].map(r => (
-                      <button key={r} onClick={() => {
+                      <button key={r} onClick={e => {
+                        e.stopPropagation();
                         setSessionItem(`${sessionPrefix}_quality_${item.id}_result`, r);
                         if (r !== 'Fail') setSessionItem(`${sessionPrefix}_quality_${item.id}_note`, undefined);
-                      }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors ${result === r ? RESULT_STYLES[r] : 'border-app-border text-app-text-muted bg-app-card'}`}>
+                      }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors no-select touch-active ${result === r ? RESULT_STYLES[r] : 'border-app-border text-app-text-muted bg-app-card'}`}>
                         {r === 'Not Applicable' ? 'N/A' : r}
                       </button>
                     ))}

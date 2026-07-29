@@ -114,7 +114,8 @@ export default function Jobs() {
         </div>
         <button
           onClick={() => setShowFilters(true)}
-          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 ${Object.values(filters).some(Boolean) ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
+          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 no-select touch-active ${Object.values(filters).some(Boolean) ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
+          aria-label="Filters"
         >
           <SlidersHorizontal size={18} />
         </button>
@@ -141,10 +142,10 @@ export default function Jobs() {
           </h2>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
             {favoriteJobs.map(job => (
-              <div key={job.id} className="flex-shrink-0 w-56 bg-app-card border border-app-border rounded-xl p-3 cursor-pointer" onClick={() => navigate(`/jobs/${job.id}`)}>
+              <div key={job.id} className="flex-shrink-0 w-56 bg-app-card border border-app-border rounded-xl p-3 cursor-pointer no-select touch-active" onClick={() => navigate(`/jobs/${job.id}`)}>
                 <div className="flex items-start justify-between mb-1">
                   <h3 className="font-semibold text-sm text-app-text line-clamp-2 flex-1 pr-2">{job.title}</h3>
-                  <button onClick={(e) => { e.stopPropagation(); toggleFavorite(job.id); }}>
+                  <button onClick={(e) => { e.stopPropagation(); toggleFavorite(job.id); }} className="icon-btn touch-active" aria-label="Remove from favorites">
                     <Star size={16} className="text-yellow-500 fill-yellow-500 flex-shrink-0" />
                   </button>
                 </div>

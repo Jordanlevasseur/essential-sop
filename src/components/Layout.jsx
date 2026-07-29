@@ -50,7 +50,7 @@ export default function Layout() {
                 to={to}
                 end={end}
                 className={({ isActive }) =>
-                  `flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
+                  `flex-1 flex flex-col items-center gap-1 py-3 transition-colors no-select touch-active ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
                 }
               >
                 <Icon size={22} strokeWidth={2} />

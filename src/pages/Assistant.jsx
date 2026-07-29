@@ -67,7 +67,7 @@ export default function Assistant() {
             <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Suggested Questions</p>
             {SUGGESTED_QUESTIONS.map(q => (
               <button key={q} onClick={() => handleAsk(q)}
-                className="w-full text-left px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-text hover:border-app-accent transition-colors">
+                className="w-full text-left px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-text hover:border-app-accent transition-colors no-select touch-active">
                 {q}
               </button>
             ))}
@@ -82,7 +82,7 @@ export default function Assistant() {
               </div>
             ) : (
               <div className="bg-app-card border border-app-border rounded-2xl rounded-bl-md p-4 max-w-[95%] w-full">
-                <p className="text-sm text-app-text whitespace-pre-wrap mb-3">{msg.text}</p>
+                <p className="text-sm text-app-text whitespace-pre-wrap mb-3 selectable">{msg.text}</p>
                 {msg.sources && msg.sources.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Sources</p>

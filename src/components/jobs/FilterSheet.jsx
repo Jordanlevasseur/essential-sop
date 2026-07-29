@@ -32,7 +32,7 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
               <div className="flex flex-wrap gap-2">
                 {items.map(t => (
                   <button key={t} onClick={() => update(key, t)}
-                    className={`px-3 py-1.5 rounded-lg text-sm ${filters[key] === t ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-sm no-select touch-active ${filters[key] === t ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'}`}>
                     {t}
                   </button>
                 ))}
