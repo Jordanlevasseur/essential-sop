@@ -46,31 +46,58 @@ export default async function(req) {
       if (authError) return authError;
 
       const { targetUserId, role, operation } = body; // operation: 'assign' | 'remove'
-      if (!targetUserId || !role || !['assign', 'remove'].includes(operation)) {
-        return Response.json({ error: 'targetUserId, role, and operation (assign|remove) are required' }, { status: 400 });
+
+      // Input validation — 400 for missing or structurally invalid inputs
+      if (!targetUserId || typeof targetUserId !== 'string' || !targetUserId.trim()) {
+        return Response.json({ error: 'targetUserId is required' }, { status: 400 });
+      }
+      if (!role || typeof role !== 'string') {
+        return Response.json({ error: 'role is required' }, { status: 400 });
+      }
+      if (!operation || !['assign', 'remove'].includes(operation)) {
+        return Response.json({ error: 'operation must be assign or remove' }, { status: 400 });
       }
       const ALLOWED_PLATFORM_ROLES = ['admin', 'esop_admin', 'user'];
       if (!ALLOWED_PLATFORM_ROLES.includes(role)) {
         return Response.json({ error: `Invalid platform role. Allowed: ${ALLOWED_PLATFORM_ROLES.join(', ')}` }, { status: 400 });
       }
-      // Prevent self-promotion / self-demotion
+
+      // Self-modification guard — 403
       if (targetUserId === user.id) {
         return Response.json({ error: 'Users may not modify their own platform role' }, { status: 403 });
       }
-      const targetUser = await SR.entities.User.get(targetUserId);
-      if (!targetUser) return Response.json({ error: 'Target user not found' }, { status: 404 });
 
+      // Target user lookup — controlled 404, never a raw throw
+      let targetUser;
+      try {
+        targetUser = await SR.entities.User.get(targetUserId);
+      } catch (_) {
+        return Response.json({ error: 'Target user not found' }, { status: 404 });
+      }
+      if (!targetUser) {
+        return Response.json({ error: 'Target user not found' }, { status: 404 });
+      }
+
+      const previousRole = targetUser.role || 'user';
       const newRole = operation === 'remove' ? 'user' : role;
+
+      // Apply role change, then immediately write audit.
+      // Both must succeed together; if the audit write fails we surface a 500
+      // rather than silently leaving an un-audited role change.
       await SR.entities.User.update(targetUserId, { role: newRole });
 
       await writePlatformAudit(SR, {
         actingUserId: user.id,
         actingUserRole: user.role,
         action: operation === 'assign' ? 'platform_role_assigned' : 'platform_role_removed',
-        extra: { targetUserId, targetRole: role, metadata: { operation, newRole } },
+        extra: {
+          targetUserId,
+          targetRole: role,
+          metadata: { operation, previousRole, newRole },
+        },
       });
 
-      return Response.json({ success: true, targetUserId, newRole });
+      return Response.json({ success: true, targetUserId, previousRole, newRole });
     }
 
     // ── All remaining actions require esop_admin or admin ───────────────────
