@@ -13,7 +13,11 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40" />
-      <div className="relative bg-white rounded-t-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div
+        className="relative bg-white rounded-t-2xl overflow-y-auto"
+        style={{ maxHeight: 'calc(80vh - env(safe-area-inset-top))' }}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="sticky top-0 bg-white border-b border-neutral-200 px-4 py-3 flex items-center justify-between">
           <h2 className="font-semibold text-neutral-900">Filters</h2>
           <button onClick={onClose}><X size={20} className="text-neutral-400" /></button>
@@ -53,7 +57,10 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
             </div>
           </div>
         </div>
-        <div className="sticky bottom-0 bg-white border-t border-neutral-200 p-4 flex gap-3">
+        <div
+          className="sticky bottom-0 bg-white border-t border-neutral-200 p-4 flex gap-3"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
           <button onClick={() => setFilters({ trade: '', skillLevel: '', category: '' })}
             className="flex-1 py-2.5 border border-neutral-200 rounded-lg text-sm font-medium text-neutral-600">
             Clear All

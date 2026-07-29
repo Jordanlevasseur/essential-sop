@@ -118,8 +118,11 @@ export default function JobDetail() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      {/* Sticky header */}
-      <div className="bg-white border-b border-neutral-200 sticky top-0 z-40">
+      {/* Sticky header — sits below notch/Dynamic Island via safe-area-inset-top */}
+      <div
+        className="bg-white border-b border-neutral-200 sticky top-0 z-40"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
         <div className="px-4 py-3 flex items-center gap-3">
           <button onClick={() => navigate(-1)}><ArrowLeft size={22} className="text-neutral-700" /></button>
           <h1 className="font-semibold text-neutral-900 flex-1 truncate">{job.title}</h1>
@@ -177,7 +180,8 @@ export default function JobDetail() {
         );
       })}
 
-      <div className="h-10" />
+      {/* Bottom spacer: clear the home indicator on sub-pages (no tab nav) */}
+      <div style={{ height: 'calc(24px + env(safe-area-inset-bottom))' }} />
 
       {(editItem || showAddFor) && (
         <ContentEditDialog
