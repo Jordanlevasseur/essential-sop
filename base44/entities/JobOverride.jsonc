@@ -78,6 +78,10 @@
       "type": "string",
       "description": "The EssentialSOPVersion.id the adoption is trying to pin on the Job. Set in Step 1 alongside rebaseIncomplete=true. Cleared in Step 3. Allows resolveJob to report which version is pending and allows the recovery router to verify the target has not changed."
     },
+    "pendingAnalysisId": {
+      "type": "string",
+      "description": "The CompanyVersionAnalysis.id used to produce the current rebase. Set in Step 1 alongside rebaseIncomplete=true. Cleared in Step 3. Authoritative server-side recovery source: VersionAdoptionIncomplete reads this from the incomplete override record so recovery works even when localStorage is empty, cleared, or unavailable."
+    },
     "auditPending": {
       "type": "boolean",
       "default": false,

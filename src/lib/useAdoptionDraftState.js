@@ -1,10 +1,23 @@
 /**
- * useAdoptionDraftState — Edit 5D Hardening
+ * useAdoptionDraftState — Edit 5D Final Correction
  *
  * Persists version adoption draft state to localStorage so that review decisions,
  * mutationKey, and analysisId survive refresh, navigation, reconnect, and browser crash.
  *
- * Storage key: `adoption_draft_${jobId}`
+ * ── STORAGE KEY ────────────────────────────────────────────────────────────────
+ * Key: `adoption_draft_${companyId}_${jobId}`
+ *
+ * Includes companyId to prevent cross-company stale draft collisions.
+ * A draft from company A is never loaded for company B even if the jobId matches.
+ *
+ * ── STALE DETECTION ────────────────────────────────────────────────────────────
+ * Drafts are discarded when targetVersionId changes (new update available).
+ * Drafts are discarded when companyId doesn't match.
+ *
+ * ── AUTHORITY ──────────────────────────────────────────────────────────────────
+ * localStorage is a CLIENT CONVENIENCE CACHE only.
+ * The authoritative recovery source is pendingAnalysisId on the JobOverride entity.
+ * Recovery MUST read from the server first. localStorage is a fallback, not the source.
  *
  * Cleared when:
  *   - adoption succeeds (call clearDraft())
@@ -13,55 +26,51 @@
  * Never cleared by refresh or navigation.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 
-function storageKey(jobId) {
-  return `adoption_draft_${jobId}`;
+function storageKey(companyId, jobId) {
+  return `adoption_draft_${companyId}_${jobId}`;
 }
 
-function readDraft(jobId) {
+function readDraft(companyId, jobId) {
   try {
-    const raw = localStorage.getItem(storageKey(jobId));
+    const raw = localStorage.getItem(storageKey(companyId, jobId));
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // Guard: reject drafts that somehow have a mismatched companyId
+    if (parsed.companyId && parsed.companyId !== companyId) return null;
+    return parsed;
   } catch (_) {
     return null;
   }
 }
 
-function writeDraft(jobId, draft) {
+function writeDraft(companyId, jobId, draft) {
   try {
-    localStorage.setItem(storageKey(jobId), JSON.stringify(draft));
+    localStorage.setItem(storageKey(companyId, jobId), JSON.stringify({ ...draft, companyId, jobId }));
   } catch (_) {}
 }
 
-function removeDraft(jobId) {
+function removeDraft(companyId, jobId) {
   try {
-    localStorage.removeItem(storageKey(jobId));
+    localStorage.removeItem(storageKey(companyId, jobId));
   } catch (_) {}
 }
 
 /**
+ * @param {string} companyId  — required; used in storage key + stale check
  * @param {string} jobId
- * @param {string} targetVersionId  — used to detect stale drafts (different target = discard)
- * @returns {{
- *   reviewDecisions: Record<string, string>,
- *   orphanDispositions: Record<string, string>,
- *   persistedMutationKey: string | null,
- *   persistedAnalysisId: string | null,
- *   setReviewDecisions: (decisions: Record<string, string>) => void,
- *   setOrphanDispositions: (dispositions: Record<string, string>) => void,
- *   persistAdoptionStart: (mutationKey: string, analysisId: string) => void,
- *   clearDraft: () => void,
- *   hasDraft: boolean,
- * }}
+ * @param {string | null} targetVersionId  — used to detect stale drafts; pass null for recovery-only use
  */
-export function useAdoptionDraftState(jobId, targetVersionId) {
+export function useAdoptionDraftState(companyId, jobId, targetVersionId) {
   const [state, setState] = useState(() => {
-    const draft = readDraft(jobId);
-    // Discard draft if it's for a different target version
-    if (draft && draft.targetVersionId && draft.targetVersionId !== targetVersionId) {
-      removeDraft(jobId);
+    if (!companyId || !jobId) {
+      return { reviewDecisions: {}, orphanDispositions: {}, mutationKey: null, analysisId: null };
+    }
+    const draft = readDraft(companyId, jobId);
+    // Discard draft if it's for a different target version (only when targetVersionId is provided)
+    if (draft && targetVersionId && draft.targetVersionId && draft.targetVersionId !== targetVersionId) {
+      removeDraft(companyId, jobId);
       return { reviewDecisions: {}, orphanDispositions: {}, mutationKey: null, analysisId: null };
     }
     return {
@@ -75,10 +84,12 @@ export function useAdoptionDraftState(jobId, targetVersionId) {
   const persist = useCallback((updates) => {
     setState(prev => {
       const next = { ...prev, ...updates };
-      writeDraft(jobId, { ...next, targetVersionId });
+      if (companyId && jobId) {
+        writeDraft(companyId, jobId, { ...next, targetVersionId });
+      }
       return next;
     });
-  }, [jobId, targetVersionId]);
+  }, [companyId, jobId, targetVersionId]);
 
   const setReviewDecisions = useCallback((decisions) => {
     persist({ reviewDecisions: decisions });
@@ -94,9 +105,9 @@ export function useAdoptionDraftState(jobId, targetVersionId) {
   }, [persist]);
 
   const clearDraft = useCallback(() => {
-    removeDraft(jobId);
+    if (companyId && jobId) removeDraft(companyId, jobId);
     setState({ reviewDecisions: {}, orphanDispositions: {}, mutationKey: null, analysisId: null });
-  }, [jobId]);
+  }, [companyId, jobId]);
 
   const hasDraft = !!(
     Object.keys(state.reviewDecisions).length > 0 ||

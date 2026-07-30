@@ -1,24 +1,22 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { sanitizeStoredOverride, VALID_SECTION_TYPES } from '../../shared/overrideSchema.js';
+import { rebaseOverrideFromAnalysis } from '../../shared/rebaseEngine.ts';
 
 /**
- * previewFromAnalysis — Edit 5D Hardening
+ * previewFromAnalysis — Edit 5D Final Correction
  *
  * Generates the identical post-adoption content that adoptVersionFromAnalysis would produce,
- * WITHOUT writing anything. Uses the same rebase logic as adoptionEngine.ts.
+ * WITHOUT writing anything.
  *
- * This is the ONLY authoritative preview. previewMasterVersionAdoption is NOT used here.
+ * Uses rebaseOverrideFromAnalysis from base44/shared/rebaseEngine.ts —
+ * THE SAME function called by adoptionEngine.ts. Not a copy. Not a mirror.
+ * The exact same import, the exact same function reference.
  *
  * Request: { companyJobId, analysisId, reviewDecisions }
- * Response: { sections: { [sectionType]: ContentItem[] }, targetVersionNumber, jobTitle, jobShortDescription }
+ * Response: { sections, targetVersionNumber, jobTitle, jobShortDescription }
  */
 
 const SECTION_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
-const SECTION_TITLES = {
-  tools: 'Tools', materials: 'Materials', scope: 'Scope',
-  procedure: 'Procedure', safety: 'Safety', quality: 'Quality Standards',
-};
-const COMPATIBILITY = { SAFE: 'SAFE', REVIEW_REQUIRED: 'REVIEW_REQUIRED', ORPHANED: 'ORPHANED', INVALID: 'INVALID', NO_OP: 'NO_OP' };
 
 export default async function(req: Request): Promise<Response> {
   try {
@@ -39,7 +37,7 @@ export default async function(req: Request): Promise<Response> {
     const job = await SR.entities.Job.get(companyJobId).catch(() => null);
     if (!job) return Response.json({ error: 'Job not found', code: 'JOB_NOT_FOUND' }, { status: 404 });
 
-    // Authorization
+    // Authorization — company admin only (same gate as adoption)
     const memberships = await base44.entities.CompanyMembership.filter({
       userId: user.id, companyId: job.companyId, status: 'active',
     }).catch(() => []);
@@ -64,7 +62,7 @@ export default async function(req: Request): Promise<Response> {
 
     const targetVersionId = analysis.toVersionId;
 
-    // Load current override
+    // Load current override and sanitize
     const overrideRecords = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: companyJobId }).catch(() => []);
     const override = overrideRecords?.[0] || null;
     let sanitizedOverrideData = null;
@@ -81,19 +79,21 @@ export default async function(req: Request): Promise<Response> {
     // Load target version for version number
     const targetVersion = await SR.entities.EssentialSOPVersion.get(targetVersionId).catch(() => null);
 
-    // Run the same rebase logic as adoptionEngine._rebaseOverrideFromAnalysis
-    const rebasedOverrideData = rebaseOverrideFromAnalysis(
-      analysis.itemResults || [],
-      sanitizedOverrideData,
+    // ── THE SHARED REBASE FUNCTION ──────────────────────────────────────────────
+    // This is the same rebaseOverrideFromAnalysis imported from rebaseEngine.ts
+    // that adoptionEngine.ts calls in Phase 4. Not a copy. The same function.
+    const { rebasedOverrideData } = rebaseOverrideFromAnalysis({
+      itemResults: analysis.itemResults || [],
+      existingOverrideData: sanitizedOverrideData,
       targetSections,
-      reviewDecisions || {}
-    );
+      reviewDecisions: reviewDecisions || {},
+    });
 
-    // Build the final resolved content — same logic as adoptVersionFromAnalysis resolver
+    // Build the final resolved content — same logic as the resolver in adoptVersionFromAnalysis
     const resolvedTitle = rebasedOverrideData?.title || job.title;
     const resolvedShortDescription = rebasedOverrideData?.shortDescription || job.shortDescription;
 
-    const sections = {};
+    const sections: Record<string, any[]> = {};
     for (const ms of targetSections) {
       const st = ms.sectionType;
       if (!st || !(VALID_SECTION_TYPES as Set<string>).has(st)) continue;
@@ -124,83 +124,4 @@ export default async function(req: Request): Promise<Response> {
     console.error('[previewFromAnalysis]', err);
     return Response.json({ error: 'Internal error', code: 'INTERNAL_ERROR' }, { status: 500 });
   }
-}
-
-// ── Rebase logic (mirror of adoptionEngine._rebaseOverrideFromAnalysis) ────────
-// Must stay in sync with adoptionEngine.ts. Any change there must be reflected here.
-function rebaseOverrideFromAnalysis(
-  itemResults: any[],
-  existingOverrideData: any,
-  targetSections: any[],
-  reviewDecisions: Record<string, string>
-): any {
-  if (!existingOverrideData) return null;
-
-  const resultByItemId: Record<string, any> = {};
-  for (const ir of itemResults) {
-    if (ir.currentItemId) resultByItemId[ir.currentItemId] = ir;
-    if (ir.companyOverrideValues?.item?._itemId) resultByItemId[ir.companyOverrideValues.item._itemId] = ir;
-  }
-
-  const rebasedSectionOverrides: Record<string, any[]> = {};
-  for (const st of SECTION_ORDER) {
-    const existingItems: any[] = existingOverrideData?.sectionOverrides?.[st] || [];
-    if (existingItems.length === 0) continue;
-    const rebasedItems: any[] = [];
-    for (const item of existingItems) {
-      const itemId = item._itemId || '';
-      const ir = itemId ? resultByItemId[itemId] : null;
-      if (!ir) { rebasedItems.push({ ...item }); continue; }
-      const compat = ir.compatibility;
-      if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        rebasedItems.push({ ...item });
-      } else if (compat === COMPATIBILITY.ORPHANED) {
-        rebasedItems.push({ ...item });
-      } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const key = ir.logicalItemId || itemId;
-        const decision = reviewDecisions[key];
-        if (decision === 'KEEP_COMPANY') { rebasedItems.push({ ...item }); }
-        else if (decision === 'USE_NEW_MASTER') { /* drop */ }
-        else { rebasedItems.push({ ...item }); } // undecided: keep as-is for preview
-      } else {
-        rebasedItems.push({ ...item });
-      }
-    }
-    if (rebasedItems.length > 0) rebasedSectionOverrides[st] = rebasedItems;
-  }
-
-  let rebasedTitle = null;
-  let rebasedDesc = null;
-  const metaResults = itemResults.filter((r: any) => r.itemType === 'metadata_field');
-  for (const mr of metaResults) {
-    const fieldPath = mr.logicalItemId?.replace('metadata_', '') || '';
-    const compat = mr.compatibility;
-    if (fieldPath.startsWith('title')) {
-      if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.title) rebasedTitle = existingOverrideData.title;
-      } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const dec = reviewDecisions[mr.logicalItemId || 'metadata_title'];
-        if (dec === 'KEEP_COMPANY' && existingOverrideData?.title) rebasedTitle = existingOverrideData.title;
-      }
-    } else if (fieldPath.startsWith('shortDescription')) {
-      if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.shortDescription) rebasedDesc = existingOverrideData.shortDescription;
-      } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const dec = reviewDecisions[mr.logicalItemId || 'metadata_shortDescription'];
-        if (dec === 'KEEP_COMPANY' && existingOverrideData?.shortDescription) rebasedDesc = existingOverrideData.shortDescription;
-      }
-    }
-  }
-  if (!rebasedTitle && existingOverrideData?.title && !metaResults.some((r: any) => (r.logicalItemId || '').includes('title'))) {
-    rebasedTitle = existingOverrideData.title;
-  }
-  if (!rebasedDesc && existingOverrideData?.shortDescription && !metaResults.some((r: any) => (r.logicalItemId || '').includes('shortDescription'))) {
-    rebasedDesc = existingOverrideData.shortDescription;
-  }
-
-  const result: any = {};
-  if (rebasedTitle) result.title = rebasedTitle;
-  if (rebasedDesc) result.shortDescription = rebasedDesc;
-  if (Object.keys(rebasedSectionOverrides).length > 0) result.sectionOverrides = rebasedSectionOverrides;
-  return Object.keys(result).length === 0 ? null : result;
 }

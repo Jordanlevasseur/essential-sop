@@ -28,6 +28,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
   const [analysisError, setAnalysisError] = useState(null);
 
   // Persistent draft state — survives refresh, navigation, crash
+  // companyId included in storage key to prevent cross-company collisions
   const {
     reviewDecisions,
     orphanDispositions,
@@ -38,7 +39,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
     persistAdoptionStart,
     clearDraft,
     hasDraft,
-  } = useAdoptionDraftState(job.id, targetVersionId);
+  } = useAdoptionDraftState(job.companyId, job.id, targetVersionId);
 
   const [adopting, setAdopting] = useState(false);
   const [adoptError, setAdoptError] = useState(null);

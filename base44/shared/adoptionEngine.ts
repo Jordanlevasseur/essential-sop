@@ -90,6 +90,7 @@
 
 import { sanitizeOverrideData } from './overrideSanitizer.ts';
 import { sanitizeStoredOverride, validateOverrideData, VALID_SECTION_TYPES, deterministicOverrideKey } from './overrideSchema.js';
+import { rebaseOverrideFromAnalysis } from './rebaseEngine.ts';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -394,13 +395,14 @@ export async function executeAdoptionFromAnalysis(
     sanitizedOverrideData = sanitized;
   }
 
-  const rebaseResult = _rebaseOverrideFromAnalysis(
-    analysis.itemResults || [],
-    sanitizedOverrideData,
+  const rebaseResult = rebaseOverrideFromAnalysis({
+    itemResults: analysis.itemResults || [],
+    existingOverrideData: sanitizedOverrideData,
     targetSections,
-    reviewDecisions
-  );
-  const { rebasedOverrideData, adoptionSummaryPartial } = rebaseResult;
+    reviewDecisions,
+  });
+  const { rebasedOverrideData, counts: rebaseCounts } = rebaseResult;
+  const adoptionSummaryPartial = rebaseCounts;
 
   if (rebasedOverrideData) {
     const validation = validateOverrideData(rebasedOverrideData);
@@ -438,6 +440,7 @@ export async function executeAdoptionFromAnalysis(
           sourceVersionId: job.sourceVersionId, // still old version at this point
           rebaseIncomplete: true,
           pendingTargetVersionId: targetVersionId,
+          pendingAnalysisId: analysisId,
           auditPending: false,
           updatedAt: now,
         });
@@ -461,6 +464,7 @@ export async function executeAdoptionFromAnalysis(
           sourceVersionId: job.sourceVersionId, // still old version at this point
           rebaseIncomplete: true,
           pendingTargetVersionId: targetVersionId,
+          pendingAnalysisId: analysisId,
           auditPending: false,
           updatedAt: now,
         });
@@ -489,6 +493,7 @@ export async function executeAdoptionFromAnalysis(
         lastAdoptionMutationKey: mutationKey,
         rebaseIncomplete: true,
         pendingTargetVersionId: targetVersionId,
+        pendingAnalysisId: analysisId,
         auditPending: false,
         createdByUserId: userId,
         lastModifiedByUserId: userId,
@@ -534,6 +539,7 @@ export async function executeAdoptionFromAnalysis(
         await SR.entities.JobOverride.update(savedOverrideId, {
           rebaseIncomplete: false,
           pendingTargetVersionId: null,
+          pendingAnalysisId: null,
           sourceVersionId: targetVersionId,
           updatedAt: now,
         });
@@ -651,6 +657,7 @@ async function _resumeStep3(
         await SR.entities.JobOverride.update(override.id, {
           rebaseIncomplete: false,
           pendingTargetVersionId: null,
+          pendingAnalysisId: null,
           sourceVersionId: targetVersionId,
           updatedAt: now,
         });
@@ -740,131 +747,9 @@ async function _writeAudit(SR: any, ctx: {
   }
 }
 
-// ── Internal: rebase override from analysis item results ──────────────────────
-function _rebaseOverrideFromAnalysis(
-  itemResults: any[],
-  existingOverrideData: any,
-  targetSections: any[],
-  reviewDecisions: Record<string, 'KEEP_COMPANY' | 'USE_NEW_MASTER'>
-): {
-  rebasedOverrideData: any | null;
-  adoptionSummaryPartial: Omit<AdoptFromAnalysisResult['adoptionSummary'], 'overrideRebased' | 'overrideRemoved'>;
-} {
-  const counts = {
-    safeApplied: 0, reviewDecisionsKept: 0, reviewDecisionsAccepted: 0,
-    orphanedPreserved: 0, noOpPreserved: 0, companyOnlyPreserved: 0,
-  };
-
-  if (!existingOverrideData) {
-    return { rebasedOverrideData: null, adoptionSummaryPartial: counts };
-  }
-
-  const resultByItemId: Record<string, any> = {};
-  for (const ir of itemResults) {
-    if (ir.currentItemId) resultByItemId[ir.currentItemId] = ir;
-    if (ir.companyOverrideValues?.item?._itemId) resultByItemId[ir.companyOverrideValues.item._itemId] = ir;
-  }
-
-  const rebasedSectionOverrides: Record<string, any[]> = {};
-
-  for (const st of SECTION_ORDER) {
-    const existingItems: any[] = existingOverrideData?.sectionOverrides?.[st] || [];
-    if (existingItems.length === 0) continue;
-
-    const rebasedItems: any[] = [];
-
-    for (const item of existingItems) {
-      const itemId = item._itemId || '';
-      const ir: any = itemId ? resultByItemId[itemId] : null;
-
-      if (!ir) {
-        rebasedItems.push({ ...item });
-        counts.companyOnlyPreserved++;
-        continue;
-      }
-
-      const compatibility = ir.compatibility;
-
-      if (compatibility === COMPATIBILITY.SAFE) {
-        rebasedItems.push({ ...item });
-        counts.safeApplied++;
-      } else if (compatibility === COMPATIBILITY.NO_OP) {
-        rebasedItems.push({ ...item });
-        counts.noOpPreserved++;
-      } else if (compatibility === COMPATIBILITY.ORPHANED) {
-        rebasedItems.push({ ...item });
-        counts.orphanedPreserved++;
-      } else if (compatibility === COMPATIBILITY.REVIEW_REQUIRED) {
-        const decisionKey = ir.logicalItemId || itemId;
-        const decision = reviewDecisions[decisionKey];
-        if (decision === 'KEEP_COMPANY') {
-          rebasedItems.push({ ...item });
-          counts.reviewDecisionsKept++;
-        } else if (decision === 'USE_NEW_MASTER') {
-          counts.reviewDecisionsAccepted++;
-        } else {
-          rebasedItems.push({ ...item });
-          counts.orphanedPreserved++;
-        }
-      } else {
-        rebasedItems.push({ ...item });
-        counts.companyOnlyPreserved++;
-      }
-    }
-
-    if (rebasedItems.length > 0) {
-      rebasedSectionOverrides[st] = rebasedItems;
-    }
-  }
-
-  let rebasedTitle: string | null = null;
-  let rebasedDesc: string | null = null;
-
-  const metaResults = itemResults.filter((r: any) => r.itemType === 'metadata_field');
-  for (const mr of metaResults) {
-    const fieldPath = mr.logicalItemId?.replace('metadata_', '') || '';
-    if (fieldPath === 'title' || fieldPath.startsWith('title')) {
-      const compat = mr.compatibility;
-      if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.title) { rebasedTitle = existingOverrideData.title; counts.safeApplied++; }
-      } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const decision = reviewDecisions[mr.logicalItemId || 'metadata_title'];
-        if (decision === 'KEEP_COMPANY' && existingOverrideData?.title) { rebasedTitle = existingOverrideData.title; counts.reviewDecisionsKept++; }
-        else if (decision === 'USE_NEW_MASTER') { counts.reviewDecisionsAccepted++; }
-      }
-    } else if (fieldPath === 'shortDescription' || fieldPath.startsWith('shortDescription')) {
-      const compat = mr.compatibility;
-      if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.shortDescription) { rebasedDesc = existingOverrideData.shortDescription; counts.safeApplied++; }
-      } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const decision = reviewDecisions[mr.logicalItemId || 'metadata_shortDescription'];
-        if (decision === 'KEEP_COMPANY' && existingOverrideData?.shortDescription) { rebasedDesc = existingOverrideData.shortDescription; counts.reviewDecisionsKept++; }
-        else if (decision === 'USE_NEW_MASTER') { counts.reviewDecisionsAccepted++; }
-      }
-    }
-  }
-
-  if (!rebasedTitle && existingOverrideData?.title) {
-    if (!metaResults.some((r: any) => (r.logicalItemId || '').includes('title'))) {
-      rebasedTitle = existingOverrideData.title; counts.companyOnlyPreserved++;
-    }
-  }
-  if (!rebasedDesc && existingOverrideData?.shortDescription) {
-    if (!metaResults.some((r: any) => (r.logicalItemId || '').includes('shortDescription'))) {
-      rebasedDesc = existingOverrideData.shortDescription; counts.companyOnlyPreserved++;
-    }
-  }
-
-  const rebasedOverrideData: any = {};
-  if (rebasedTitle) rebasedOverrideData.title = rebasedTitle;
-  if (rebasedDesc) rebasedOverrideData.shortDescription = rebasedDesc;
-  if (Object.keys(rebasedSectionOverrides).length > 0) rebasedOverrideData.sectionOverrides = rebasedSectionOverrides;
-
-  return {
-    rebasedOverrideData: Object.keys(rebasedOverrideData).length === 0 ? null : rebasedOverrideData,
-    adoptionSummaryPartial: counts,
-  };
-}
+// _rebaseOverrideFromAnalysis has been extracted to base44/shared/rebaseEngine.ts.
+// adoptionEngine now imports rebaseOverrideFromAnalysis from that module.
+// This comment is the only trace of the removed duplicate.
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
 function _computeCustomizedFields(overrideData: any): string[] {

@@ -130,7 +130,9 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
       error: 'This job has a pending version adoption that did not complete. Retry adoptVersionFromAnalysis with the original mutationKey to recover.',
       code: 'ADOPTION_INCOMPLETE',
       recoverable: true,
-      mutationKey: override.lastAdoptionMutationKey || null,
+      // Server-authoritative recovery identifiers — read by VersionAdoptionIncomplete
+      lastAdoptionMutationKey: override.lastAdoptionMutationKey || null,
+      pendingAnalysisId: override.pendingAnalysisId || null,
       pendingTargetVersionId: pendingTarget,
       // jobAlreadyPinned tells the client which recovery step is needed:
       // true  → only Step 3 (clear marker) is needed
