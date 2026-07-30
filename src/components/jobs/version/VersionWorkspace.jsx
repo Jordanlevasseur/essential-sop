@@ -75,9 +75,12 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
 
   useEffect(() => { runAnalysis(); }, [runAnalysis]);
 
-  // Readiness checks
-  const reviewItems = (analysis?.itemResults || []).filter(r => r.compatibility === 'REVIEW_REQUIRED' && r.requiresAdminAction);
-  const orphanedItems = (analysis?.itemResults || []).filter(r => r.compatibility === 'ORPHANED');
+  // Readiness checks — only items where the company has actual override stake count as decisions.
+  // Items with no overrideId and no overriddenFields are pure master-change notifications; they
+  // don't require a company decision even if requiresAdminAction is set (matches analysis count logic).
+  const hasStake = (r) => !!r.overrideId || (Array.isArray(r.overriddenFields) && r.overriddenFields.length > 0);
+  const reviewItems = (analysis?.itemResults || []).filter(r => r.compatibility === 'REVIEW_REQUIRED' && r.requiresAdminAction && hasStake(r));
+  const orphanedItems = (analysis?.itemResults || []).filter(r => r.compatibility === 'ORPHANED' && hasStake(r));
   const invalidItems = (analysis?.itemResults || []).filter(r => r.compatibility === 'INVALID');
 
   const allReviewDecided = reviewItems.every(r => !!reviewDecisions[r.logicalItemId]);
