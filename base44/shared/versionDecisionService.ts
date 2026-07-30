@@ -17,16 +17,55 @@
  * The same companyJob+toVersion always produces exactly one logical decision.
  *
  * ── RESULT TYPES ───────────────────────────────────────────────────────────────
- * CREATED            — New PENDING decision created.
- * ALREADY_EXISTS     — A decision with the same decisionKey already exists.
- * SUPERSEDED_EXISTING — Older PENDING/DEFERRED decisions were superseded; new PENDING created.
+ * CREATED              — New PENDING decision created; no prior unresolved decision existed.
+ * ALREADY_EXISTS       — A decision with the same decisionKey already exists; no writes performed.
+ * SUPERSEDED_EXISTING  — New PENDING created; older PENDING/DEFERRED decisions superseded and linked.
  * SKIPPED_ALREADY_CURRENT — Company Job already uses the target version; no decision needed.
- * FAILED             — An error prevented decision creation; see errorCode/errorMessage.
+ * FAILED               — An error prevented a complete and consistent operation; see errorCode/errorMessage.
  *
  * ── SUPERSEDING RULE ───────────────────────────────────────────────────────────
  * When a newer version is published, any existing PENDING or DEFERRED decisions
  * for the same (companyJobId, masterId) that target an OLDER version are superseded.
  * ACCEPTED, DECLINED, SUPERSEDED, and FAILED decisions are never touched.
+ *
+ * ── ATOMICITY AND CONSISTENCY ──────────────────────────────────────────────────
+ * Base44 has no multi-entity transactions. The following safe application-level
+ * sequence is used to satisfy the required invariant:
+ *
+ *   INVARIANT (after a successful operation):
+ *     1. Exactly one newest PENDING decision exists for the (companyJobId, masterId) pair.
+ *     2. Every older PENDING/DEFERRED decision is SUPERSEDED.
+ *     3. Each superseded decision has supersededByDecisionId pointing to the new decision.
+ *
+ * SAFE WRITE SEQUENCE:
+ *   Step 1. Reconcile: detect existing decision by deterministic decisionKey.
+ *           If found → ALREADY_EXISTS (no writes).
+ *   Step 2. Create the new PENDING decision first (before touching any older decision).
+ *           If creation fails → FAILED; older decisions are untouched (invariant preserved).
+ *   Step 3. Supersede all older PENDING/DEFERRED decisions, writing both status=SUPERSEDED
+ *           and supersededByDecisionId=newDecision.id in a single update per record.
+ *           If any superseding write fails:
+ *             a. Attempt to mark the newly created decision as FAILED (makes it non-actionable).
+ *             b. Return FAILED with SUPERSEDE_INCOMPLETE errorCode and recovery information.
+ *             c. The older decision remains PENDING/DEFERRED and usable.
+ *   Step 4. Verify: re-query unresolved decisions for this (companyJobId, masterId) pair.
+ *           If more than one unresolved decision exists → attempt compensation, return FAILED.
+ *   Step 5. Write audit entry and return CREATED or SUPERSEDED_EXISTING.
+ *
+ * FAILURE STATES:
+ *   - If Step 2 (create) fails: no writes made. Older decision intact. → FAILED.
+ *   - If Step 3 (supersede) partially fails: new decision is marked FAILED.
+ *     Older decision recovers as the sole active unresolved decision. → FAILED.
+ *   - If Step 4 (verify) finds multiple unresolved: new decision is marked FAILED,
+ *     compensation attempted. → FAILED.
+ *
+ * RECOVERY:
+ *   A FAILED new decision record may be left in the database as an audit artifact.
+ *   Its status=FAILED makes it non-actionable. On retry, the decisionKey lookup
+ *   (Step 1) will NOT find it (a FAILED record is not the same logical decision).
+ *   A fresh attempt will re-run the full sequence, creating a new record.
+ *   The older PENDING/DEFERRED decision is always preserved on failure so the
+ *   company retains a usable decision path.
  *
  * ── WHAT THIS SERVICE MUST NOT DO ─────────────────────────────────────────────
  * - Change Job.sourceVersionId
@@ -39,6 +78,8 @@
  * ── BASE44 LIMITATIONS ────────────────────────────────────────────────────────
  * No database-level unique constraints — deterministic key deduplication is
  * application-level only. Documented race window on concurrent creation.
+ * No rollback: compensation is best-effort; FAILED status on the new record
+ * is the authoritative signal to downstream consumers.
  */
 
 import { writePlatformAudit } from './platformAuth.ts';
@@ -50,7 +91,7 @@ export function buildDecisionKey(companyJobId: string, toVersionId: string): str
 }
 
 // ── Statuses treated as unresolved (eligible for superseding) ──────────────────
-const UNRESOLVED_STATUSES = ['PENDING', 'DEFERRED'] as const;
+const UNRESOLVED_STATUSES: ReadonlyArray<string> = ['PENDING', 'DEFERRED'];
 
 // ── Result type ───────────────────────────────────────────────────────────────
 export type VersionDecisionResult =
@@ -91,22 +132,14 @@ export interface CreateVersionDecisionParams {
 /**
  * createVersionDecisionForCompanyJob — Canonical per-Company-Job decision function.
  *
- * Responsibilities:
- *  1. Validate Company Job is linked to the expected Master SOP.
- *  2. Validate target version belongs to the same Master SOP.
- *  3. Detect if Company Job is already on the target version → SKIPPED_ALREADY_CURRENT.
- *  4. Build the deterministic decision key.
- *  5. Detect existing decision with same key → ALREADY_EXISTS.
- *  6. Supersede older PENDING/DEFERRED decisions targeting older versions.
- *  7. Create a new PENDING decision.
- *  8. Write audit entries.
- *  9. Return structured VersionDecisionItemResult.
- *
- * Must NOT:
- *  - Change Job.sourceVersionId
- *  - Modify JobOverride records
- *  - Perform merge analysis
- *  - Create notifications
+ * Safe write sequence (see module header for full rationale):
+ *  Step 1. Validate inputs and detect SKIPPED_ALREADY_CURRENT / ALREADY_EXISTS.
+ *  Step 2. Create the new PENDING decision first.
+ *  Step 3. Supersede older unresolved decisions (status + back-link in one write).
+ *          On superseding failure: mark new decision FAILED, return FAILED.
+ *  Step 4. Verify exactly one unresolved decision remains.
+ *          On verify failure: mark new decision FAILED, return FAILED.
+ *  Step 5. Audit and return CREATED or SUPERSEDED_EXISTING.
  */
 export async function createVersionDecisionForCompanyJob(
   params: CreateVersionDecisionParams
@@ -125,7 +158,7 @@ export async function createVersionDecisionForCompanyJob(
   const distributionEventId = distributionEvent.id;
   const decisionKey = buildDecisionKey(companyJobId, toVersionId);
 
-  // ── 1. Validate Company Job is linked to the expected Master SOP ──────────
+  // ── Step 1a: Validate Company Job is linked to the correct Master SOP ──────
   if (!masterId || masterId !== targetVersion.masterId) {
     const errorCode = 'JOB_MASTER_MISMATCH';
     const errorMessage = `Company Job sourceMasterId (${masterId}) does not match target version masterId (${targetVersion.masterId}).`;
@@ -137,7 +170,7 @@ export async function createVersionDecisionForCompanyJob(
     return _failResult({ companyId, companyJobId, masterId, fromVersionId, toVersionId, decisionKey, errorCode, errorMessage });
   }
 
-  // ── 2. Validate target version belongs to the same Master SOP ────────────
+  // ── Step 1b: Validate target version is published ─────────────────────────
   if (!targetVersion || targetVersion.status !== 'published') {
     const errorCode = !targetVersion ? 'TARGET_VERSION_NOT_FOUND' : 'TARGET_VERSION_NOT_PUBLISHED';
     const errorMessage = !targetVersion ? 'Target version record does not exist.' : 'Target version is not published.';
@@ -149,7 +182,7 @@ export async function createVersionDecisionForCompanyJob(
     return _failResult({ companyId, companyJobId, masterId, fromVersionId, toVersionId, decisionKey, errorCode, errorMessage });
   }
 
-  // ── 3. Detect if Company Job already uses the target version ──────────────
+  // ── Step 1c: Detect SKIPPED_ALREADY_CURRENT ───────────────────────────────
   if (fromVersionId === toVersionId) {
     return {
       result: 'SKIPPED_ALREADY_CURRENT',
@@ -160,9 +193,11 @@ export async function createVersionDecisionForCompanyJob(
     };
   }
 
-  // ── 4 & 5. Check for existing decision with same key (ALREADY_EXISTS) ─────
+  // ── Step 1d: Detect ALREADY_EXISTS by deterministic decisionKey ───────────
+  // A FAILED record does NOT count as an existing decision — it is non-actionable
+  // and a retry must be able to create a fresh record.
   const existingDecision = existingDecisionsByKey.get(decisionKey) || null;
-  if (existingDecision) {
+  if (existingDecision && existingDecision.status !== 'FAILED') {
     await _writeDecisionAudit(SR, actingUserId, 'version_decision_already_exists', {
       companyId, companyJobId, masterId, fromVersionId, toVersionId,
       distributionEventId, decisionKey,
@@ -177,34 +212,17 @@ export async function createVersionDecisionForCompanyJob(
     };
   }
 
-  // ── 6. Supersede older PENDING/DEFERRED decisions for this job+master ─────
-  // Find decisions for (companyJobId, masterId) that target OLDER versions
-  // and are still in PENDING or DEFERRED status.
+  // ── Identify older unresolved decisions for this (companyJobId, masterId) ──
+  // These are PENDING or DEFERRED decisions targeting a DIFFERENT (older) version.
+  // They must all be superseded after the new decision is successfully created.
   const supersedable = existingDecisionsByJobMaster.filter((d: any) =>
     UNRESOLVED_STATUSES.includes(d.status) &&
-    d.toVersionId !== toVersionId // not the same target (already handled above)
+    d.toVersionId !== toVersionId
   );
 
-  let supersededDecisionId: string | null = null;
-  let supersededCount = 0;
-
-  for (const older of supersedable) {
-    try {
-      // We'll use the ID of the newly created decision once it exists.
-      // For now, mark as SUPERSEDED and store the new decisionKey for cross-reference.
-      // Back-link (supersededByDecisionId) will be filled after new decision is created.
-      await SR.entities.CompanyVersionDecision.update(older.id, {
-        status: 'SUPERSEDED',
-        updatedAt: now,
-      });
-      supersededDecisionId = older.id; // track last superseded (typically only one)
-      supersededCount++;
-    } catch (_) {
-      // Non-fatal: superseding failure does not prevent new decision creation.
-    }
-  }
-
-  // ── 7. Create new PENDING decision ────────────────────────────────────────
+  // ── Step 2: Create the new PENDING decision FIRST ─────────────────────────
+  // No older decisions are touched until this write succeeds.
+  // If this fails, the function returns FAILED with older decisions untouched.
   let newDecision: any = null;
   try {
     newDecision = await SR.entities.CompanyVersionDecision.create({
@@ -227,33 +245,130 @@ export async function createVersionDecisionForCompanyJob(
       updatedAt: now,
     });
   } catch (err: any) {
+    // Creation failed — older decisions untouched, invariant preserved.
     const errorCode = 'DECISION_CREATE_FAILED';
     const errorMessage = err?.message || 'Failed to create CompanyVersionDecision record.';
     await _writeDecisionAudit(SR, actingUserId, 'version_decision_creation_failed', {
       companyId, companyJobId, masterId, fromVersionId, toVersionId,
       distributionEventId, decisionKey,
-      metadata: { errorCode, errorMessage },
+      metadata: { errorCode, errorMessage, step: 'create' },
     });
     return _failResult({ companyId, companyJobId, masterId, fromVersionId, toVersionId, decisionKey, errorCode, errorMessage });
   }
 
-  // ── Back-link superseded decisions to the newly created decision ──────────
-  if (newDecision && supersedable.length > 0) {
-    for (const older of supersedable) {
+  // ── Step 3: Supersede older unresolved decisions ───────────────────────────
+  // Write both status=SUPERSEDED and supersededByDecisionId in a single update.
+  // If any superseding write fails: mark the new decision FAILED (non-actionable),
+  // and return FAILED — the older decision remains usable.
+  let supersededCount = 0;
+  const supersededIds: string[] = [];
+
+  for (const older of supersedable) {
+    try {
+      await SR.entities.CompanyVersionDecision.update(older.id, {
+        status: 'SUPERSEDED',
+        supersededByDecisionId: newDecision.id,
+        updatedAt: now,
+      });
+      supersededCount++;
+      supersededIds.push(older.id);
+    } catch (supersedeErr: any) {
+      // Superseding failed — mark new decision FAILED to prevent two unresolved decisions.
       try {
-        await SR.entities.CompanyVersionDecision.update(older.id, {
-          supersededByDecisionId: newDecision.id,
+        await SR.entities.CompanyVersionDecision.update(newDecision.id, {
+          status: 'FAILED',
+          errorCode: 'SUPERSEDE_INCOMPLETE',
+          errorMessage: `Failed to supersede older decision ${older.id}. New decision marked FAILED to preserve invariant.`,
           updatedAt: now,
         });
       } catch (_) {
-        // Non-fatal: back-link is informational; the SUPERSEDED status already applied.
+        // Compensation write failed — this is the worst-case scenario (two unresolved decisions).
+        // Logged in audit; the orchestrator will count this as a failure.
       }
+      const errorCode = 'SUPERSEDE_INCOMPLETE';
+      const errorMessage = `Superseding of older decision ${older.id} failed. New decision ${newDecision.id} marked FAILED. Older decision preserved as unresolved.`;
+      await _writeDecisionAudit(SR, actingUserId, 'version_decision_creation_failed', {
+        companyId, companyJobId, masterId, fromVersionId, toVersionId,
+        distributionEventId, decisionKey,
+        metadata: {
+          errorCode, errorMessage,
+          step: 'supersede',
+          newDecisionId: newDecision.id,
+          failedToSupersede: older.id,
+          supersededSoFar: supersededIds,
+        },
+      });
+      return _failResult({ companyId, companyJobId, masterId, fromVersionId, toVersionId, decisionKey, errorCode, errorMessage });
     }
   }
 
-  // ── 8. Write audit entries ─────────────────────────────────────────────────
-  const wasSuperseding = supersededCount > 0;
-  const auditAction = wasSuperseding ? 'version_decision_superseded' : 'version_decision_created';
+  // ── Step 4: Verify — exactly one unresolved decision remains ──────────────
+  // Live DB check to catch any concurrent-write races or partial-state anomalies.
+  let unresolvedAfter: any[] = [];
+  try {
+    const allDecisionsAfter = await SR.entities.CompanyVersionDecision.filter(
+      { companyJobId, masterId },
+      '-createdAt',
+      50
+    ) || [];
+    unresolvedAfter = allDecisionsAfter.filter((d: any) =>
+      UNRESOLVED_STATUSES.includes(d.status)
+    );
+  } catch (_) {
+    // If the verification query itself fails, we cannot confirm the invariant.
+    // Treat as non-fatal: the writes in steps 2 and 3 have already completed
+    // successfully per their individual responses. Log and proceed.
+    // This is preferable to marking the new decision FAILED on a query outage.
+    await _writeDecisionAudit(SR, actingUserId, 'version_decision_created', {
+      companyId, companyJobId, masterId, fromVersionId, toVersionId,
+      distributionEventId, decisionKey,
+      metadata: {
+        newDecisionId: newDecision.id,
+        supersededCount,
+        supersededIds,
+        verificationSkipped: true,
+        warning: 'Post-create verification query failed; invariant not confirmed.',
+      },
+    });
+    return {
+      result: supersededCount > 0 ? 'SUPERSEDED_EXISTING' : 'CREATED',
+      companyId, companyJobId, masterId,
+      fromVersionId, toVersionId,
+      decisionId: newDecision.id, decisionKey,
+      supersededDecisionId: supersededIds[0] || null,
+      supersededCount,
+    };
+  }
+
+  if (unresolvedAfter.length > 1) {
+    // Multiple unresolved decisions detected — invariant violation.
+    // Mark the newly created decision FAILED to attempt to restore the invariant.
+    try {
+      await SR.entities.CompanyVersionDecision.update(newDecision.id, {
+        status: 'FAILED',
+        errorCode: 'INVARIANT_VIOLATION',
+        errorMessage: `${unresolvedAfter.length} unresolved decisions found after creation. New decision marked FAILED.`,
+        updatedAt: now,
+      });
+    } catch (_) {}
+
+    const errorCode = 'INVARIANT_VIOLATION';
+    const errorMessage = `${unresolvedAfter.length} unresolved decisions detected after creation. New decision ${newDecision.id} marked FAILED.`;
+    await _writeDecisionAudit(SR, actingUserId, 'version_decision_creation_failed', {
+      companyId, companyJobId, masterId, fromVersionId, toVersionId,
+      distributionEventId, decisionKey,
+      metadata: {
+        errorCode, errorMessage,
+        step: 'verify',
+        newDecisionId: newDecision.id,
+        unresolvedDecisionIds: unresolvedAfter.map((d: any) => d.id),
+      },
+    });
+    return _failResult({ companyId, companyJobId, masterId, fromVersionId, toVersionId, decisionKey, errorCode, errorMessage });
+  }
+
+  // ── Step 5: Audit and return ───────────────────────────────────────────────
+  const auditAction = supersededCount > 0 ? 'version_decision_superseded' : 'version_decision_created';
 
   await _writeDecisionAudit(SR, actingUserId, auditAction, {
     companyId, companyJobId, masterId, fromVersionId, toVersionId,
@@ -261,16 +376,17 @@ export async function createVersionDecisionForCompanyJob(
     metadata: {
       newDecisionId: newDecision.id,
       supersededCount,
-      supersededDecisionIds: supersedable.map((d: any) => d.id),
+      supersededIds,
+      unresolvedAfterCount: unresolvedAfter.length,
     },
   });
 
   return {
-    result: wasSuperseding ? 'SUPERSEDED_EXISTING' : 'CREATED',
+    result: supersededCount > 0 ? 'SUPERSEDED_EXISTING' : 'CREATED',
     companyId, companyJobId, masterId,
     fromVersionId, toVersionId,
     decisionId: newDecision.id, decisionKey,
-    supersededDecisionId: supersededCount > 0 ? supersedable[0].id : null,
+    supersededDecisionId: supersededIds[0] || null,
     supersededCount,
   };
 }
