@@ -27,7 +27,7 @@
     },
     "sourceVersionId": {
       "type": "string",
-      "description": "The EssentialSOPVersion.id pinned at provisioning time. Captured at override creation for audit."
+      "description": "The EssentialSOPVersion.id currently reflected in this override. Updated to targetVersionId only after Step 3 completes."
     },
     "overrideData": {
       "type": "object",
@@ -65,10 +65,23 @@
       "type": "string",
       "description": "The most recently applied mutation key. Rejects re-submission of the same key."
     },
+    "lastAdoptionMutationKey": {
+      "type": "string",
+      "description": "The mutationKey of the most recently started or completed version adoption. Matches Job.lastAdoptionMutationKey when the three-step write is fully committed. Used for recovery routing: if this key matches the retry mutationKey, the engine can safely resume."
+    },
+    "rebaseIncomplete": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set to true at the start of Step 1 (override write) and cleared to false in Step 3 (after Job.sourceVersionId is pinned). If true, resolveJob blocks content resolution and returns ADOPTION_INCOMPLETE \u2014 the caller must retry adoptVersionFromAnalysis with the original mutationKey. A durable pre-set marker: written before the Job update so a crash between steps always leaves a detectable partial state."
+    },
+    "pendingTargetVersionId": {
+      "type": "string",
+      "description": "The EssentialSOPVersion.id the adoption is trying to pin on the Job. Set in Step 1 alongside rebaseIncomplete=true. Cleared in Step 3. Allows resolveJob to report which version is pending and allows the recovery router to verify the target has not changed."
+    },
     "auditPending": {
       "type": "boolean",
       "default": false,
-      "description": "True if the override was saved but the ActivityLog audit write failed. Enables retry to complete the missing audit record without re-applying the override."
+      "description": "True if the adoption succeeded (Steps 1-3 complete) but the ActivityLog audit write failed. Persisted durably on the override so it survives process restarts. The API response also surfaces auditPending=true. Caller can retry the audit independently."
     },
     "auditPendingRevision": {
       "type": "number",
