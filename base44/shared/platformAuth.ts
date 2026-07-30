@@ -198,12 +198,17 @@ export async function requireCompanyAdmin(base44: any, companyId: string): Promi
 
 // ── writePlatformAudit ───────────────────────────────────────────────────────
 // Writes an immutable PlatformAuditLog entry for platform operations.
+// Supports exactly-once semantics via idempotencyKey:
+//   - When idempotencyKey is supplied, checks for an existing record first.
+//   - If a record with that key exists, returns without writing (idempotent).
+//   - If absent, creates the record storing the key for future deduplication.
 // Exported from here so all platform services use one consistent call site.
 
 export async function writePlatformAudit(SR: any, params: {
   actingUserId: string;
   actingUserRole: string;
   action: string;
+  idempotencyKey?: string;
   targetUserId?: string;
   previousPlatformRole?: string;
   previousPlatformStatus?: string;
@@ -212,10 +217,20 @@ export async function writePlatformAudit(SR: any, params: {
   reason?: string;
   extra?: Record<string, any>;
 }): Promise<void> {
-  const { extra = {}, ...coreFields } = params;
+  const { extra = {}, idempotencyKey, ...coreFields } = params;
+
+  // Idempotency check — only when a key is supplied
+  if (idempotencyKey) {
+    const existing = await SR.entities.PlatformAuditLog.filter({ idempotencyKey }, '-timestamp', 1).catch(() => null);
+    if (existing && existing.length > 0) {
+      return; // Already written — do not create a duplicate
+    }
+  }
+
   await SR.entities.PlatformAuditLog.create({
     ...coreFields,
     ...extra,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
     timestamp: new Date().toISOString(),
   });
 }

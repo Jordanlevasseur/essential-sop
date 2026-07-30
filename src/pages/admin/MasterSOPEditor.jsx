@@ -159,6 +159,14 @@ export default function MasterSOPEditor() {
         expectedDraftRevision: expectedRevision,
       });
 
+      if (metaRes.data?.code === 'REVISION_REQUIRED') {
+        // Server rejected save — no revision sent. This is a client bug; reload to resync.
+        setSaveStatus(STATUS.FAILED);
+        setSaveError('Save failed: revision sync error. Reloading draft from server…');
+        isSavingRef.current = false;
+        await load();
+        return;
+      }
       if (metaRes.data?.code === 'DRAFT_CONFLICT') {
         const conflict = metaRes.data;
         setConflictData({ serverMaster: conflict.serverMaster, serverSections: conflict.serverSections, serverRevision: conflict.serverRevision });
@@ -178,6 +186,13 @@ export default function MasterSOPEditor() {
           contentItems: section.contentItems || [],
           expectedDraftRevision: latestRevision,
         });
+        if (sectionRes.data?.code === 'REVISION_REQUIRED') {
+          setSaveStatus(STATUS.FAILED);
+          setSaveError('Save failed: revision sync error. Reloading draft from server…');
+          isSavingRef.current = false;
+          await load();
+          return;
+        }
         if (sectionRes.data?.code === 'DRAFT_CONFLICT') {
           const conflict = sectionRes.data;
           setConflictData({ serverMaster: conflict.serverMaster, serverSections: conflict.serverSections, serverRevision: conflict.serverRevision });

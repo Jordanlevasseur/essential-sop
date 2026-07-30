@@ -2,6 +2,10 @@
   "name": "PlatformAuditLog",
   "type": "object",
   "properties": {
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Optional deterministic deduplication key. When present, writePlatformAudit checks for an existing record with this key before creating a new one. Format: '<actionType>_<mutationKey>' for rollback audits. Null for non-idempotent audit events."
+    },
     "actingUserId": {
       "type": "string",
       "description": "userId of the platform admin who performed the action"
@@ -21,6 +25,8 @@
         "master_sop_archived",
         "master_sop_deleted",
         "master_sop_duplicated",
+        "master_sop_rollback_started",
+        "master_sop_rollback_completed",
         "company_library_provisioned",
         "distribution_event_created",
         "distribution_policy_changed",

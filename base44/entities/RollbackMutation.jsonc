@@ -1,0 +1,121 @@
+{
+  "name": "RollbackMutation",
+  "type": "object",
+  "description": "Durable rollback mutation record. Created before any live-draft modification. Used as the single source of truth for rollback recovery \u2014 a retry must inspect this record and perform only the missing steps. One record per publicationMutationKey. All client writes blocked; reads scoped to nothing (service role only).",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "mutationKey": {
+      "type": "string",
+      "description": "Caller-supplied idempotency key. Unique per rollback attempt. Used as the recovery lookup key."
+    },
+    "masterSOPId": {
+      "type": "string",
+      "description": "EssentialSOPMaster.id being rolled back."
+    },
+    "requestedByUserId": {
+      "type": "string",
+      "description": "userId of the platform admin who initiated the rollback."
+    },
+    "sourceVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id the rollback targets (the historical version being restored)."
+    },
+    "sourceVersionNumber": {
+      "type": "number",
+      "description": "Version number of the source historical version. Stored for display and audit without an extra lookup."
+    },
+    "startingDraftRevision": {
+      "type": "number",
+      "description": "draftRevision of the EssentialSOPMaster at rollback initiation time. Used for concurrent-modification detection before live-draft application."
+    },
+    "preparedSnapshotJson": {
+      "type": "string",
+      "description": "JSON-serialized immutable snapshot: array of { sectionType, contentItems[] }. Stored as a string to avoid entity schema coercion on deeply nested objects. Deserialized by the recovery path before application. A retry uses this snapshot verbatim \u2014 no re-read of historical sections."
+    },
+    "legacyIdMapJson": {
+      "type": "string",
+      "description": "JSON-serialized mapping from legacy item identity keys (sectionType::sortOrder::title) to assigned logicalItemIds. Populated during PREPARE for items that lacked logicalItemId in the historical version. Null string when all items already had IDs."
+    },
+    "hasLegacyItems": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if any items in the historical version lacked a logicalItemId and required deterministic migration."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "STARTED",
+        "PREPARED",
+        "PUBLISHING",
+        "PUBLISHED",
+        "AUDIT_PENDING",
+        "COMPLETED",
+        "FAILED_RECOVERABLE",
+        "FAILED_TERMINAL"
+      ],
+      "default": "STARTED",
+      "description": "Lifecycle status. STARTED=record created, pre-snapshot. PREPARED=snapshot built and persisted. PUBLISHING=live-draft written, publication in progress. PUBLISHED=new version created. AUDIT_PENDING=published but audit not yet written. COMPLETED=audit written, finalized. FAILED_RECOVERABLE=error but retry may succeed. FAILED_TERMINAL=structural error, retry will not help."
+    },
+    "publishedVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id created by the rollback publication. Set in AUDIT_PENDING state."
+    },
+    "publishedVersionNumber": {
+      "type": "number",
+      "description": "Version number of the published rollback version."
+    },
+    "auditCompleted": {
+      "type": "boolean",
+      "default": false,
+      "description": "True once the audit entry has been durably written for this rollback."
+    },
+    "auditIdempotencyKey": {
+      "type": "string",
+      "description": "Deterministic key used to deduplicate audit writes: 'rollback_audit_{mutationKey}'. Stored here so retry can pass the same key."
+    },
+    "preparedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the snapshot was prepared."
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "errorCode": {
+      "type": "string",
+      "description": "Machine-readable error code if status is FAILED_*."
+    },
+    "errorDetails": {
+      "type": "string",
+      "description": "Human-readable error details if status is FAILED_*."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "mutationKey",
+    "masterSOPId",
+    "requestedByUserId",
+    "sourceVersionId",
+    "sourceVersionNumber",
+    "startingDraftRevision",
+    "status",
+    "createdAt"
+  ]
+}
