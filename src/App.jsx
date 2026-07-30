@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
@@ -36,6 +36,12 @@ import MasterLibrary from '@/pages/admin/MasterLibrary';
 import MasterSOPEditor from '@/pages/admin/MasterSOPEditor';
 import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard';
 import { PlatformProvider } from '@/lib/PlatformContext';
+import PlatformLayout from '@/components/platform/PlatformLayout';
+import PlatformGuard from '@/components/platform/PlatformGuard';
+import PlatformDashboard from '@/pages/platform/PlatformDashboard';
+import PlatformAdmins from '@/pages/platform/PlatformAdmins';
+import PlatformAuditLog from '@/pages/platform/PlatformAuditLog';
+import PlatformBootstrap from '@/pages/platform/PlatformBootstrap';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -95,10 +101,9 @@ const SeededApp = () => {
     );
   }
 
-  // Platform Super Admins may access /admin/* routes without a CompanyMembership.
+  // Platform Super Admins may access /platform/* routes without a CompanyMembership.
   // They are not redirected to NoCompanyScreen — platform routes are independent
-  // of company context. The route guard (PlatformSuperAdminGuard) handles
-  // auth enforcement on those routes.
+  // of company context.
   if (!hasCompany && !isPlatformSuperAdmin) {
     return <NoCompanyScreen />;
   }
@@ -106,7 +111,8 @@ const SeededApp = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Jobs />} />
+        {/* Redirect platform-only super admins away from the company workspace root */}
+        <Route path="/" element={!hasCompany && isPlatformSuperAdmin ? <Navigate to="/platform" replace /> : <Jobs />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/jobs/:jobId" element={<JobDetail />} />
@@ -130,6 +136,15 @@ const SeededApp = () => {
       {/* Essential SOP Platform Admin — requires active PlatformMembership(SUPER_ADMIN) */}
       <Route path="/admin/master-library" element={<PlatformSuperAdminGuard><MasterLibrary /></PlatformSuperAdminGuard>} />
       <Route path="/admin/master-library/:masterId" element={<PlatformSuperAdminGuard><MasterSOPEditor /></PlatformSuperAdminGuard>} />
+      {/* Platform Admin environment — /platform/* */}
+      <Route path="/platform/bootstrap" element={<PlatformBootstrap />} />
+      <Route element={<PlatformGuard><PlatformLayout /></PlatformGuard>}>
+        <Route path="/platform" element={<PlatformDashboard />} />
+        <Route path="/platform/master-library" element={<MasterLibrary />} />
+        <Route path="/platform/master-library/:masterId" element={<MasterSOPEditor />} />
+        <Route path="/platform/admins" element={<PlatformAdmins />} />
+        <Route path="/platform/audit" element={<PlatformAuditLog />} />
+      </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

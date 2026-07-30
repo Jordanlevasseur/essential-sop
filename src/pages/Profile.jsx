@@ -212,6 +212,8 @@ export default function Profile() {
       {/* Platform Admin — gated on verified PlatformMembership, not company role */}
       {isPlatformSuperAdmin && (
         <Section title="Platform Administration">
+          <Row icon={ShieldCheck} label="Platform Dashboard" onClick={() => navigate('/platform')} />
+          <Divider />
           <Row icon={ClipboardList} label="Account Deletion Requests" onClick={() => navigate('/admin/deletion-requests')} />
         </Section>
       )}

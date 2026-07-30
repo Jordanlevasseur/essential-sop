@@ -61,13 +61,15 @@ export default function MasterLibrary() {
     return list;
   }, [masters, statusFilter, tradeFilter, categoryFilter, search]);
 
+  const basePath = window.location.pathname.startsWith('/platform') ? '/platform/master-library' : '/admin/master-library';
+
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
     setCreating(true);
     try {
       const res = await base44.functions.invoke('manageMasterSOP', { action: 'create', title: newTitle.trim(), category: newCategory.trim(), trade: newTrade.trim() });
       const created = res.data?.master;
-      if (created) navigate(`/admin/master-library/${created.id}`);
+      if (created) navigate(`${basePath}/${created.id}`);
     } catch (e) {
       alert('Failed to create: ' + e.message);
     }
@@ -167,7 +169,7 @@ export default function MasterLibrary() {
         ) : (
           <div className="space-y-2">
             {filtered.map(master => (
-              <button key={master.id} onClick={() => navigate(`/admin/master-library/${master.id}`)}
+              <button key={master.id} onClick={() => navigate(`${basePath}/${master.id}`)}
                 className="w-full bg-app-card border border-app-border rounded-xl p-4 flex items-center gap-4 text-left hover:border-app-accent transition-colors">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">

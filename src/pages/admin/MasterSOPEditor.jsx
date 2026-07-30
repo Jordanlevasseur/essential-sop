@@ -392,20 +392,20 @@ export default function MasterSOPEditor() {
   const handleArchive = async () => {
     if (!confirm('Archive this SOP? It will no longer be available for provisioning.')) return;
     await base44.functions.invoke('manageMasterSOP', { action: 'archive', masterId });
-    navigate('/admin/master-library');
+    navigate(libraryPath);
   };
 
   const handleDelete = async () => {
     if (!confirm('Permanently delete this Draft SOP?')) return;
     await base44.functions.invoke('manageMasterSOP', { action: 'delete_draft', masterId });
     clearDraft(masterId, currentUserId);
-    navigate('/admin/master-library');
+    navigate(libraryPath);
   };
 
   const handleDuplicate = async () => {
     const res = await base44.functions.invoke('manageMasterSOP', { action: 'duplicate', masterId });
     const dup = res.data?.master;
-    if (dup) navigate(`/admin/master-library/${dup.id}`);
+    if (dup) navigate(`${libraryPath}/${dup.id}`);
   };
 
   // ── Rollback ──────────────────────────────────────────────────────────────
@@ -426,6 +426,8 @@ export default function MasterSOPEditor() {
   };
 
   // ── Navigation guard ──────────────────────────────────────────────────────
+  const libraryPath = window.location.pathname.startsWith('/platform') ? '/platform/master-library' : '/admin/master-library';
+
   const handleBack = async () => {
     const hasUnsaved = saveStatus === STATUS.DIRTY || saveStatus === STATUS.FAILED || saveStatus === STATUS.OFFLINE;
     if (hasUnsaved) {
@@ -438,7 +440,7 @@ export default function MasterSOPEditor() {
       // Attempt final flush
       await flushPendingSave();
     }
-    navigate('/admin/master-library');
+    navigate(libraryPath);
   };
 
   // ── Loading ───────────────────────────────────────────────────────────────
