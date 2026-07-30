@@ -1,86 +1,76 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { AlertTriangle, RotateCcw, ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
+import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
 
 /**
- * VersionAdoptionIncomplete — Recovery UI for ADOPTION_INCOMPLETE state.
+ * VersionAdoptionIncomplete — Edit 5D Hardening
  *
- * Shown when resolveJob returns code=ADOPTION_INCOMPLETE.
- * Provides:
- *  - Clear explanation of what happened
- *  - Resume Adoption (retries adoptVersionFromAnalysis with existing mutationKey)
- *  - Refresh (re-loads the job to see if another process resolved it)
- *  - Return to Jobs
+ * Recovery UI for ADOPTION_INCOMPLETE state.
  *
- * Never re-runs analysis. Never re-runs versionDiff.
- * Reuses the existing mutationKey from the interrupted adoption.
+ * Reads the persisted mutationKey AND analysisId from localStorage via useAdoptionDraftState.
+ * Never fabricates an analysisId. Recovery works after refresh, reconnect, and browser restart.
+ *
+ * Recovery path:
+ *  1. Read persistedMutationKey + persistedAnalysisId from localStorage
+ *  2. Call adoptVersionFromAnalysis with those persisted values
+ *  3. Engine routes to recovery Case A/B/C via mutationKey idempotency check
+ *  4. On success, clearDraft() removes the persisted state
  */
 
-export default function VersionAdoptionIncomplete({ job, recoveryMutationKey, onRecovered, onClose }) {
+export default function VersionAdoptionIncomplete({ job, onRecovered, onClose }) {
+  // Read persisted adoption start state — written by VersionWorkspace.persistAdoptionStart()
+  // before Step 1 of the three-step write. Survives refresh/crash.
+  const { persistedMutationKey, persistedAnalysisId, clearDraft } = useAdoptionDraftState(job.id, null);
+
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState(null);
   const [recovered, setRecovered] = useState(false);
 
   const handleResume = async () => {
-    if (!recoveryMutationKey) {
-      setRecoveryError('Cannot resume: the original mutation key is missing. Please contact support.');
+    if (!persistedMutationKey) {
+      setRecoveryError('Cannot resume: the original mutation key is missing. This can happen if adoption was started on a different device. Please contact support.');
       return;
     }
+    if (!persistedAnalysisId) {
+      setRecoveryError('Cannot resume: the original analysis ID is missing. Please contact support with the job ID.');
+      return;
+    }
+
     setRecovering(true);
     setRecoveryError(null);
     try {
-      // Re-invoke adoptVersionFromAnalysis with the same mutationKey.
-      // The engine will detect the partial state and resume from the correct step.
-      // We need the analysisId — load from the override's lastAdoptionMutationKey cross-reference.
-      // Since we don't have the analysisId here, we call resolveJob to get current state first,
-      // then pass empty analysisId and let the engine use the mutationKey for recovery routing.
-      //
-      // Actually: adoptVersionFromAnalysis requires analysisId. For recovery, we pass a sentinel
-      // value. The engine first checks the mutationKey idempotency path (Case C/B/A) BEFORE
-      // loading the analysis — so if the job+override keys already match, it returns idempotent success.
-      //
-      // For true recovery (override incomplete), we need the analysisId. We'll try to fetch it
-      // from CompanyVersionAnalysis by querying for the job's last analysis.
-      const SR = base44.asServiceRole;
-      // Load the job to get current override state
-      const res = await base44.functions.invoke('resolveJob', { jobId: job.id });
-      if (res?.data?.code === 'ADOPTION_INCOMPLETE') {
-        // Still incomplete — try to find the most recent completed analysis for this job
-        // We can't query CompanyVersionAnalysis client-side (RLS blocks reads), so
-        // we use a dedicated recovery path: call adoptVersionFromAnalysis with
-        // analysisId='__recovery__' and the mutationKey — the engine's Phase 2
-        // will match the mutationKey before it validates the analysisId, routing to
-        // the appropriate recovery step.
-        const adoptRes = await base44.functions.invoke('adoptVersionFromAnalysis', {
-          companyJobId: job.id,
-          analysisId: '__recovery_placeholder__',
-          reviewDecisions: {},
-          mutationKey: recoveryMutationKey,
-          expectedOverrideRevision: 0,
-        });
-        const data = adoptRes?.data;
-        if (data?.success) {
-          setRecovered(true);
-          setTimeout(() => onRecovered(data.resolvedJob), 1200);
-        } else if (data?.code === 'ANALYSIS_NOT_FOUND' || data?.code === 'ANALYSIS_NOT_COMPLETE') {
-          // Engine validated idempotency before analysis — means it was already recovered
-          // Try resolveJob again
+      // Call adoptVersionFromAnalysis with the persisted analysisId + mutationKey.
+      // The engine's Phase 2 idempotency check fires first — it detects the partial state
+      // (rebaseIncomplete=true) and routes to the correct recovery step (Case A or B)
+      // without re-running analysis, re-running versionDiff, or re-running rebase.
+      // expectedOverrideRevision=0 is safe here because idempotency routing in Phase 2
+      // fires before the revision conflict check in Phase 2 (fresh adoption path).
+      const adoptRes = await base44.functions.invoke('adoptVersionFromAnalysis', {
+        companyJobId: job.id,
+        analysisId: persistedAnalysisId,
+        reviewDecisions: {},
+        mutationKey: persistedMutationKey,
+        expectedOverrideRevision: 0,
+      });
+
+      const data = adoptRes?.data;
+      if (data?.success) {
+        clearDraft();
+        setRecovered(true);
+        setTimeout(() => onRecovered(data.resolvedJob), 1200);
+      } else {
+        // If engine returned ALREADY_CURRENT or idempotent path: check resolveJob
+        if (data?.code === 'ALREADY_CURRENT' || data?.idempotent) {
           const recheck = await base44.functions.invoke('resolveJob', { jobId: job.id });
           if (recheck?.data?.job) {
+            clearDraft();
             setRecovered(true);
-            setTimeout(() => onRecovered(null), 1200);
-          } else {
-            setRecoveryError('Adoption is still incomplete. Please contact support with the mutation key below.');
+            setTimeout(() => onRecovered(recheck.data), 1200);
+            return;
           }
-        } else {
-          setRecoveryError(data?.error || 'Recovery failed. Please try again or contact support.');
         }
-      } else if (res?.data?.job) {
-        // Already resolved — the adoption completed through another mechanism
-        setRecovered(true);
-        setTimeout(() => onRecovered(res.data), 1200);
-      } else {
-        setRecoveryError('Could not determine job state. Please refresh.');
+        setRecoveryError(data?.error || 'Recovery failed. Please try again or contact support.');
       }
     } catch (_) {
       setRecoveryError('Connection error during recovery. Your data is safe — try again.');
@@ -100,6 +90,8 @@ export default function VersionAdoptionIncomplete({ job, recoveryMutationKey, on
       </div>
     );
   }
+
+  const canResume = !!(persistedMutationKey && persistedAnalysisId);
 
   return (
     <div className="fixed inset-0 z-50 bg-app-bg flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -143,14 +135,22 @@ export default function VersionAdoptionIncomplete({ job, recoveryMutationKey, on
           </div>
         </div>
 
-        {/* Mutation key */}
-        {recoveryMutationKey && (
+        {/* Recovery key info */}
+        {canResume ? (
           <div className="space-y-1">
             <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide">Recovery Key</p>
             <div className="p-3 bg-app-elevated rounded-xl">
-              <p className="text-xs font-mono text-app-text-2 selectable break-all">{recoveryMutationKey}</p>
+              <p className="text-xs font-mono text-app-text-2 selectable break-all">{persistedMutationKey}</p>
             </div>
             <p className="text-xs text-app-text-muted">Keep this for support if recovery fails.</p>
+          </div>
+        ) : (
+          <div className="p-3.5 bg-app-warning-bg border border-app-warning/20 rounded-xl">
+            <p className="text-xs text-app-warning font-semibold mb-1">Recovery key not found</p>
+            <p className="text-xs text-app-text-2">
+              The adoption may have been started on a different device or browser. If you can, open the app on the original device to resume.
+              Otherwise, contact support with your Job ID.
+            </p>
           </div>
         )}
 
@@ -167,7 +167,7 @@ export default function VersionAdoptionIncomplete({ job, recoveryMutationKey, on
       <div className="bg-app-surface border-t border-app-border px-4 pt-3 space-y-2.5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
         <button
           onClick={handleResume}
-          disabled={recovering}
+          disabled={recovering || !canResume}
           className="w-full py-3 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold no-select touch-active disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {recovering

@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Eye, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Eye, AlertTriangle, Loader2 } from 'lucide-react';
 
 /**
- * VersionPreview — Read-only preview of the post-adoption job state.
+ * VersionPreview — Edit 5D Hardening
  *
- * Calls previewMasterVersionAdoption to render what the job WOULD look like
- * after adoption, including all current review decisions.
- * This is strictly read-only — never executes adoption.
+ * Calls previewFromAnalysis — the SAME rebase pipeline used by adoptVersionFromAnalysis.
+ * Preview and final adoption are guaranteed to produce identical results.
+ * previewMasterVersionAdoption is NOT used here.
  */
 
 const SECTION_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
@@ -25,11 +25,12 @@ export default function VersionPreview({ job, analysis, reviewDecisions }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await base44.functions.invoke('previewMasterVersionAdoption', {
-        jobId: job.id,
-        targetVersionId: analysis.toVersionId,
+      const res = await base44.functions.invoke('previewFromAnalysis', {
+        companyJobId: job.id,
+        analysisId: analysis.id || analysis.analysisId,
+        reviewDecisions: reviewDecisions || {},
       });
-      if (res?.data?.previewFingerprint) {
+      if (res?.data?.sections) {
         setPreview(res.data);
       } else {
         setError(res?.data?.error || 'Could not generate preview.');
@@ -39,8 +40,9 @@ export default function VersionPreview({ job, analysis, reviewDecisions }) {
     } finally {
       setLoading(false);
     }
-  }, [job.id, analysis.toVersionId]);
+  }, [job.id, analysis.id, analysis.analysisId, analysis.toVersionId, reviewDecisions]);
 
+  // Re-run preview when decisions change
   useEffect(() => { loadPreview(); }, [loadPreview]);
 
   if (loading) {
@@ -64,12 +66,7 @@ export default function VersionPreview({ job, analysis, reviewDecisions }) {
     );
   }
 
-  const { targetVersion, changesBySection } = preview;
-  // Build projected sections using analysis item decisions
-  // Items the user chose USE_NEW_MASTER will show new master value;
-  // items KEEP_COMPANY will show company value; SAFE shows auto-applied.
-  // The preview here comes from previewMasterVersionAdoption which already
-  // computes the final state — we annotate it with decision labels.
+  const { sections, targetVersionNumber, jobTitle, jobShortDescription } = preview;
 
   return (
     <div className="pb-6">
@@ -78,102 +75,50 @@ export default function VersionPreview({ job, analysis, reviewDecisions }) {
         <Eye size={14} className="text-app-accent flex-shrink-0 mt-0.5" />
         <div>
           <p className="text-xs font-semibold text-app-accent">Read-only preview</p>
-          <p className="text-xs text-app-text-2">Shows how this job will look after adopting v{targetVersion?.versionNumber}. No changes made yet.</p>
+          <p className="text-xs text-app-text-2">
+            Shows exactly how this job will look after adopting v{targetVersionNumber}. No changes made yet.
+          </p>
         </div>
       </div>
 
       {/* Job metadata */}
       <div className="px-4 pb-3 border-b border-app-divider">
         <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide mb-1">Job Info</p>
-        <p className="font-semibold text-app-text">{job.title}</p>
-        {job.shortDescription && <p className="text-sm text-app-text-2 mt-0.5">{job.shortDescription}</p>}
-        <p className="text-xs text-app-text-muted mt-1">Version: v{targetVersion?.versionNumber}</p>
+        <p className="font-semibold text-app-text">{jobTitle}</p>
+        {jobShortDescription && <p className="text-sm text-app-text-2 mt-0.5">{jobShortDescription}</p>}
+        <p className="text-xs text-app-text-muted mt-1">Version: v{targetVersionNumber}</p>
       </div>
 
       {/* Sections */}
       {SECTION_ORDER.map(st => {
-        const changes = changesBySection?.[st] || [];
-        if (changes.length === 0) return null;
-        return (
-          <SectionPreview key={st} sectionType={st} label={SECTION_LABELS[st]} changes={changes} reviewDecisions={reviewDecisions} />
-        );
+        const items = sections?.[st] || [];
+        if (items.length === 0) return null;
+        return <SectionPreview key={st} label={SECTION_LABELS[st]} items={items} />;
       })}
 
-      {Object.keys(changesBySection || {}).length === 0 && (
+      {Object.values(sections || {}).every(arr => arr.length === 0) && (
         <div className="px-4 py-8 text-center text-sm text-app-text-muted">
-          No content changes detected between these versions.
+          No content in target version sections.
         </div>
       )}
     </div>
   );
 }
 
-function SectionPreview({ sectionType, label, changes, reviewDecisions }) {
+function SectionPreview({ label, items }) {
   return (
     <div className="px-4 pt-5 pb-3 border-b border-app-divider">
       <p className="text-xs font-bold text-app-text-muted uppercase tracking-widest mb-3">{label}</p>
       <div className="space-y-2">
-        {changes.map((change, i) => {
-          const decision = reviewDecisions?.[change.changeId];
-          return <PreviewChangeRow key={change.changeId || i} change={change} decision={decision} />;
-        })}
+        {items.map((item, i) => (
+          <div key={item.id || i} className="flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              {item.title && <p className="text-sm text-app-text selectable">{item.title}</p>}
+              {item.body && <p className="text-sm text-app-text-2 mt-0.5 selectable">{item.body}</p>}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
-}
-
-function PreviewChangeRow({ change, decision }) {
-  // Determine what will actually be shown post-adoption
-  let displayValue, annotation, annotationColor;
-
-  if (change.changeType === 'CONFLICT') {
-    if (decision === 'KEEP_COMPANY') {
-      displayValue = formatValue(change.companyValue);
-      annotation = 'Your version (kept)';
-      annotationColor = 'text-app-success';
-    } else if (decision === 'USE_NEW_MASTER') {
-      displayValue = formatValue(change.targetValue);
-      annotation = 'New master (accepted)';
-      annotationColor = 'text-app-accent';
-    } else {
-      displayValue = formatValue(change.companyValue);
-      annotation = 'Decision pending';
-      annotationColor = 'text-app-warning';
-    }
-  } else if (change.changeType === 'COMPANY_ONLY_CUSTOMIZATION') {
-    displayValue = formatValue(change.companyValue);
-    annotation = 'Your customization';
-    annotationColor = 'text-app-success';
-  } else if (change.changeType === 'MASTER_ADDED') {
-    displayValue = formatValue(change.targetValue);
-    annotation = 'New item';
-    annotationColor = 'text-app-accent';
-  } else if (change.changeType === 'MASTER_REMOVED') {
-    displayValue = formatValue(change.baseValue);
-    annotation = 'Removed';
-    annotationColor = 'text-app-danger';
-  } else {
-    displayValue = formatValue(change.targetValue || change.baseValue);
-    annotation = null;
-  }
-
-  if (!displayValue) return null;
-
-  return (
-    <div className="flex items-start gap-2">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-app-text selectable">{displayValue}</p>
-        {annotation && <p className={`text-xs mt-0.5 ${annotationColor}`}>{annotation}</p>}
-      </div>
-    </div>
-  );
-}
-
-function formatValue(v) {
-  if (!v) return null;
-  if (typeof v === 'string') return v;
-  const parts = [];
-  if (v.title) parts.push(v.title);
-  if (v.body) parts.push(v.body);
-  return parts.join(' — ') || null;
 }

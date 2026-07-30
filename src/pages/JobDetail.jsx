@@ -140,9 +140,16 @@ export default function JobDetail() {
   if (adoptionIncompleteKey) {
     return (
       <VersionAdoptionIncomplete
-        job={{ id: jobId, title: 'This Job', companyId: activeCompany?.id }}
-        recoveryMutationKey={adoptionIncompleteKey}
-        onRecovered={() => { setAdoptionIncompleteKey(null); loadData(); }}
+        job={{ id: jobId, title: job?.title || 'This Job', companyId: activeCompany?.id }}
+        onRecovered={(resolvedJob) => {
+          setAdoptionIncompleteKey(null);
+          if (resolvedJob?.job) {
+            const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = resolvedJob;
+            setJob(j); setSections(secs || []); setContentBySection(cbs || {}); setCapabilities(caps || null); setOverrideMeta(ovr || null);
+          } else {
+            loadData();
+          }
+        }}
         onClose={() => { setAdoptionIncompleteKey(null); navigateBackToJobs(navigate); }}
       />
     );

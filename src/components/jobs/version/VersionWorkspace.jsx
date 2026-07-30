@@ -1,26 +1,18 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { ArrowLeft, RefreshCw, CheckCircle2, AlertTriangle, AlertCircle, XCircle, Info, Clock, ChevronDown, ChevronUp, Eye, Play, RotateCcw, History, Zap } from 'lucide-react';
+import { ArrowLeft, RefreshCw, CheckCircle2, AlertTriangle, XCircle, Eye, History, Zap } from 'lucide-react';
 import VersionReviewItems from './VersionReviewItems';
 import VersionPreview from './VersionPreview';
 import VersionHistory from './VersionHistory';
-import VersionAdoptionIncomplete from './VersionAdoptionIncomplete';
+import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
 
 /**
- * VersionWorkspace — Edit 5D: Version Review & Adoption Lifecycle
+ * VersionWorkspace — Edit 5D Hardening
  *
- * Full-screen workspace for Company Admins to:
- *  1. View the analysis summary (SAFE / REVIEW_REQUIRED / ORPHANED / INVALID / NO_OP)
- *  2. Review each REVIEW_REQUIRED item and record a decision
- *  3. Review ORPHANED items and record a disposition
- *  4. See INVALID blockers with actionable guidance
- *  5. Preview the final post-adoption state (read-only)
- *  6. Execute adoption via adoptVersionFromAnalysis
- *  7. View adoption history
- *  8. Recover from ADOPTION_INCOMPLETE
- *
- * Consumes: analyzeVersionUpdate (5B) + adoptVersionFromAnalysis (5C).
- * Never re-runs versionDiff. Never re-runs analysis. Never modifies analysisEngine.
+ * Changes from initial 5D:
+ *  1. Preview uses previewFromAnalysis (same engine as adoptVersionFromAnalysis).
+ *  2. mutationKey + analysisId persisted to localStorage — recovery never uses a placeholder.
+ *  3. reviewDecisions + orphanDispositions persisted to localStorage — survive refresh/crash.
  */
 
 const TABS = [
@@ -29,24 +21,32 @@ const TABS = [
   { id: 'history', label: 'History', icon: History },
 ];
 
-export default function VersionWorkspace({ job, overrideMeta, targetVersionId, onAdopted, onClose, recoveryMode, recoveryMutationKey }) {
+export default function VersionWorkspace({ job, overrideMeta, targetVersionId, onAdopted, onClose }) {
   const [tab, setTab] = useState('review');
   const [analysis, setAnalysis] = useState(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(true);
   const [analysisError, setAnalysisError] = useState(null);
 
-  // Per-item decisions: { [logicalItemId]: 'KEEP_COMPANY' | 'USE_NEW_MASTER' }
-  const [reviewDecisions, setReviewDecisions] = useState({});
-  // Orphan dispositions: { [logicalItemId]: 'KEEP' | 'ARCHIVE' | 'DELETE' }
-  const [orphanDispositions, setOrphanDispositions] = useState({});
+  // Persistent draft state — survives refresh, navigation, crash
+  const {
+    reviewDecisions,
+    orphanDispositions,
+    persistedMutationKey,
+    persistedAnalysisId,
+    setReviewDecisions,
+    setOrphanDispositions,
+    persistAdoptionStart,
+    clearDraft,
+    hasDraft,
+  } = useAdoptionDraftState(job.id, targetVersionId);
 
   const [adopting, setAdopting] = useState(false);
   const [adoptError, setAdoptError] = useState(null);
   const [adoptSuccess, setAdoptSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Track the mutationKey across retries for idempotency
-  const mutationKeyRef = useRef(recoveryMutationKey || null);
+  // mutationKey lives in the draft, but we mirror it to a ref for in-flight use
+  const mutationKeyRef = useRef(persistedMutationKey || null);
 
   const runAnalysis = useCallback(async () => {
     if (!job?.id || !targetVersionId) return;
@@ -65,7 +65,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
       } else {
         setAnalysisError({ code: data?.code || 'ANALYSIS_FAILED', message: data?.error || 'Analysis failed. Please try again.' });
       }
-    } catch (e) {
+    } catch (_) {
       setAnalysisError({ code: 'NETWORK_ERROR', message: 'Could not reach the server. Check your connection and try again.' });
     } finally {
       setLoadingAnalysis(false);
@@ -87,8 +87,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
   const undecidedReviewCount = reviewItems.filter(r => !reviewDecisions[r.logicalItemId]).length;
   const undecidedOrphanCount = orphanedItems.filter(r => !orphanDispositions[r.logicalItemId]).length;
 
-  // Map orphan dispositions to adoptionEngine review decisions
-  // 'KEEP' → KEEP_COMPANY, 'ARCHIVE'/'DELETE' → USE_NEW_MASTER (drop the orphan)
+  // Map orphan dispositions → adoptionEngine vocabulary
   const buildAdoptionDecisions = () => {
     const decisions = { ...reviewDecisions };
     for (const [id, disposition] of Object.entries(orphanDispositions)) {
@@ -103,75 +102,69 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
     setAdoptError(null);
     setShowConfirm(false);
 
-    // Generate or reuse mutationKey for idempotency
+    // Generate or reuse mutationKey
     if (!mutationKeyRef.current) {
       mutationKeyRef.current = `adopt_5d_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     }
     const mutationKey = mutationKeyRef.current;
 
+    // Persist analysisId + mutationKey BEFORE writing anything — so recovery can find them
+    // analysis.id is the entity id; the engine also accepts it as analysisId
+    const analysisEntityId = analysis.id || analysis.analysisId;
+    persistAdoptionStart(mutationKey, analysisEntityId);
+
     try {
       const res = await base44.functions.invoke('adoptVersionFromAnalysis', {
         companyJobId: job.id,
-        analysisId: analysis.analysisId,
+        analysisId: analysisEntityId,
         reviewDecisions: buildAdoptionDecisions(),
         mutationKey,
         expectedOverrideRevision: overrideMeta?.revision ?? 0,
       });
       const data = res?.data;
       if (data?.success) {
+        clearDraft(); // Success — discard persisted draft
         setAdoptSuccess(true);
-        setTimeout(() => {
-          onAdopted(data.resolvedJob);
-        }, 1400);
+        setTimeout(() => { onAdopted(data.resolvedJob); }, 1400);
       } else {
         const code = data?.code || 'UNKNOWN';
         if (code === 'ANALYSIS_STALE') {
-          setAdoptError({ code, message: 'The analysis is now stale — the override changed since analysis ran. Re-running analysis…' });
+          setAdoptError({ code, message: 'The analysis is now stale — the override changed. Re-running analysis…' });
           mutationKeyRef.current = null;
+          clearDraft();
           setTimeout(runAnalysis, 1200);
         } else if (code === 'CONCURRENT_MODIFICATION') {
           setAdoptError({ code, message: 'Another adoption is in progress for this job. Wait a moment and try again.' });
         } else if (code === 'ALREADY_CURRENT') {
+          clearDraft();
           setAdoptError({ code, message: 'This job is already on the target version.' });
         } else if (code === 'REVISION_CONFLICT') {
           setAdoptError({ code, message: 'The job override was modified since this review opened. Re-running analysis…' });
           mutationKeyRef.current = null;
+          clearDraft();
           setTimeout(runAnalysis, 1200);
         } else {
           setAdoptError({ code, message: data?.error || 'Adoption failed. Please try again.' });
           mutationKeyRef.current = null;
         }
       }
-    } catch (e) {
-      setAdoptError({ code: 'NETWORK_ERROR', message: 'Lost connection during adoption. Use the same "Adopt" action to safely resume — your progress is saved.' });
-      // Keep mutationKey — retrying with the same key is safe (idempotent)
+    } catch (_) {
+      setAdoptError({ code: 'NETWORK_ERROR', message: 'Lost connection during adoption. Tap "Adopt Version" again — your progress is saved.' });
+      // Keep mutationKey and draft — retrying with the same key is safe (idempotent)
     } finally {
       setAdopting(false);
     }
-  }, [canAdopt, adopting, analysis, job, overrideMeta, reviewDecisions, orphanDispositions, onAdopted, runAnalysis]);
+  }, [canAdopt, adopting, analysis, job, overrideMeta, reviewDecisions, orphanDispositions, onAdopted, runAnalysis, persistAdoptionStart, clearDraft]);
 
-  // Success screen
   if (adoptSuccess) {
     return (
       <div className="fixed inset-0 z-50 bg-app-bg flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 p-8 text-center">
           <CheckCircle2 size={48} className="text-app-success" />
           <p className="text-app-text font-semibold text-lg">Update Complete</p>
-          <p className="text-app-text-2 text-sm">Job updated to v{analysis?.toVersionId ? '' : ''}{analysis?.itemResults ? 'new version' : ''}</p>
+          <p className="text-app-text-2 text-sm">Job updated to new version</p>
         </div>
       </div>
-    );
-  }
-
-  // Recovery mode — ADOPTION_INCOMPLETE
-  if (recoveryMode) {
-    return (
-      <VersionAdoptionIncomplete
-        job={job}
-        recoveryMutationKey={recoveryMutationKey}
-        onRecovered={onAdopted}
-        onClose={onClose}
-      />
     );
   }
 
@@ -203,9 +196,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-medium no-select touch-active transition-colors ${
-                  tab === t.id
-                    ? 'text-app-accent border-b-2 border-app-accent'
-                    : 'text-app-text-muted'
+                  tab === t.id ? 'text-app-accent border-b-2 border-app-accent' : 'text-app-text-muted'
                 }`}
               >
                 <Icon size={13} />
@@ -304,7 +295,6 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
         </div>
       )}
 
-      {/* Confirm sheet */}
       {showConfirm && analysis && (
         <ConfirmAdoptSheet
           analysis={analysis}
@@ -319,16 +309,13 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
   );
 }
 
-// ── Analysis error view ───────────────────────────────────────────────────────
-
 function AnalysisErrorView({ error, onRetry, onClose }) {
   const isAlreadyCurrent = error?.code === 'ALREADY_CURRENT';
   return (
     <div className="flex flex-col items-center justify-center min-h-48 p-6 text-center gap-4">
       {isAlreadyCurrent
         ? <CheckCircle2 size={36} className="text-app-success" />
-        : <AlertTriangle size={36} className="text-app-warning" />
-      }
+        : <AlertTriangle size={36} className="text-app-warning" />}
       <div>
         <p className="font-semibold text-app-text mb-1">
           {isAlreadyCurrent ? 'Already Up to Date' : 'Analysis Failed'}
@@ -346,8 +333,6 @@ function AnalysisErrorView({ error, onRetry, onClose }) {
     </div>
   );
 }
-
-// ── Adoption readiness summary ────────────────────────────────────────────────
 
 function AdoptionReadinessSummary({ analysis, undecidedReview, undecidedOrphan, invalidCount, canAdopt }) {
   if (canAdopt) {
@@ -382,14 +367,11 @@ function AdoptionReadinessSummary({ analysis, undecidedReview, undecidedOrphan, 
   return null;
 }
 
-// ── Confirm sheet ─────────────────────────────────────────────────────────────
-
 function ConfirmAdoptSheet({ analysis, reviewDecisions, orphanDispositions, onConfirm, onCancel, adopting }) {
   const keptCount = Object.values(reviewDecisions).filter(v => v === 'KEEP_COMPANY').length;
   const acceptedCount = Object.values(reviewDecisions).filter(v => v === 'USE_NEW_MASTER').length;
   const orphanKept = Object.values(orphanDispositions).filter(v => v === 'KEEP').length;
   const orphanRemoved = Object.values(orphanDispositions).filter(v => v !== 'KEEP').length;
-
   return (
     <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/50">
       <div className="bg-app-surface rounded-t-2xl p-5 w-full max-w-lg" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
@@ -402,30 +384,10 @@ function ConfirmAdoptSheet({ analysis, reviewDecisions, orphanDispositions, onCo
             <span>Safe updates applied automatically</span>
             <span className="font-medium text-app-text">{analysis.safeCount}</span>
           </div>
-          {keptCount > 0 && (
-            <div className="flex justify-between">
-              <span>Your versions kept</span>
-              <span className="font-medium text-app-success">{keptCount}</span>
-            </div>
-          )}
-          {acceptedCount > 0 && (
-            <div className="flex justify-between">
-              <span>New master versions accepted</span>
-              <span className="font-medium text-app-accent">{acceptedCount}</span>
-            </div>
-          )}
-          {orphanKept > 0 && (
-            <div className="flex justify-between">
-              <span>Orphaned items preserved</span>
-              <span className="font-medium text-app-warning">{orphanKept}</span>
-            </div>
-          )}
-          {orphanRemoved > 0 && (
-            <div className="flex justify-between">
-              <span>Orphaned items removed</span>
-              <span className="font-medium text-app-text-muted">{orphanRemoved}</span>
-            </div>
-          )}
+          {keptCount > 0 && <div className="flex justify-between"><span>Your versions kept</span><span className="font-medium text-app-success">{keptCount}</span></div>}
+          {acceptedCount > 0 && <div className="flex justify-between"><span>New master versions accepted</span><span className="font-medium text-app-accent">{acceptedCount}</span></div>}
+          {orphanKept > 0 && <div className="flex justify-between"><span>Orphaned items preserved</span><span className="font-medium text-app-warning">{orphanKept}</span></div>}
+          {orphanRemoved > 0 && <div className="flex justify-between"><span>Orphaned items removed</span><span className="font-medium text-app-text-muted">{orphanRemoved}</span></div>}
         </div>
         <div className="flex gap-3">
           <button onClick={onCancel} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 no-select touch-active">Back</button>
