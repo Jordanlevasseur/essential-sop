@@ -116,6 +116,29 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
   const overrides = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: job.id });
   const override: any = overrides?.[0] || null;
 
+  // ── Adoption-incomplete guard ──────────────────────────────────────────────
+  // If the three-step write sequence was interrupted between Step 1 and Step 3,
+  // the override carries rebaseIncomplete=true. The Job's version pin may or may
+  // not have been written. Serving content here would risk mixing override data
+  // from the new version with master sections from the old version (or vice versa).
+  // Block resolution and instruct the caller to retry the adoption with the same
+  // mutationKey — the engine will route to the correct recovery step.
+  if (override?.rebaseIncomplete === true) {
+    const pendingTarget = override.pendingTargetVersionId || null;
+    const jobAlreadyPinned = pendingTarget && job.sourceVersionId === pendingTarget;
+    return Response.json({
+      error: 'This job has a pending version adoption that did not complete. Retry adoptVersionFromAnalysis with the original mutationKey to recover.',
+      code: 'ADOPTION_INCOMPLETE',
+      recoverable: true,
+      mutationKey: override.lastAdoptionMutationKey || null,
+      pendingTargetVersionId: pendingTarget,
+      // jobAlreadyPinned tells the client which recovery step is needed:
+      // true  → only Step 3 (clear marker) is needed
+      // false → Step 2 (pin job) + Step 3 are needed
+      jobAlreadyPinned,
+    }, { status: 409 });
+  }
+
   let sanitizedOverrideData: any = null;
   if (override?.overrideData) {
     const { sanitized, warnings } = sanitizeStoredOverride(override.overrideData, job.id);

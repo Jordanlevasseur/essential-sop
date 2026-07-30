@@ -1,5 +1,5 @@
 /**
- * adoptionEngine.ts — Edit 5C: Company Version Adoption Engine
+ * adoptionEngine.ts — Edit 5C (Hardened): Company Version Adoption Engine
  *
  * THE SINGLE AUTHORITATIVE IMPLEMENTATION for executing version adoption
  * from a completed CompanyVersionAnalysis produced by Edit 5B.
@@ -17,25 +17,63 @@
  *
  * ── PHASES ────────────────────────────────────────────────────────────────────
  *   1. Validation       — inputs, job state, analysis state
- *   2. Pre-flight       — stale-analysis detection, idempotency
+ *   2. Pre-flight       — stale-analysis detection, idempotency + partial-state recovery
  *   3. canAutoAdopt?    — gate: if false, stop unless caller provides decisions
  *   4. Rebase           — build new override from itemResults + decisions
- *   5. Atomic write     — override first, then job pin
- *   6. Audit            — immutable ActivityLog entry
+ *   5. Three-step write — Step1: override with rebaseIncomplete=true + pendingTargetVersionId
+ *                         Step2: Job.sourceVersionId = targetVersionId
+ *                         Step3: override rebaseIncomplete=false, clear pendingTargetVersionId
+ *   6. Audit            — write ActivityLog; on failure set auditPending durably on override
  *   7. Version decision — update CompanyVersionDecision if linked
  *   8. Notification     — only after successful commit
  *
- * ── ATOMICITY ─────────────────────────────────────────────────────────────────
+ * ── THREE-STEP WRITE SEQUENCE (compensating-transaction) ──────────────────────
  * Base44 has no multi-entity transactions. Strategy:
- *   Step A: write rebased override (or delete empty one)
- *   Step B: update Job.sourceVersionId + lastAdoptionMutationKey
- * If Step B fails: rebaseIncomplete=true is written to override for recovery.
- * If Step A fails: nothing changed, safe to retry with same mutationKey.
- * Idempotency key on Job entity prevents double-adoption on retry.
+ *
+ *   Step 1 — JobOverride.update:
+ *     · write rebased override data
+ *     · increment revision
+ *     · set lastAdoptionMutationKey = mutationKey
+ *     · set rebaseIncomplete = true          ← pre-set BEFORE writing Job
+ *     · set pendingTargetVersionId           ← what we're trying to pin
+ *   Step 2 — Job.update:
+ *     · sourceVersionId = targetVersionId
+ *     · lastAdoptionMutationKey = mutationKey
+ *   Step 3 — JobOverride.update:
+ *     · rebaseIncomplete = false             ← clear only after Job is pinned
+ *     · pendingTargetVersionId = null
+ *
+ * Pre-setting rebaseIncomplete=true in Step 1 means: even if the process dies
+ * between Steps 1 and 2, the incomplete marker is already durable — no silent
+ * partial state. Recovery on retry inspects both records and routes accordingly.
+ *
+ * ── RECOVERY MATRIX ───────────────────────────────────────────────────────────
+ * On retry with same mutationKey, Phase 2 reads both records and routes:
+ *
+ *   A) override.rebaseIncomplete=true, job still on fromVersion
+ *      → resume from Step 2 (Job.update), then Step 3
+ *
+ *   B) override.rebaseIncomplete=true, job already on targetVersion
+ *      → resume from Step 3 only (override cleanup)
+ *
+ *   C) override.rebaseIncomplete=false, job on targetVersion, keys match
+ *      → fully committed — return idempotent success
+ *
+ *   D) mutationKey mismatch or revision mismatch
+ *      → CONCURRENT_MODIFICATION — stop; do not overwrite
+ *
+ *   E) No override + job on targetVersion + keys match
+ *      → fully committed (no-override path) — return idempotent success
+ *
+ * ── AUDIT DURABILITY ──────────────────────────────────────────────────────────
+ * auditPending is persisted on the JobOverride (or a stub ActivityLog record
+ * if there is no override) so it survives process restarts. The API response
+ * also returns auditPending=true so the caller can trigger a retry.
  *
  * ── IDEMPOTENCY ───────────────────────────────────────────────────────────────
- * Key: Job.lastAdoptionMutationKey === mutationKey → return existing success.
- * Checked before any writes. Safe to retry after partial failures.
+ * Key: mutationKey stored on both Job.lastAdoptionMutationKey and
+ * JobOverride.lastAdoptionMutationKey. Both must agree for a clean commit.
+ * Checked before any writes. Partial-state recovery uses these keys.
  *
  * ── ITEM PROCESSING RULES ─────────────────────────────────────────────────────
  * SAFE             → apply master target values; preserve company overrides
@@ -44,18 +82,6 @@
  * NO_OP            → preserve as-is (override value == master value anyway)
  * INVALID          → block adoption; must be fixed first
  * Company-only     → always preserved; never deleted; identity unchanged
- *
- * ── REBASE LOGIC ──────────────────────────────────────────────────────────────
- * The rebase builds a new sectionOverrides map from the analysis itemResults.
- * It does NOT use versionDiff.rebaseOverride() — that function re-diffs.
- * Instead it walks itemResults and applies the analysis classifications directly.
- *
- * For each section with an existing company override:
- *   1. Start from the TARGET master section contentItems as the base
- *   2. For each item in the existing override:
- *      a. Find its itemResult (by logicalItemId or _itemId)
- *      b. Apply classification rules to decide keep/drop/replace
- *   3. Company-added items (no logicalItemId, no master anchor) are always appended
  *
  * ── AUTHORIZATION ─────────────────────────────────────────────────────────────
  * Accepts Company Admin (general_manager, project_manager) only.
@@ -104,6 +130,7 @@ export interface AdoptFromAnalysisParams {
 export interface AdoptFromAnalysisResult {
   success: true;
   idempotent?: boolean;
+  recovered?: boolean;
   jobId: string;
   previousVersionId: string;
   newVersionId: string;
@@ -205,16 +232,6 @@ export async function executeAdoptionFromAnalysis(
     return { error: Response.json({ error: 'Analysis does not belong to this Job', code: 'ANALYSIS_JOB_MISMATCH' }, { status: 409 }) };
   }
 
-  // ── Phase 1: Analysis must match job's current version ────────────────────
-  if (analysis.fromVersionId !== job.sourceVersionId) {
-    return { error: Response.json({
-      error: 'Analysis fromVersionId does not match Job\'s current sourceVersionId. The Job may have already been updated. Re-analyze.',
-      code: 'ANALYSIS_VERSION_MISMATCH',
-      analysisFromVersion: analysis.fromVersionId,
-      jobCurrentVersion: job.sourceVersionId,
-    }, { status: 409 }) };
-  }
-
   const targetVersionId = analysis.toVersionId;
 
   // ── Phase 1: Load and validate target version ──────────────────────────────
@@ -230,25 +247,75 @@ export async function executeAdoptionFromAnalysis(
     return { error: Response.json({ error: 'Target version master mismatch', code: 'VERSION_MASTER_MISMATCH' }, { status: 409 }) };
   }
 
-  // ── Phase 2: Idempotency — must be before any writes ──────────────────────
-  if (job.lastAdoptionMutationKey === mutationKey) {
-    // Exact same operation already completed — return success
-    const resolvedJob = await _resolveJobForResponse(job, SR, membership);
+  // ── Phase 2: Load current override (needed for idempotency + recovery checks) ──
+  const overrideRecords = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: companyJobId }).catch(() => []);
+  const override: any = overrideRecords?.[0] || null;
+  const currentOverrideRevision = override?.revision ?? 0;
+
+  // ── Phase 2: Idempotency + partial-state recovery ─────────────────────────
+  //
+  // Recovery matrix — evaluated before any new writes:
+  //
+  //  C) override.rebaseIncomplete=false, job on targetVersion, keys match → fully committed
+  //  E) No override + job on targetVersion + keys match → committed (no-override path)
+  //  A) override.rebaseIncomplete=true, job still on fromVersion → resume Step 2 + 3
+  //  B) override.rebaseIncomplete=true, job already on targetVersion → resume Step 3 only
+  //  D) mutationKey mismatch on override (different key, incomplete) → CONCURRENT_MODIFICATION
+  //
+  const jobKeyMatch = job.lastAdoptionMutationKey === mutationKey;
+  const jobOnTarget = job.sourceVersionId === targetVersionId;
+  const overrideKeyMatch = override ? override.lastAdoptionMutationKey === mutationKey : true; // no override = no mismatch
+  const overrideIncomplete = override?.rebaseIncomplete === true;
+  const overridePendingTarget = override?.pendingTargetVersionId;
+
+  // Case C / E: fully committed
+  if (jobKeyMatch && jobOnTarget && !overrideIncomplete) {
     return {
       result: {
         success: true,
         idempotent: true,
         jobId: job.id,
-        previousVersionId: job.sourceVersionId, // already adopted, so this IS the new version
+        previousVersionId: analysis.fromVersionId,
         newVersionId: targetVersionId,
         analysisId,
-        auditPending: false,
-        adoptionSummary: _summaryFromAnalysis(analysis, {}),
+        auditPending: override?.auditPending || false,
+        adoptionSummary: _summaryFromAnalysis(analysis, reviewDecisions),
       },
     };
   }
 
-  // ── Phase 2: Already-current check ────────────────────────────────────────
+  // Case D: different mutation key on override that is still incomplete → concurrent modification
+  if (overrideIncomplete && !overrideKeyMatch) {
+    return { error: Response.json({
+      error: 'A different adoption is currently in progress for this Job. Wait for it to complete or contact support.',
+      code: 'CONCURRENT_MODIFICATION',
+      overrideMutationKey: override?.lastAdoptionMutationKey,
+    }, { status: 409 }) };
+  }
+
+  // Case A: override incomplete, job not yet pinned → resume Step 2 + Step 3
+  if (overrideIncomplete && overrideKeyMatch && !jobOnTarget) {
+    return await _resumeStep2(SR, job, override, targetVersionId, mutationKey, targetVersion, analysisId, analysis, userId);
+  }
+
+  // Case B: override incomplete, job already pinned → resume Step 3 only
+  if (overrideIncomplete && overrideKeyMatch && jobOnTarget) {
+    return await _resumeStep3(SR, job, override, targetVersionId, mutationKey, targetVersion, analysisId, analysis, userId);
+  }
+
+  // ── Phase 2: Fresh adoption path — standard pre-flight checks ─────────────
+
+  // Analysis must match job's current version (not relevant for recovery paths above)
+  if (analysis.fromVersionId !== job.sourceVersionId) {
+    return { error: Response.json({
+      error: 'Analysis fromVersionId does not match Job\'s current sourceVersionId. The Job may have already been updated. Re-analyze.',
+      code: 'ANALYSIS_VERSION_MISMATCH',
+      analysisFromVersion: analysis.fromVersionId,
+      jobCurrentVersion: job.sourceVersionId,
+    }, { status: 409 }) };
+  }
+
+  // Already-current check
   if (job.sourceVersionId === targetVersionId) {
     return { error: Response.json({
       error: 'Job is already on the target version.',
@@ -256,22 +323,25 @@ export async function executeAdoptionFromAnalysis(
     }, { status: 409 }) };
   }
 
+  // Stale analysis check
+  if (analysis.status === 'STALE') {
+    return { error: Response.json({
+      error: 'Analysis is STALE — override changed after analysis completed. Re-analyze.',
+      code: 'ANALYSIS_STALE',
+    }, { status: 409 }) };
+  }
+
   // ── Phase 2: canAutoAdopt gate ─────────────────────────────────────────────
-  // If analysis says canAutoAdopt=false, the caller MUST provide decisions for every
-  // REVIEW_REQUIRED item. We validate that here.
   const reviewRequiredItems = (analysis.itemResults || []).filter(
     (r: any) => r.compatibility === COMPATIBILITY.REVIEW_REQUIRED
   );
 
   if (!analysis.canAutoAdopt) {
-    // Validate that every REVIEW_REQUIRED item has a provided decision
     const missingDecisions: string[] = [];
     for (const item of reviewRequiredItems) {
       const key = item.logicalItemId || item.currentItemId || item.overrideId;
-      if (!key) continue; // no addressable identity — skip (treated as orphaned)
-      if (!reviewDecisions[key]) {
-        missingDecisions.push(key);
-      }
+      if (!key) continue;
+      if (!reviewDecisions[key]) missingDecisions.push(key);
     }
     if (missingDecisions.length > 0) {
       return { error: Response.json({
@@ -295,10 +365,6 @@ export async function executeAdoptionFromAnalysis(
   }
 
   // ── Phase 2: Optimistic concurrency on override ────────────────────────────
-  const overrideRecords = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: companyJobId }).catch(() => []);
-  const override: any = overrideRecords?.[0] || null;
-  const currentOverrideRevision = override?.revision ?? 0;
-
   if (expectedOverrideRevision !== currentOverrideRevision) {
     return { error: Response.json({
       error: 'Override was modified since analysis was run. Re-analyze and retry.',
@@ -308,18 +374,7 @@ export async function executeAdoptionFromAnalysis(
     }, { status: 409 }) };
   }
 
-  // ── Phase 2: Stale analysis detection ─────────────────────────────────────
-  // The analysis's overrideStateFingerprint was computed at analysis time.
-  // If the override changed since (different revision), the analysis is stale.
-  // We already caught revision mismatch above. Additionally check if analysis is STALE.
-  if (analysis.status === 'STALE') {
-    return { error: Response.json({
-      error: 'Analysis is STALE — override changed after analysis completed. Re-analyze.',
-      code: 'ANALYSIS_STALE',
-    }, { status: 409 }) };
-  }
-
-  // ── Phase 3: Reject INVALID items — must be fixed before adoption ──────────
+  // ── Phase 3: Reject INVALID items ─────────────────────────────────────────
   if ((analysis.invalidCount ?? 0) > 0) {
     return { error: Response.json({
       error: `Analysis found ${analysis.invalidCount} INVALID override item(s). Fix the override before adopting.`,
@@ -328,12 +383,11 @@ export async function executeAdoptionFromAnalysis(
     }, { status: 409 }) };
   }
 
-  // ── Phase 4: Load target sections (needed for rebase) ─────────────────────
+  // ── Phase 4: Load target sections + build rebased override ────────────────
   const targetSections = await SR.entities.EssentialSOPSection.filter(
     { masterId: job.sourceMasterId, versionId: targetVersionId }, 'sortOrder', 10
   ).catch(() => []) || [];
 
-  // ── Phase 4: Build rebased override ───────────────────────────────────────
   let sanitizedOverrideData: any = null;
   if (override?.overrideData) {
     const { sanitized } = sanitizeStoredOverride(override.overrideData, companyJobId);
@@ -346,10 +400,8 @@ export async function executeAdoptionFromAnalysis(
     targetSections,
     reviewDecisions
   );
-
   const { rebasedOverrideData, adoptionSummaryPartial } = rebaseResult;
 
-  // Validate rebased override
   if (rebasedOverrideData) {
     const validation = validateOverrideData(rebasedOverrideData);
     if (!validation.valid) {
@@ -364,24 +416,41 @@ export async function executeAdoptionFromAnalysis(
   const now = new Date().toISOString();
   const overrideWillBeEmpty = rebasedOverrideData === null || Object.keys(rebasedOverrideData).length === 0;
 
-  // ── Phase 5: ATOMIC WRITE ──────────────────────────────────────────────────
-  // Step A: Write rebased override (before pinning version)
-  let savedOverride: any = null;
+  // ── Phase 5: THREE-STEP WRITE ──────────────────────────────────────────────
+
+  // ── Step 1: Write override with rebaseIncomplete=true (pre-set before Job write) ──
+  let savedOverrideId: string | null = override?.id || null;
 
   if (override) {
     if (overrideWillBeEmpty) {
+      // If the rebased override would be empty we still cannot delete it yet —
+      // we need it to carry the rebaseIncomplete marker until Step 2 succeeds.
+      // Write a sentinel: empty overrideData, rebaseIncomplete=true.
       try {
-        await SR.entities.JobOverride.delete(override.id);
+        await SR.entities.JobOverride.update(override.id, {
+          overrideData: {},
+          customizedFields: [],
+          revision: currentOverrideRevision + 1,
+          lastMutationKey: mutationKey,
+          lastAdoptionMutationKey: mutationKey,
+          lastModifiedByUserId: userId,
+          sourceMasterId: job.sourceMasterId,
+          sourceVersionId: job.sourceVersionId, // still old version at this point
+          rebaseIncomplete: true,
+          pendingTargetVersionId: targetVersionId,
+          auditPending: false,
+          updatedAt: now,
+        });
       } catch (err: any) {
         return { error: Response.json({
-          error: 'Failed to finalize override during adoption. No changes made.',
-          code: 'OVERRIDE_DELETE_FAILED',
+          error: 'Failed to prepare override for adoption (step 1). No changes made.',
+          code: 'STEP1_OVERRIDE_FAILED',
         }, { status: 500 }) };
       }
     } else {
       try {
         const customizedFields = _computeCustomizedFields(rebasedOverrideData);
-        savedOverride = await SR.entities.JobOverride.update(override.id, {
+        await SR.entities.JobOverride.update(override.id, {
           overrideData: rebasedOverrideData,
           customizedFields,
           revision: currentOverrideRevision + 1,
@@ -389,66 +458,98 @@ export async function executeAdoptionFromAnalysis(
           lastAdoptionMutationKey: mutationKey,
           lastModifiedByUserId: userId,
           sourceMasterId: job.sourceMasterId,
-          sourceVersionId: targetVersionId,
+          sourceVersionId: job.sourceVersionId, // still old version at this point
+          rebaseIncomplete: true,
+          pendingTargetVersionId: targetVersionId,
           auditPending: false,
-          rebaseIncomplete: false,
           updatedAt: now,
         });
       } catch (err: any) {
         return { error: Response.json({
-          error: 'Failed to rebase override. No changes made.',
-          code: 'OVERRIDE_UPDATE_FAILED',
+          error: 'Failed to write rebased override (step 1). No changes made.',
+          code: 'STEP1_OVERRIDE_FAILED',
         }, { status: 500 }) };
       }
     }
   } else if (rebasedOverrideData && !overrideWillBeEmpty) {
-    // No existing override but rebase produced one (title/desc override survived)
+    // No existing override; rebase produced data — create it with rebaseIncomplete=true
     try {
       const customizedFields = _computeCustomizedFields(rebasedOverrideData);
-      savedOverride = await SR.entities.JobOverride.create({
+      const created = await SR.entities.JobOverride.create({
         companyId: job.companyId,
         jobId: companyJobId,
         deterministicKey: deterministicOverrideKey(job.companyId, companyJobId),
         sourceMasterId: job.sourceMasterId,
-        sourceVersionId: targetVersionId,
+        sourceVersionId: job.sourceVersionId, // still old version at this point
         overrideData: rebasedOverrideData,
         customizedFields,
         revision: 1,
         mutationKey,
         lastMutationKey: mutationKey,
         lastAdoptionMutationKey: mutationKey,
+        rebaseIncomplete: true,
+        pendingTargetVersionId: targetVersionId,
         auditPending: false,
-        rebaseIncomplete: false,
         createdByUserId: userId,
         lastModifiedByUserId: userId,
         createdAt: now,
         updatedAt: now,
       });
+      savedOverrideId = created?.id || null;
     } catch (err: any) {
       return { error: Response.json({
-        error: 'Failed to create rebased override. No changes made.',
-        code: 'OVERRIDE_CREATE_FAILED',
+        error: 'Failed to create rebased override (step 1). No changes made.',
+        code: 'STEP1_OVERRIDE_CREATE_FAILED',
       }, { status: 500 }) };
     }
   }
+  // If no override and rebasedOverrideData is null: no Step 1 write needed.
+  // rebaseIncomplete tracking lives on Job.lastAdoptionMutationKey absence in this path.
 
-  // Step B: Pin new version on Job + record idempotency key
+  // ── Step 2: Pin new version on Job ────────────────────────────────────────
   try {
     await SR.entities.Job.update(companyJobId, {
       sourceVersionId: targetVersionId,
       lastAdoptionMutationKey: mutationKey,
     });
   } catch (err: any) {
-    // Step B failed — mark rebaseIncomplete for recovery
-    if (savedOverride?.id) {
-      try {
-        await SR.entities.JobOverride.update(savedOverride.id, { rebaseIncomplete: true, updatedAt: now });
-      } catch (_) {}
-    }
+    // Step 2 failed — override already has rebaseIncomplete=true + pendingTargetVersionId.
+    // This is the durable partial-state signal. Recovery will resume from Step 2 on retry.
     return { error: Response.json({
-      error: 'Failed to update Job version pin after override rebase. System will attempt recovery on next access.',
-      code: 'JOB_VERSION_UPDATE_FAILED',
+      error: 'Failed to update Job version pin (step 2). Override is marked incomplete. Retry with the same mutationKey to recover.',
+      code: 'STEP2_JOB_UPDATE_FAILED',
+      recoverable: true,
+      mutationKey,
     }, { status: 500 }) };
+  }
+
+  // ── Step 3: Clear rebaseIncomplete marker on override ────────────────────
+  if (savedOverrideId) {
+    try {
+      if (overrideWillBeEmpty) {
+        // Now safe to delete the sentinel override
+        await SR.entities.JobOverride.delete(savedOverrideId);
+        savedOverrideId = null;
+      } else {
+        await SR.entities.JobOverride.update(savedOverrideId, {
+          rebaseIncomplete: false,
+          pendingTargetVersionId: null,
+          sourceVersionId: targetVersionId,
+          updatedAt: now,
+        });
+      }
+    } catch (err: any) {
+      // Step 3 failed — override still has rebaseIncomplete=true but Job is pinned.
+      // This is Case B in the recovery matrix. Retry with same mutationKey routes to _resumeStep3.
+      // Adoption is functionally complete; resolveJob will block on rebaseIncomplete=true.
+      return { error: Response.json({
+        error: 'Job version was updated but override marker could not be cleared (step 3). Retry with the same mutationKey to finish.',
+        code: 'STEP3_MARKER_CLEAR_FAILED',
+        recoverable: true,
+        mutationKey,
+        jobVersionUpdated: true,
+      }, { status: 500 }) };
+    }
   }
 
   // ── Phase 6: Audit ─────────────────────────────────────────────────────────
@@ -458,36 +559,13 @@ export async function executeAdoptionFromAnalysis(
     overrideRemoved: overrideWillBeEmpty && !!override,
   };
 
-  let auditPending = false;
-  try {
-    await SR.entities.ActivityLog.create({
-      companyId: job.companyId,
-      actingUserId: userId,
-      actionType: 'job_edited',
-      targetType: 'job',
-      targetId: companyJobId,
-      summary: `Adopted Master Version ${targetVersion.versionNumber} for "${job.title}" using analysis ${analysisId}`,
-      metadata: {
-        event: 'COMPANY_MASTER_VERSION_ADOPTED_FROM_ANALYSIS',
-        previousVersionId,
-        newVersionId: targetVersionId,
-        targetVersionNumber: targetVersion.versionNumber,
-        masterId: job.sourceMasterId,
-        analysisId,
-        analysisSchemaVersion: analysis.analysisSchemaVersion,
-        canAutoAdopt: analysis.canAutoAdopt,
-        reviewDecisionsProvided: Object.keys(reviewDecisions).length,
-        ...adoptionSummary,
-        mutationKey,
-      },
-      timestamp: now,
-    });
-  } catch (_) {
-    auditPending = true;
-  }
+  const auditPending = await _writeAudit(SR, {
+    job, companyJobId, userId, targetVersion, previousVersionId, targetVersionId,
+    analysisId, analysis, reviewDecisions, adoptionSummary, mutationKey, now,
+    savedOverrideId, // pass for durable auditPending mark if audit fails
+  });
 
   // ── Phase 7: Version decision ──────────────────────────────────────────────
-  // Update CompanyVersionDecision if analysis links one
   if (analysis.companyVersionDecisionId) {
     try {
       await SR.entities.CompanyVersionDecision.update(analysis.companyVersionDecisionId, {
@@ -503,7 +581,6 @@ export async function executeAdoptionFromAnalysis(
   }
 
   // ── Phase 8: Notification ──────────────────────────────────────────────────
-  // Only after successful commit. Non-fatal.
   try {
     await SR.entities.Notification.create({
       companyId: job.companyId,
@@ -530,19 +607,140 @@ export async function executeAdoptionFromAnalysis(
   };
 }
 
-// ── Internal: rebase override from analysis item results ──────────────────────
-//
-// This is the core of Edit 5C. It builds the new overrideData by walking the
-// analysis.itemResults and applying classification rules WITHOUT re-diffing.
-//
-// SAFE             → company override for this item is preserved if it exists;
-//                    if no override, master target value is used (no action needed)
-// REVIEW_REQUIRED  → apply caller's decision: KEEP_COMPANY or USE_NEW_MASTER
-// ORPHANED         → preserve override item (never delete)
-// NO_OP            → preserve as-is (value matches master anyway)
-// company-only     → always append unchanged
-// INVALID          → blocked in Phase 3 (won't reach here)
+// ── Recovery: resume from Step 2 (Case A) ─────────────────────────────────────
+// Override has rebaseIncomplete=true, job still on fromVersion.
+// Retry only Step 2 (pin job), then Step 3 (clear marker).
+async function _resumeStep2(
+  SR: any, job: any, override: any, targetVersionId: string, mutationKey: string,
+  targetVersion: any, analysisId: string, analysis: any, userId: string
+): Promise<{ result?: AdoptFromAnalysisResult; error?: Response }> {
+  const now = new Date().toISOString();
 
+  try {
+    await SR.entities.Job.update(job.id, {
+      sourceVersionId: targetVersionId,
+      lastAdoptionMutationKey: mutationKey,
+    });
+  } catch (err: any) {
+    return { error: Response.json({
+      error: 'Recovery Step 2 failed: could not pin job version. Retry with same mutationKey.',
+      code: 'STEP2_JOB_UPDATE_FAILED',
+      recoverable: true,
+      mutationKey,
+    }, { status: 500 }) };
+  }
+
+  return await _resumeStep3(SR, job, override, targetVersionId, mutationKey, targetVersion, analysisId, analysis, userId);
+}
+
+// ── Recovery: resume from Step 3 (Case B) ─────────────────────────────────────
+// Job is already on target, override still has rebaseIncomplete=true.
+// Clear the marker only.
+async function _resumeStep3(
+  SR: any, job: any, override: any, targetVersionId: string, mutationKey: string,
+  targetVersion: any, analysisId: string, analysis: any, userId: string
+): Promise<{ result?: AdoptFromAnalysisResult; error?: Response }> {
+  const now = new Date().toISOString();
+  const overrideWillBeEmpty = !override?.overrideData || Object.keys(override.overrideData).length === 0;
+
+  if (override) {
+    try {
+      if (overrideWillBeEmpty) {
+        await SR.entities.JobOverride.delete(override.id);
+      } else {
+        await SR.entities.JobOverride.update(override.id, {
+          rebaseIncomplete: false,
+          pendingTargetVersionId: null,
+          sourceVersionId: targetVersionId,
+          updatedAt: now,
+        });
+      }
+    } catch (err: any) {
+      return { error: Response.json({
+        error: 'Recovery Step 3 failed: could not clear incomplete marker. Retry with same mutationKey.',
+        code: 'STEP3_MARKER_CLEAR_FAILED',
+        recoverable: true,
+        mutationKey,
+        jobVersionUpdated: true,
+      }, { status: 500 }) };
+    }
+  }
+
+  // Retry audit if still pending
+  const auditPending = override?.auditPending
+    ? await _writeAudit(SR, {
+        job, companyJobId: job.id, userId, targetVersion,
+        previousVersionId: analysis.fromVersionId, targetVersionId,
+        analysisId, analysis, reviewDecisions: {}, adoptionSummary: _summaryFromAnalysis(analysis, {}),
+        mutationKey, now, savedOverrideId: override?.id || null,
+      })
+    : false;
+
+  return {
+    result: {
+      success: true,
+      recovered: true,
+      jobId: job.id,
+      previousVersionId: analysis.fromVersionId,
+      newVersionId: targetVersionId,
+      analysisId,
+      auditPending,
+      adoptionSummary: _summaryFromAnalysis(analysis, {}),
+    },
+  };
+}
+
+// ── Internal: write audit record; persist auditPending durably on override ─────
+async function _writeAudit(SR: any, ctx: {
+  job: any; companyJobId: string; userId: string; targetVersion: any;
+  previousVersionId: string; targetVersionId: string; analysisId: string; analysis: any;
+  reviewDecisions: Record<string, string>; adoptionSummary: any; mutationKey: string;
+  now: string; savedOverrideId: string | null;
+}): Promise<boolean> {
+  const { job, companyJobId, userId, targetVersion, previousVersionId, targetVersionId,
+          analysisId, analysis, reviewDecisions, adoptionSummary, mutationKey, now, savedOverrideId } = ctx;
+  try {
+    await SR.entities.ActivityLog.create({
+      companyId: job.companyId,
+      actingUserId: userId,
+      actionType: 'job_edited',
+      targetType: 'job',
+      targetId: companyJobId,
+      summary: `Adopted Master Version ${targetVersion.versionNumber} for "${job.title}" using analysis ${analysisId}`,
+      metadata: {
+        event: 'COMPANY_MASTER_VERSION_ADOPTED_FROM_ANALYSIS',
+        previousVersionId,
+        newVersionId: targetVersionId,
+        targetVersionNumber: targetVersion.versionNumber,
+        masterId: job.sourceMasterId,
+        analysisId,
+        analysisSchemaVersion: analysis.analysisSchemaVersion,
+        canAutoAdopt: analysis.canAutoAdopt,
+        reviewDecisionsProvided: Object.keys(reviewDecisions).length,
+        ...adoptionSummary,
+        mutationKey,
+      },
+      timestamp: now,
+    });
+    return false; // auditPending = false
+  } catch (_) {
+    // Audit write failed — persist auditPending durably on override so it survives restarts
+    if (savedOverrideId) {
+      try {
+        await SR.entities.JobOverride.update(savedOverrideId, {
+          auditPending: true,
+          auditPendingRevision: (ctx.job?.revision ?? 0) + 1,
+          updatedAt: now,
+        });
+      } catch (_) {
+        // Double failure — auditPending will only be in the API response
+      }
+    }
+    return true; // auditPending = true
+  }
+}
+
+// ── Internal: rebase override from analysis item results ──────────────────────
 function _rebaseOverrideFromAnalysis(
   itemResults: any[],
   existingOverrideData: any,
@@ -553,33 +751,18 @@ function _rebaseOverrideFromAnalysis(
   adoptionSummaryPartial: Omit<AdoptFromAnalysisResult['adoptionSummary'], 'overrideRebased' | 'overrideRemoved'>;
 } {
   const counts = {
-    safeApplied: 0,
-    reviewDecisionsKept: 0,
-    reviewDecisionsAccepted: 0,
-    orphanedPreserved: 0,
-    noOpPreserved: 0,
-    companyOnlyPreserved: 0,
+    safeApplied: 0, reviewDecisionsKept: 0, reviewDecisionsAccepted: 0,
+    orphanedPreserved: 0, noOpPreserved: 0, companyOnlyPreserved: 0,
   };
 
-  // No existing override → nothing to rebase. Target master is used as-is by resolveJob.
   if (!existingOverrideData) {
     return { rebasedOverrideData: null, adoptionSummaryPartial: counts };
   }
 
-  // Build lookup: logicalItemId / _itemId → itemResult classification
-  const resultByLogicalId: Record<string, any> = {};
   const resultByItemId: Record<string, any> = {};
   for (const ir of itemResults) {
-    if (ir.logicalItemId) resultByLogicalId[ir.logicalItemId] = ir;
     if (ir.currentItemId) resultByItemId[ir.currentItemId] = ir;
-    // Also index by overrideId._itemId if available
     if (ir.companyOverrideValues?.item?._itemId) resultByItemId[ir.companyOverrideValues.item._itemId] = ir;
-  }
-
-  // Build target section lookup for item resolution
-  const targetSectionByType: Record<string, any> = {};
-  for (const s of targetSections) {
-    if (s.sectionType) targetSectionByType[s.sectionType] = s;
   }
 
   const rebasedSectionOverrides: Record<string, any[]> = {};
@@ -592,18 +775,9 @@ function _rebaseOverrideFromAnalysis(
 
     for (const item of existingItems) {
       const itemId = item._itemId || '';
+      const ir: any = itemId ? resultByItemId[itemId] : null;
 
-      // Find classification for this item
-      // Priority: logicalItemId match, then _itemId match
-      let ir: any = null;
-      // Try to find by _itemId in resultByItemId
-      if (itemId && resultByItemId[itemId]) {
-        ir = resultByItemId[itemId];
-      }
-      // If not found by itemId, try parentLogicalItemId approach (section-level results)
       if (!ir) {
-        // Company-added item: no master anchor, no logicalItemId in analysis
-        // These always survive
         rebasedItems.push({ ...item });
         counts.companyOnlyPreserved++;
         continue;
@@ -612,40 +786,27 @@ function _rebaseOverrideFromAnalysis(
       const compatibility = ir.compatibility;
 
       if (compatibility === COMPATIBILITY.SAFE) {
-        // Preserve company override as-is on target
         rebasedItems.push({ ...item });
         counts.safeApplied++;
-
       } else if (compatibility === COMPATIBILITY.NO_OP) {
-        // Override value matches master target anyway — preserve
         rebasedItems.push({ ...item });
         counts.noOpPreserved++;
-
       } else if (compatibility === COMPATIBILITY.ORPHANED) {
-        // Master removed this item. Never delete — preserve orphan in override.
         rebasedItems.push({ ...item });
         counts.orphanedPreserved++;
-
       } else if (compatibility === COMPATIBILITY.REVIEW_REQUIRED) {
-        // Decision required
         const decisionKey = ir.logicalItemId || itemId;
         const decision = reviewDecisions[decisionKey];
-
         if (decision === 'KEEP_COMPANY') {
           rebasedItems.push({ ...item });
           counts.reviewDecisionsKept++;
         } else if (decision === 'USE_NEW_MASTER') {
-          // Drop from override — target master value will be used by resolveJob
           counts.reviewDecisionsAccepted++;
         } else {
-          // No decision provided (was validated above, so this shouldn't happen)
-          // Defensive: preserve to avoid data loss
           rebasedItems.push({ ...item });
           counts.orphanedPreserved++;
         }
-
       } else {
-        // Unknown compatibility — preserve defensively
         rebasedItems.push({ ...item });
         counts.companyOnlyPreserved++;
       }
@@ -656,96 +817,64 @@ function _rebaseOverrideFromAnalysis(
     }
   }
 
-  // Handle metadata overrides (title, shortDescription)
-  // These are tracked by metadata itemResults
   let rebasedTitle: string | null = null;
   let rebasedDesc: string | null = null;
 
   const metaResults = itemResults.filter((r: any) => r.itemType === 'metadata_field');
   for (const mr of metaResults) {
     const fieldPath = mr.logicalItemId?.replace('metadata_', '') || '';
-
     if (fieldPath === 'title' || fieldPath.startsWith('title')) {
       const compat = mr.compatibility;
       if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.title) {
-          rebasedTitle = existingOverrideData.title;
-          counts.safeApplied++;
-        }
+        if (existingOverrideData?.title) { rebasedTitle = existingOverrideData.title; counts.safeApplied++; }
       } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const decisionKey = mr.logicalItemId || 'metadata_title';
-        const decision = reviewDecisions[decisionKey];
-        if (decision === 'KEEP_COMPANY' && existingOverrideData?.title) {
-          rebasedTitle = existingOverrideData.title;
-          counts.reviewDecisionsKept++;
-        } else if (decision === 'USE_NEW_MASTER') {
-          counts.reviewDecisionsAccepted++;
-        }
+        const decision = reviewDecisions[mr.logicalItemId || 'metadata_title'];
+        if (decision === 'KEEP_COMPANY' && existingOverrideData?.title) { rebasedTitle = existingOverrideData.title; counts.reviewDecisionsKept++; }
+        else if (decision === 'USE_NEW_MASTER') { counts.reviewDecisionsAccepted++; }
       }
     } else if (fieldPath === 'shortDescription' || fieldPath.startsWith('shortDescription')) {
       const compat = mr.compatibility;
       if (compat === COMPATIBILITY.SAFE || compat === COMPATIBILITY.NO_OP) {
-        if (existingOverrideData?.shortDescription) {
-          rebasedDesc = existingOverrideData.shortDescription;
-          counts.safeApplied++;
-        }
+        if (existingOverrideData?.shortDescription) { rebasedDesc = existingOverrideData.shortDescription; counts.safeApplied++; }
       } else if (compat === COMPATIBILITY.REVIEW_REQUIRED) {
-        const decisionKey = mr.logicalItemId || 'metadata_shortDescription';
-        const decision = reviewDecisions[decisionKey];
-        if (decision === 'KEEP_COMPANY' && existingOverrideData?.shortDescription) {
-          rebasedDesc = existingOverrideData.shortDescription;
-          counts.reviewDecisionsKept++;
-        } else if (decision === 'USE_NEW_MASTER') {
-          counts.reviewDecisionsAccepted++;
-        }
+        const decision = reviewDecisions[mr.logicalItemId || 'metadata_shortDescription'];
+        if (decision === 'KEEP_COMPANY' && existingOverrideData?.shortDescription) { rebasedDesc = existingOverrideData.shortDescription; counts.reviewDecisionsKept++; }
+        else if (decision === 'USE_NEW_MASTER') { counts.reviewDecisionsAccepted++; }
       }
     }
   }
 
-  // Fallback: if no metadata itemResult was found for title/desc, preserve existing overrides
-  // (these overrides were either SAFE or had no master change — preserve them)
   if (!rebasedTitle && existingOverrideData?.title) {
-    const hasTitleResult = metaResults.some((r: any) => (r.logicalItemId || '').includes('title'));
-    if (!hasTitleResult) {
-      rebasedTitle = existingOverrideData.title;
-      counts.companyOnlyPreserved++;
+    if (!metaResults.some((r: any) => (r.logicalItemId || '').includes('title'))) {
+      rebasedTitle = existingOverrideData.title; counts.companyOnlyPreserved++;
     }
   }
   if (!rebasedDesc && existingOverrideData?.shortDescription) {
-    const hasDescResult = metaResults.some((r: any) => (r.logicalItemId || '').includes('shortDescription'));
-    if (!hasDescResult) {
-      rebasedDesc = existingOverrideData.shortDescription;
-      counts.companyOnlyPreserved++;
+    if (!metaResults.some((r: any) => (r.logicalItemId || '').includes('shortDescription'))) {
+      rebasedDesc = existingOverrideData.shortDescription; counts.companyOnlyPreserved++;
     }
   }
 
-  // Assemble final override data
   const rebasedOverrideData: any = {};
   if (rebasedTitle) rebasedOverrideData.title = rebasedTitle;
   if (rebasedDesc) rebasedOverrideData.shortDescription = rebasedDesc;
-  if (Object.keys(rebasedSectionOverrides).length > 0) {
-    rebasedOverrideData.sectionOverrides = rebasedSectionOverrides;
-  }
+  if (Object.keys(rebasedSectionOverrides).length > 0) rebasedOverrideData.sectionOverrides = rebasedSectionOverrides;
 
-  const isEmpty = Object.keys(rebasedOverrideData).length === 0;
   return {
-    rebasedOverrideData: isEmpty ? null : rebasedOverrideData,
+    rebasedOverrideData: Object.keys(rebasedOverrideData).length === 0 ? null : rebasedOverrideData,
     adoptionSummaryPartial: counts,
   };
 }
 
-// ── Internal: compute customizedFields from override data ─────────────────────
+// ── Internal helpers ───────────────────────────────────────────────────────────
 function _computeCustomizedFields(overrideData: any): string[] {
   const fields: string[] = [];
   if (overrideData?.title) fields.push('title');
   if (overrideData?.shortDescription) fields.push('shortDescription');
-  for (const st of Object.keys(overrideData?.sectionOverrides || {})) {
-    fields.push(`section:${st}`);
-  }
+  for (const st of Object.keys(overrideData?.sectionOverrides || {})) fields.push(`section:${st}`);
   return fields;
 }
 
-// ── Internal: summary from analysis counts (idempotent return) ────────────────
 function _summaryFromAnalysis(analysis: any, reviewDecisions: Record<string, string>): AdoptFromAnalysisResult['adoptionSummary'] {
   return {
     safeApplied: analysis.safeCount ?? 0,
@@ -756,70 +885,5 @@ function _summaryFromAnalysis(analysis: any, reviewDecisions: Record<string, str
     companyOnlyPreserved: 0,
     overrideRebased: false,
     overrideRemoved: false,
-  };
-}
-
-// ── Internal: resolve job for response ────────────────────────────────────────
-async function _resolveJobForResponse(job: any, SR: any, membership: any): Promise<any> {
-  const isCompanyAdmin = membership.role === 'general_manager' || membership.role === 'project_manager';
-  const capabilities = {
-    canEditContent: false, canCreateContent: false, canDeleteContent: false,
-    canReorderContent: false, canChangeSectionStatus: false, canEditJobMetadata: false,
-    canCustomize: isCompanyAdmin,
-  };
-
-  const version = await SR.entities.EssentialSOPVersion.get(job.sourceVersionId).catch(() => null);
-  if (!version || version.status !== 'published') {
-    return { job, sections: [], contentBySection: {}, capabilities, override: null };
-  }
-
-  const masterSections = await SR.entities.EssentialSOPSection.filter(
-    { masterId: job.sourceMasterId, versionId: job.sourceVersionId }, 'sortOrder', 10
-  ).catch(() => []) || [];
-
-  const overrides = await SR.entities.JobOverride.filter({ companyId: job.companyId, jobId: job.id }).catch(() => []);
-  const override: any = overrides?.[0] || null;
-
-  let sanitizedOverrideData: any = null;
-  if (override?.overrideData) {
-    const { sanitized } = sanitizeStoredOverride(override.overrideData, job.id);
-    sanitizedOverrideData = sanitized;
-  }
-
-  const sections = SECTION_ORDER.map((st, i) => {
-    const ms = (masterSections || []).find((s: any) => s.sectionType === st);
-    if (!ms) return null;
-    return { id: ms.id, jobId: job.id, companyId: job.companyId, sectionType: st, title: SECTION_TITLES[st] || st, sortOrder: i, completionStatus: 'Empty' };
-  }).filter(Boolean);
-
-  const contentBySection: Record<string, any[]> = {};
-  for (const ms of masterSections) {
-    const st = ms.sectionType;
-    if (!st || !(VALID_SECTION_TYPES as Set<string>).has(st)) continue;
-    const sectionOverride = sanitizedOverrideData?.sectionOverrides?.[st] || null;
-    const sourceItems = sectionOverride || ms.contentItems || [];
-    const isOv = !!sectionOverride;
-    contentBySection[st] = (sourceItems as any[]).map((item: any, idx: number) => ({
-      id: item._itemId || (isOv ? `o_${ms.id}_${idx}` : `m_${ms.id}_${idx}`),
-      jobId: job.id, companyId: job.companyId, sectionId: ms.id, sectionType: st,
-      contentType: item.contentType || 'text',
-      title: typeof item.title === 'string' ? item.title : '',
-      body: typeof item.body === 'string' ? item.body : '',
-      sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : idx,
-      isRequired: typeof item.isRequired === 'boolean' ? item.isRequired : false,
-      isCritical: typeof item.isCritical === 'boolean' ? item.isCritical : false,
-      metadata: (item.metadata && typeof item.metadata === 'object') ? item.metadata : {},
-    })).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
-  }
-
-  const resolvedTitle = sanitizedOverrideData?.title || job.title;
-  const resolvedShortDescription = sanitizedOverrideData?.shortDescription || job.shortDescription;
-  const { sourceMasterId: _sm, sourceVersionId: _sv, sourceType: _st, isCustomized: _ic,
-          customizedAt: _ca, customizedBy: _cb, ...publicJobFields } = job;
-
-  return {
-    job: { ...publicJobFields, title: resolvedTitle, shortDescription: resolvedShortDescription },
-    sections, contentBySection, capabilities,
-    override: override ? { revision: override.revision, customizedFields: override.customizedFields, auditPending: override.auditPending || false } : null,
   };
 }

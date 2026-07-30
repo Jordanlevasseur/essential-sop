@@ -52,11 +52,13 @@ import { executeAdoptionFromAnalysis } from '../../shared/adoptionEngine.ts';
  *   TARGET_VERSION_NOT_FOUND    — target version missing
  *   TARGET_VERSION_NOT_PUBLISHED — target version not published
  *   VERSION_MASTER_MISMATCH     — target belongs to different master
- *   OVERRIDE_DELETE_FAILED      — atomic step A failed (delete)
- *   OVERRIDE_UPDATE_FAILED      — atomic step A failed (update)
- *   OVERRIDE_CREATE_FAILED      — atomic step A failed (create)
- *   JOB_VERSION_UPDATE_FAILED   — atomic step B failed (rebaseIncomplete set)
+ *   STEP1_OVERRIDE_FAILED       — step 1 override write failed (no changes made)
+ *   STEP1_OVERRIDE_CREATE_FAILED — step 1 override create failed (no changes made)
+ *   STEP2_JOB_UPDATE_FAILED     — step 2 job pin failed; override marked rebaseIncomplete=true; retry with same mutationKey
+ *   STEP3_MARKER_CLEAR_FAILED   — step 3 marker clear failed; job is pinned but override still incomplete; retry with same mutationKey
+ *   CONCURRENT_MODIFICATION     — a different adoption is in progress for this job
  *   REBASE_VALIDATION_FAILED    — rebased override failed schema validation
+ *   ADOPTION_INCOMPLETE         — resolveJob blocked because a prior adoption did not finish
  *   INTERNAL_ERROR              — unexpected error
  */
 export default async function(req: Request): Promise<Response> {
