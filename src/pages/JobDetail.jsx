@@ -6,6 +6,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import { ArrowLeft, Star, Clock, Pencil, Plus, Trash2, ArrowUp, ArrowDown, AlertTriangle, Info, AlertCircle, ShieldAlert, Edit3, Sliders } from 'lucide-react';
 import JobCustomizeEditor from '@/components/jobs/JobCustomizeEditor';
 import VersionUpdateBanner from '@/components/jobs/VersionUpdateBanner';
+import VersionAdoptionIncomplete from '@/components/jobs/version/VersionAdoptionIncomplete';
 import { SECTION_MAP } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
@@ -40,6 +41,7 @@ export default function JobDetail() {
   const [activeGrant, setActiveGrant] = useState(null);
   const [showCustomizeEditor, setShowCustomizeEditor] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [adoptionIncompleteKey, setAdoptionIncompleteKey] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoadError(null);
@@ -50,6 +52,13 @@ export default function JobDetail() {
       const res = await base44.functions.invoke('resolveJob', { jobId });
 
       // Validate response shape before trusting it
+      // Handle ADOPTION_INCOMPLETE — surface the recovery UI instead of an error
+      if (res?.data?.code === 'ADOPTION_INCOMPLETE') {
+        setAdoptionIncompleteKey(res.data?.mutationKey || '__unknown__');
+        setLoading(false);
+        return;
+      }
+
       if (!res?.data?.job) {
         const shapeErr = new Error('Response is missing required job data');
         shapeErr.code = 'INVALID_RESPONSE';
@@ -126,6 +135,18 @@ export default function JobDetail() {
     items.forEach((item, i) => base44.entities.SectionContent.update(item.id, { sortOrder: i }));
     setContentBySection(prev => ({ ...prev, [sectionType]: items.map((item, i) => ({ ...item, sortOrder: i })) }));
   };
+
+  // ADOPTION_INCOMPLETE — show dedicated recovery UI before normal render
+  if (adoptionIncompleteKey) {
+    return (
+      <VersionAdoptionIncomplete
+        job={{ id: jobId, title: 'This Job', companyId: activeCompany?.id }}
+        recoveryMutationKey={adoptionIncompleteKey}
+        onRecovered={() => { setAdoptionIncompleteKey(null); loadData(); }}
+        onClose={() => { setAdoptionIncompleteKey(null); navigateBackToJobs(navigate); }}
+      />
+    );
+  }
 
   if (loading) {
     return (

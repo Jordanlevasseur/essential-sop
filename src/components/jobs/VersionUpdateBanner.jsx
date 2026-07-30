@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
-import VersionUpdateReview from '@/components/jobs/VersionUpdateReview';
+import VersionWorkspace from '@/components/jobs/version/VersionWorkspace';
 
 /**
  * VersionUpdateBanner — Edit 7: Entry point for the review-based adoption flow.
@@ -65,14 +65,14 @@ export default function VersionUpdateBanner({ job, overrideMeta, onAdopted }) {
       </div>
 
       {showReview && (
-        <VersionUpdateReview
+        <VersionWorkspace
           job={job}
           overrideMeta={overrideMeta}
           targetVersionId={newestVersion?.id}
           onAdopted={(resolvedJob) => {
             setShowReview(false);
-            setVersionStatus(null); // will hide banner
-            onAdopted(resolvedJob);
+            setVersionStatus(null);
+            if (resolvedJob) onAdopted(resolvedJob);
           }}
           onClose={() => setShowReview(false)}
         />
