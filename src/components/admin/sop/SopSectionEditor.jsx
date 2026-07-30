@@ -24,7 +24,8 @@ const SEV_COLORS = {
 };
 
 export default function SopSectionEditor({ section, isDraft, onSave, saving }) {
-  const [open, setOpen] = useState(false);
+  // Fresh sections (no items) start open so the user sees the Add button immediately
+  const [open, setOpen] = useState(isDraft && (section.contentItems || []).length === 0);
   const [editingIndex, setEditingIndex] = useState(null); // null = adding new
   const [showAddForm, setShowAddForm] = useState(false);
 

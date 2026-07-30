@@ -21,11 +21,16 @@ export default function CreateMasterJobSheet({ onClose, onCreated }) {
         trade: trade.trim(),
       });
       const created = res.data?.master;
-      if (created) onCreated(created);
+      if (created) {
+        onCreated(created);
+      } else {
+        setError('Creation failed — no draft was returned. Please try again.');
+        setCreating(false);
+      }
     } catch (e) {
-      setError('Failed to create. Please try again.');
+      setError(e?.message || 'Failed to create. Please try again.');
+      setCreating(false);
     }
-    setCreating(false);
   };
 
   return (

@@ -408,7 +408,14 @@ export default function MasterSOPEditor() {
       pendingSaveRef.current = null;
       setShowPublishDialog(false);
       setPublishSuccess(true);
-      setTimeout(() => setPublishSuccess(false), 4000);
+      // Navigate to detail view after 1.5s so user can review the published SOP
+      setTimeout(() => {
+        if (isPlatform) {
+          navigate(`${libraryPath}/${masterId}`);
+        } else {
+          navigate(libraryPath);
+        }
+      }, 1500);
       await load();
     } catch (e) {
       setPublishError('Publish failed: ' + (e.message || 'Unknown error'));
@@ -484,6 +491,29 @@ export default function MasterSOPEditor() {
     </div>
   );
 
+  // Hard load failure — show a focused error page, not the half-rendered editor
+  if (!master && saveError) {
+    return (
+      <div className="min-h-screen bg-app-bg flex flex-col">
+        <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
+          <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
+            <button onClick={() => navigate(libraryPath)} className="icon-btn text-app-text-2">
+              <ArrowLeft size={20} />
+            </button>
+            <span className="font-semibold text-app-text">Load Failed</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center flex-1 px-6 text-center gap-4">
+          <AlertTriangle size={36} className="text-app-warning" />
+          <p className="text-base font-semibold text-app-text">Unable to load this Master Job</p>
+          <p className="text-sm text-app-text-muted">{saveError}</p>
+          <button onClick={load} className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-medium">Try Again</button>
+          <button onClick={() => navigate(libraryPath)} className="text-sm text-app-text-muted underline">Back to Master Jobs</button>
+        </div>
+      </div>
+    );
+  }
+
   const isDraft = master?.status === 'draft';
   const isActive = master?.status === 'active';
   const validation = isDraft ? validateForPublish(metaFields, sections) : { errors: [], warnings: [], valid: true };
@@ -548,7 +578,7 @@ export default function MasterSOPEditor() {
                   className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50 relative"
                 >
                   <Send size={13} /> Publish
-                  {validation.errors.length > 0 && (
+                  {publishError && validation.errors.length > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-app-danger text-white rounded-full text-[10px] flex items-center justify-center font-bold">
                       {validation.errors.length}
                     </span>
@@ -625,8 +655,8 @@ export default function MasterSOPEditor() {
           </div>
         )}
 
-        {/* Validation summary */}
-        {isDraft && validation.errors.length > 0 && (
+        {/* Validation summary — only shown after a publish attempt, not on fresh load */}
+        {isDraft && validation.errors.length > 0 && publishError && (
           <div className="mb-4 p-3.5 bg-app-danger-bg border border-app-danger/20 rounded-xl space-y-1.5">
             <p className="text-xs font-bold text-app-danger uppercase tracking-wide">Publishing Blocked — Fix Required</p>
             {validation.errors.map((e, i) => (
@@ -743,7 +773,10 @@ export default function MasterSOPEditor() {
               <div>
                 <h2 className="text-lg font-bold text-app-text mb-1">{master?.title}</h2>
                 <p className="text-xs text-app-accent font-medium mb-1">{[master?.trade, master?.category].filter(Boolean).join(' · ')}</p>
-                {master?.description && <p className="text-sm text-app-text-2">{master.description}</p>}
+                {master?.description
+                  ? <p className="text-sm text-app-text-2">{master.description}</p>
+                  : isDraft && <p className="text-sm text-app-text-muted italic">No description — click Edit to add one.</p>
+                }
                 {master?.tags?.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {master.tags.map(tag => (
