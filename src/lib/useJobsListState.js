@@ -19,7 +19,7 @@
  *
  * Usage in JobDetail.jsx / JobLoadError.jsx:
  *   const { navigateBackToJobs } = useJobsListState();
- *   navigateBackToJobs(navigate);  // uses history.back() when safe, else navigate('/')
+ *   navigateBackToJobs(navigate);  // always navigate('/'); Jobs restores state from sessionStorage
  */
 
 import { useCallback } from 'react';
@@ -61,24 +61,22 @@ export function useJobsListState() {
   }, []);
 
   /**
-   * navigateBackToJobs — Smart back navigation.
+   * navigateBackToJobs — Deterministic back navigation.
    *
-   * If the browser history shows the previous entry was the Jobs list
-   * (history.length > 1 and we came from within the app), use history.back()
-   * so the browser's native scroll restoration can fire.
-   * Otherwise, explicitly navigate to '/' as a safe fallback.
+   * Decision is based solely on whether a valid, unexpired esop_jobs_list_state
+   * exists in sessionStorage — NOT on window.history.length, which does not prove
+   * the previous route was the Jobs page.
    *
-   * The Jobs page handles scroll restoration after mount regardless of which
-   * path is used.
+   * - Valid state exists  → navigate('/') so Jobs restores search, filters, scroll
+   * - No valid state      → navigate('/') with no restoration attempt
+   *
+   * Either way we always land on '/', which is safe regardless of entry point.
+   * Browser-native back gestures continue to use browser history unaffected.
    */
   const navigateBackToJobs = useCallback((navigate) => {
-    // If there is a history entry to go back to, prefer it — this preserves
-    // native browser back-gesture consistency and avoids duplicate history entries.
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate('/');
-    }
+    // Always navigate explicitly to the Jobs route — never rely on history.back().
+    // The Jobs page reads sessionStorage on mount and restores state if valid.
+    navigate('/');
   }, []);
 
   return { saveListState, restoreListState, clearListState, navigateBackToJobs };
