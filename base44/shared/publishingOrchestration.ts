@@ -69,7 +69,6 @@
 
 import { requirePlatformSuperAdmin, writePlatformAudit } from './platformAuth.ts';
 import { isCompanyEligibleForMaster, buildProvisioningKey, provisionMasterToOneCompany } from './companyLibraryProvisioning.ts';
-import { createVersionDecisionForCompanyJob, buildDecisionKey } from './versionDecisionService.ts';
 
 const VALID_POLICIES = [
   'ALL_EXISTING_AND_FUTURE_COMPANIES',
@@ -416,16 +415,37 @@ export async function publishMasterSOPVersion(
       now,
     });
   } else if (eventType === 'NEW_VERSION' && distributionEvent) {
-    // NEW_VERSION: create CompanyVersionDecision records for all Company Jobs
-    // already linked to this Master SOP that are on an older version.
-    // NO Company Jobs are created or updated.
-    await _distributeNewVersionDecisions(SR, {
-      master: updatedMaster,
-      version,
-      distributionEvent,
+    // Subsequent publication: no Company Job provisioning in Edit 4.
+    // The DistributionEvent must still be finalized in a terminal state.
+    const completedAt = new Date().toISOString();
+    try {
+      await SR.entities.DistributionEvent.update(distributionEvent.id, {
+        status: 'COMPLETED',
+        totalEligibleCompanies: 0,
+        processedCompanies: 0,
+        successfulCompanies: 0,
+        skippedCompanies: 0,
+        failedCompanies: 0,
+        completedAt,
+        updatedAt: completedAt,
+      });
+    } catch (_) {}
+    // Audit: NEW_VERSION publication completed — no Company Job distribution required.
+    await writePlatformAudit(SR, {
       actingUserId: user.id,
-      previousVersionId,
-      now,
+      actingUserRole: 'SUPER_ADMIN',
+      action: 'publication_completed',
+      extra: {
+        masterId,
+        masterTitle: updatedMaster.title,
+        versionId: version.id,
+        distributionEventId: distributionEvent.id,
+        metadata: {
+          phase: 'NEW_VERSION_NO_JOB_DISTRIBUTION',
+          eventType: 'NEW_VERSION',
+          reason: 'NEW_VERSION publications require no Company Job distribution in Edit 4. Edit 5 will handle version adoption notifications.',
+        },
+      },
     });
   }
 
@@ -506,271 +526,6 @@ export async function updateDistributionPolicy(
 
   const updated = await SR.entities.EssentialSOPMaster.get(masterId);
   return { success: true, master: updated };
-}
-
-// ── Internal: distribute CompanyVersionDecision records for a NEW_VERSION ────
-//
-// Orchestration responsibilities only:
-//   - Load Company Jobs already linked to the Master SOP
-//   - Pre-load existing CompanyVersionDecision records for deduplication
-//   - Filter to jobs on an older version (not already on toVersionId)
-//   - Call canonical createVersionDecisionForCompanyJob() per job
-//   - Catch per-job failures (failure isolation)
-//   - Aggregate counts and update DistributionEvent lifecycle
-//   - Write distribution-level audit entries
-//
-// Must NOT: create Company Jobs, change Job.sourceVersionId, modify overrides,
-//           perform merge logic, create notifications, or directly create
-//           CompanyVersionDecision records outside the canonical service.
-
-async function _distributeNewVersionDecisions(SR: any, params: {
-  master: any;
-  version: any;
-  distributionEvent: any;
-  actingUserId: string;
-  previousVersionId: string | null;
-  now: string;
-}): Promise<void> {
-  const { master, version, distributionEvent, actingUserId, now } = params;
-  const masterId = master.id;
-  const toVersionId = version.id;
-  const distributionEventId = distributionEvent.id;
-
-  // Mark event as PROCESSING
-  try {
-    await SR.entities.DistributionEvent.update(distributionEventId, {
-      status: 'PROCESSING',
-      startedAt: now,
-      updatedAt: now,
-    });
-  } catch (_) {}
-
-  // ── Load Company Jobs linked to this Master SOP ───────────────────────────
-  let candidateJobs: any[] = [];
-  try {
-    candidateJobs = await SR.entities.Job.filter(
-      { sourceType: 'essential_sop', sourceMasterId: masterId },
-      '-created_date',
-      1000
-    ) || [];
-  } catch (_) {
-    // Cannot load jobs — fail the event
-    const completedAt = new Date().toISOString();
-    try {
-      await SR.entities.DistributionEvent.update(distributionEventId, {
-        status: 'FAILED',
-        errorSummary: 'Failed to load Company Jobs for NEW_VERSION decision distribution.',
-        completedAt,
-        updatedAt: completedAt,
-      });
-    } catch (_) {}
-    await writePlatformAudit(SR, {
-      actingUserId,
-      actingUserRole: 'SUPER_ADMIN',
-      action: 'new_version_decision_distribution_completed',
-      extra: {
-        masterId, masterTitle: master.title,
-        versionId: toVersionId, distributionEventId,
-        metadata: { phase: 'FAILED', reason: 'job_load_failed' },
-      },
-    });
-    return;
-  }
-
-  // Filter: skip archived jobs and jobs already on the target version
-  const eligibleJobs = candidateJobs.filter((j: any) =>
-    !j.isArchived &&
-    j.sourceVersionId !== toVersionId
-  );
-
-  // Count jobs already current (skipped because already on target version)
-  const alreadyCurrentCount = candidateJobs.filter((j: any) =>
-    !j.isArchived && j.sourceVersionId === toVersionId
-  ).length;
-
-  const totalCandidates = candidateJobs.length;
-  const totalEligible = eligibleJobs.length;
-
-  try {
-    await SR.entities.DistributionEvent.update(distributionEventId, {
-      totalEligibleCompanies: totalEligible,
-      updatedAt: now,
-    });
-  } catch (_) {}
-
-  if (totalEligible === 0) {
-    const completedAt = new Date().toISOString();
-    try {
-      await SR.entities.DistributionEvent.update(distributionEventId, {
-        status: 'COMPLETED',
-        processedCompanies: 0,
-        successfulCompanies: 0,
-        skippedCompanies: alreadyCurrentCount,
-        failedCompanies: 0,
-        completedAt,
-        updatedAt: completedAt,
-      });
-    } catch (_) {}
-    await writePlatformAudit(SR, {
-      actingUserId,
-      actingUserRole: 'SUPER_ADMIN',
-      action: 'new_version_decision_distribution_completed',
-      extra: {
-        masterId, masterTitle: master.title,
-        versionId: toVersionId, distributionEventId,
-        metadata: {
-          phase: 'COMPLETED',
-          totalCandidates,
-          totalEligible: 0,
-          alreadyCurrentCount,
-          created: 0, alreadyExists: 0, superseded: 0, skipped: alreadyCurrentCount, failed: 0,
-        },
-      },
-    });
-    return;
-  }
-
-  // ── Bulk pre-load existing CompanyVersionDecision records ─────────────────
-  // Pre-load by decisionKey for O(1) ALREADY_EXISTS checks.
-  // Pre-load all decisions for each job+master for superseding checks.
-  const eligibleJobIds = new Set(eligibleJobs.map((j: any) => j.id));
-
-  // Map: decisionKey → decision record
-  const existingDecisionsByKey = new Map<string, any>();
-  // Map: companyJobId → decision records (all statuses)
-  const existingDecisionsByJobId = new Map<string, any[]>();
-
-  try {
-    // Load all decisions for this master across all company jobs
-    const existingDecisions = await SR.entities.CompanyVersionDecision.filter(
-      { masterId },
-      '-createdAt',
-      2000
-    ) || [];
-    for (const d of existingDecisions) {
-      // Index by decisionKey
-      if (d.decisionKey) existingDecisionsByKey.set(d.decisionKey, d);
-      // Index by companyJobId
-      if (d.companyJobId) {
-        if (!existingDecisionsByJobId.has(d.companyJobId)) {
-          existingDecisionsByJobId.set(d.companyJobId, []);
-        }
-        existingDecisionsByJobId.get(d.companyJobId)!.push(d);
-      }
-    }
-  } catch (_) {
-    // Non-fatal: if pre-load fails, maps are empty and per-job DB lookups become more expensive.
-    // The canonical service will still function correctly but without in-memory deduplication.
-  }
-
-  // ── Per-job loop — delegates all decision logic to canonical service ───────
-  let processed = 0;
-  let created = 0;
-  let alreadyExists = 0;
-  let superseded = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (const companyJob of eligibleJobs) {
-    try {
-      const jobDecisions = existingDecisionsByJobId.get(companyJob.id) || [];
-
-      const itemResult = await createVersionDecisionForCompanyJob({
-        SR,
-        companyJob,
-        targetVersion: version,
-        distributionEvent,
-        actingUserId,
-        now,
-        existingDecisionsByKey,
-        existingDecisionsByJobMaster: jobDecisions,
-      });
-
-      processed++;
-
-      switch (itemResult.result) {
-        case 'CREATED':
-          created++;
-          // Track in-memory to prevent intra-loop duplicates
-          if (itemResult.decisionId) {
-            existingDecisionsByKey.set(itemResult.decisionKey, { id: itemResult.decisionId, status: 'PENDING', toVersionId });
-          }
-          break;
-        case 'ALREADY_EXISTS':
-          alreadyExists++;
-          break;
-        case 'SUPERSEDED_EXISTING':
-          superseded++;
-          created++;
-          if (itemResult.decisionId) {
-            existingDecisionsByKey.set(itemResult.decisionKey, { id: itemResult.decisionId, status: 'PENDING', toVersionId });
-          }
-          break;
-        case 'SKIPPED_ALREADY_CURRENT':
-          skipped++;
-          break;
-        case 'FAILED':
-          failed++;
-          break;
-      }
-
-    } catch (outerErr: any) {
-      // Catch-all — one job failure never stops the loop
-      processed++;
-      failed++;
-    }
-  }
-
-  // ── Finalize DistributionEvent ─────────────────────────────────────────────
-  const overallStatus = failed === 0
-    ? 'COMPLETED'
-    : created > 0 || alreadyExists > 0 || skipped > 0
-      ? 'COMPLETED_WITH_ERRORS'
-      : 'FAILED';
-
-  const completedAt = new Date().toISOString();
-  try {
-    await SR.entities.DistributionEvent.update(distributionEventId, {
-      status: overallStatus,
-      totalEligibleCompanies: totalEligible,
-      processedCompanies: processed,
-      successfulCompanies: created,
-      skippedCompanies: skipped + alreadyExists,
-      failedCompanies: failed,
-      completedAt,
-      updatedAt: completedAt,
-      errorSummary: failed > 0
-        ? `${failed} Company Job(s) failed during NEW_VERSION decision distribution.`
-        : null,
-    });
-  } catch (_) {}
-
-  // ── Audit: distribution completed ─────────────────────────────────────────
-  await writePlatformAudit(SR, {
-    actingUserId,
-    actingUserRole: 'SUPER_ADMIN',
-    action: 'new_version_decision_distribution_completed',
-    extra: {
-      masterId,
-      masterTitle: master.title,
-      versionId: toVersionId,
-      distributionEventId,
-      metadata: {
-        phase: overallStatus,
-        eventType: 'NEW_VERSION',
-        totalCandidates,
-        totalEligible,
-        alreadyCurrentCount,
-        processed,
-        created,
-        alreadyExists,
-        superseded,
-        skipped,
-        failed,
-        overallStatus,
-      },
-    },
-  });
 }
 
 // ── Internal: distribute a NEW_SOP to all existing eligible companies ────────
