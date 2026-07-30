@@ -94,7 +94,7 @@
  */
 
 import { writePlatformAudit, requirePlatformSuperAdmin, getActiveCompanyMembership } from './platformAuth.ts';
-import { sanitizeStoredOverride, VALID_SECTION_TYPES } from './overrideSchema.js';
+// NOTE: sanitizeStoredOverride not imported — inlined below to avoid cross-module Set iteration issues
 import { diffSection, diffMetadata, CHANGE_TYPES, CONFLICT_SUBTYPES } from './versionDiff.ts';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -169,14 +169,14 @@ function _canonicalizeOverrideData(overrideData: any): any {
   if (overrideData.title !== undefined) canonical.title = overrideData.title;
   if (overrideData.shortDescription !== undefined) canonical.shortDescription = overrideData.shortDescription;
 
-  if (overrideData.sectionOverrides && typeof overrideData.sectionOverrides === 'object') {
-    const sectionKeys = Object.keys(overrideData.sectionOverrides).sort();
+  const so = overrideData.sectionOverrides;
+  if (so && typeof so === 'object' && !Array.isArray(so)) {
+    const sectionKeys = Object.keys(so).sort();
     canonical.sectionOverrides = {};
     for (const key of sectionKeys) {
-      const items = Array.isArray(overrideData.sectionOverrides[key])
-        ? [...overrideData.sectionOverrides[key]].sort((a, b) =>
-            (a._itemId || '').localeCompare(b._itemId || ''))
-        : overrideData.sectionOverrides[key];
+      const items = Array.isArray(so[key])
+        ? [...so[key]].sort((a: any, b: any) => (a._itemId || '').localeCompare(b._itemId || ''))
+        : so[key];
       canonical.sectionOverrides[key] = items;
     }
   }
@@ -504,8 +504,9 @@ function _validateOverrideIntegrity(override: any, job: any): {
       if (typeof so !== 'object' || Array.isArray(so)) {
         return { valid: false, errorCode: 'MALFORMED_SECTION_OVERRIDES', errorMessage: 'sectionOverrides is not an object.' };
       }
+      const _validSectionTypes = new Set(['tools', 'materials', 'scope', 'procedure', 'safety', 'quality']);
       for (const [st, items] of Object.entries(so)) {
-        if (!(VALID_SECTION_TYPES as Set<string>).has(st)) {
+        if (!_validSectionTypes.has(st)) {
           return { valid: false, errorCode: 'UNSUPPORTED_OVERRIDE_TYPE', errorMessage: `Unknown sectionType '${st}' in sectionOverrides.` };
         }
         if (!Array.isArray(items)) {
@@ -606,7 +607,12 @@ export async function analyzeCompanyJobVersionUpdate(
   const override: any = overrideRecords?.[0] || null;
 
   // ── Compute override state fingerprint ────────────────────────────────────
-  const overrideStateFingerprint = computeOverrideStateFingerprint(override);
+  let overrideStateFingerprint: string;
+  try {
+    overrideStateFingerprint = computeOverrideStateFingerprint(override);
+  } catch (fpErr: any) {
+    return { error: Response.json({ error: `Fingerprint failed: ${fpErr.message}`, code: 'FINGERPRINT_ERROR' }, { status: 500 }) };
+  }
 
   // ── Build analysis key ─────────────────────────────────────────────────────
   const analysisKey = buildAnalysisKey(companyJobId, fromVersionId, targetVersionId, overrideStateFingerprint);
@@ -860,18 +866,53 @@ async function _runAnalysisPipeline(params: {
   const overrideIntegrity = _validateOverrideIntegrity(override, job);
   // Store integrity result for later — invalid override is classified but doesn't crash the pipeline
 
-  // ── Step 2: Sanitize override data ────────────────────────────────────────
+  // ── Step 2: Sanitize override data (inlined — avoids cross-module Set issues) ─
   let sanitizedOverrideData: any = null;
-  if (override?.overrideData && overrideIntegrity.valid) {
-    const { sanitized, warnings } = sanitizeStoredOverride(override.overrideData, job.id);
-    sanitizedOverrideData = sanitized;
+  if (override?.overrideData && typeof override.overrideData === 'object' &&
+      !Array.isArray(override.overrideData) && overrideIntegrity.valid) {
+    try {
+      const raw = override.overrideData;
+      const san: any = {};
+      if (typeof raw.title === 'string' && raw.title.trim()) san.title = raw.title.trim();
+      if (typeof raw.shortDescription === 'string') san.shortDescription = raw.shortDescription;
+      const validST = ['tools','materials','scope','procedure','safety','quality'];
+      if (raw.sectionOverrides && typeof raw.sectionOverrides === 'object' && !Array.isArray(raw.sectionOverrides)) {
+        const cleanSections: any = {};
+        const soEntries = Object.keys(raw.sectionOverrides);
+        for (const st of soEntries) {
+          if (!validST.includes(st)) continue;
+          const items = raw.sectionOverrides[st];
+          if (!Array.isArray(items)) continue;
+          const allowedItemFields = ['contentType','title','body','sortOrder','isRequired','isCritical','metadata','_itemId'];
+          const cleanItems = items.map((item: any) => {
+            const ci: any = {};
+            for (const k of Object.keys(item)) {
+              if (allowedItemFields.includes(k)) ci[k] = item[k];
+            }
+            return ci;
+          });
+          cleanSections[st] = cleanItems;
+        }
+        if (Object.keys(cleanSections).length > 0) san.sectionOverrides = cleanSections;
+      }
+      sanitizedOverrideData = san;
+    } catch (sanErr: any) {
+      sanitizedOverrideData = null; // fallback — treat as no override
+    }
   }
 
   // ── Step 3: Load BASE and TARGET sections in parallel ─────────────────────
-  const [baseSections, targetSections] = await Promise.all([
-    SR.entities.EssentialSOPSection.filter({ masterId, versionId: fromVersionId }, 'sortOrder', 10),
-    SR.entities.EssentialSOPSection.filter({ masterId, versionId: targetVersionId }, 'sortOrder', 10),
-  ]);
+  let baseSections: any[] = [], targetSections: any[] = [];
+  try {
+    [baseSections, targetSections] = await Promise.all([
+      SR.entities.EssentialSOPSection.filter({ masterId, versionId: fromVersionId }, 'sortOrder', 10),
+      SR.entities.EssentialSOPSection.filter({ masterId, versionId: targetVersionId }, 'sortOrder', 10),
+    ]);
+    baseSections = baseSections || [];
+    targetSections = targetSections || [];
+  } catch (secErr: any) {
+    throw new Error(`STEP3_SECTION_LOAD_FAILED: ${secErr.message}`);
+  }
 
   // ── Step 4: Load master record for metadata comparison ────────────────────
   let masterRecord: any = null;
@@ -879,6 +920,7 @@ async function _runAnalysisPipeline(params: {
 
   // ── Step 5: Run three-way diff via existing canonical versionDiff engine ──
   const changesBySection: Record<string, any[]> = {};
+  let _step5Section = 'init';
 
   for (const st of SECTION_ORDER) {
     const baseSection = (baseSections || []).find((s: any) => s.sectionType === st);
@@ -889,6 +931,7 @@ async function _runAnalysisPipeline(params: {
     const baseSectionId = baseSection?.id || `missing_${st}`;
     const targetSectionId = targetSection?.id || `missing_${st}`;
 
+    _step5Section = st;
     const changes = diffSection(st, baseSectionId, targetSectionId, baseItems, targetItems, companyItems);
     if (changes.length > 0) changesBySection[st] = changes;
   }
@@ -900,7 +943,12 @@ async function _runAnalysisPipeline(params: {
   const targetDesc = baseDesc; // shortDescription not tracked per-version on master
   const companyTitle = sanitizedOverrideData?.title || null;
   const companyDesc = sanitizedOverrideData?.shortDescription || null;
-  const metadataChanges = diffMetadata(baseTitle, targetTitle, baseDesc, targetDesc, companyTitle, companyDesc);
+  let metadataChanges: any[] = [];
+  try {
+    metadataChanges = diffMetadata(baseTitle, targetTitle, baseDesc, targetDesc, companyTitle, companyDesc) || [];
+  } catch (mdErr: any) {
+    throw new Error(`STEP5_METADATA_DIFF_FAILED after section=${_step5Section}: ${mdErr.message}`);
+  }
   if (metadataChanges.length > 0) changesBySection['metadata'] = metadataChanges;
 
   // ── Step 6: Master change summary ─────────────────────────────────────────
@@ -1007,9 +1055,11 @@ async function _runAnalysisPipeline(params: {
     // ── Section-level override summary items (for sections with company overrides) ──
     // When a company has overridden an entire section, we emit a section-level result
     // in addition to per-item results.
-    if (sanitizedOverrideData?.sectionOverrides) {
-      for (const [st, overrideItems] of Object.entries(sanitizedOverrideData.sectionOverrides as Record<string, any[]>)) {
-        if (!VALID_SECTION_TYPES.has(st)) {
+    const _validST = new Set(['tools', 'materials', 'scope', 'procedure', 'safety', 'quality']);
+    const sectionOverridesMap = sanitizedOverrideData?.sectionOverrides || {};
+    if (Object.keys(sectionOverridesMap).length > 0) {
+      for (const [st, overrideItems] of Object.entries(sectionOverridesMap as Record<string, any[]>)) {
+        if (!_validST.has(st)) {
           // Unsupported section type in override → INVALID
           itemResults.push({
             logicalItemId: `section_override_${st}`,
