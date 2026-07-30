@@ -278,6 +278,10 @@ export async function publishMasterSOPVersion(
   }
 
   // ── Step 7: Snapshot draft sections under new versionId ────────────────────
+  // logicalItemId on each contentItem is copied verbatim from the draft.
+  // This is the ONLY snapshot path. logicalItemIds are never regenerated here.
+  // Items lacking a logicalItemId in the draft snapshot are left as-is;
+  // versionDiff.ts handles legacy items via text-based fallback.
   const draftSections = await SR.entities.EssentialSOPSection.filter(
     { masterId, versionId: 'draft' },
     'sortOrder',
@@ -291,7 +295,7 @@ export async function publishMasterSOPVersion(
         sectionType: s.sectionType,
         title: s.title,
         sortOrder: s.sortOrder,
-        contentItems: s.contentItems || [],
+        contentItems: s.contentItems || [],  // logicalItemIds preserved verbatim
       });
     } catch (err: any) {
       // Partial section failure — audit and continue; do not abort version creation.

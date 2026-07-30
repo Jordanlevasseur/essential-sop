@@ -31,10 +31,14 @@
     },
     "contentItems": {
       "type": "array",
-      "description": "Ordered array of content items for this section. Structure mirrors SectionContent fields.",
+      "description": "Ordered array of content items for this section. Each item carries a stable logicalItemId assigned once at creation and preserved through all subsequent edits, moves, and version snapshots. logicalItemId is the authoritative cross-version identity key. Text-based matching (contentType::title) is only a legacy fallback for items lacking logicalItemId.",
       "items": {
         "type": "object",
         "properties": {
+          "logicalItemId": {
+            "type": "string",
+            "description": "Stable cross-version identity. Assigned exactly once when the item is first created on the draft. Preserved verbatim through update_draft edits, duplicate, and publish snapshots. Never regenerated. Format: 'lid_<masterId_prefix>_<random>'."
+          },
           "contentType": {
             "type": "string"
           },

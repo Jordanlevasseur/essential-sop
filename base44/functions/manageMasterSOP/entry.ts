@@ -29,6 +29,30 @@ function slugify(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+/**
+ * generateLogicalItemId — assigns a stable cross-version identity to a new master content item.
+ * Called ONCE at item creation time. Never regenerated on edit, move, or snapshot.
+ * Format: lid_<6-char masterId prefix>_<random base36>
+ */
+function generateLogicalItemId(masterId: string): string {
+  const prefix = (masterId || 'xx').slice(-6);
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `lid_${prefix}_${rand}`;
+}
+
+/**
+ * ensureLogicalItemIds — assigns logicalItemId to any content items that lack one.
+ * Used when saving draft sections and when duplicating. Idempotent: existing IDs preserved.
+ */
+function ensureLogicalItemIds(items: any[], masterId: string): any[] {
+  return (items || []).map(item => {
+    if (item && typeof item === 'object' && !item.logicalItemId) {
+      return { ...item, logicalItemId: generateLogicalItemId(masterId) };
+    }
+    return item;
+  });
+}
+
 export default async function(req) {
   try {
     const base44 = createClientFromRequest(req);
@@ -224,7 +248,9 @@ export default async function(req) {
         if (!section || section.masterId !== masterId || section.versionId !== 'draft') {
           return Response.json({ error: 'Draft section not found' }, { status: 404 });
         }
-        await SR.entities.EssentialSOPSection.update(sectionId, { contentItems });
+        // Assign logicalItemId to any new items that lack one. Existing IDs preserved verbatim.
+        const itemsWithIds = ensureLogicalItemIds(contentItems, masterId);
+        await SR.entities.EssentialSOPSection.update(sectionId, { contentItems: itemsWithIds });
         await SR.entities.EssentialSOPMaster.update(masterId, { updatedAt: now });
       }
 
@@ -281,13 +307,18 @@ export default async function(req) {
       });
       const sourceSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
       for (const s of (sourceSections || [])) {
+        // Duplicate creates NEW logicalItemIds for the copy — these are independent items in a new SOP.
+        const freshItems = (s.contentItems || []).map((item: any) => ({
+          ...item,
+          logicalItemId: generateLogicalItemId(newMaster.id),
+        }));
         await SR.entities.EssentialSOPSection.create({
           masterId: newMaster.id,
           versionId: 'draft',
           sectionType: s.sectionType,
           title: s.title,
           sortOrder: s.sortOrder,
-          contentItems: s.contentItems || [],
+          contentItems: freshItems,
         });
       }
       await writePlatformAudit(SR, {

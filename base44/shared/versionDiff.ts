@@ -46,11 +46,21 @@ export const CHANGE_TYPES = {
   COMPANY_ONLY_CUSTOMIZATION: 'COMPANY_ONLY_CUSTOMIZATION',
   AUTOMATICALLY_COMPATIBLE: 'AUTOMATICALLY_COMPATIBLE',
   CONFLICT: 'CONFLICT',
+  /**
+   * AMBIGUOUS_IDENTITY — emitted when an item is matched via legacy text-based
+   * fallback (contentType::title) rather than by logicalItemId. This occurs only
+   * for historical items that pre-date the logicalItemId field.
+   * Treatment: always classified REVIEW_REQUIRED so the company admin can confirm
+   * the match is correct. Never silently adopted as a confident match.
+   */
+  AMBIGUOUS_IDENTITY: 'AMBIGUOUS_IDENTITY',
 };
 
 export const CONFLICT_SUBTYPES = {
   BOTH_MODIFIED_DIFFERENTLY: 'BOTH_MODIFIED_DIFFERENTLY',
   MASTER_REMOVED_COMPANY_MODIFIED: 'MASTER_REMOVED_COMPANY_MODIFIED',
+  /** Legacy text-only match — cannot be confirmed as the same logical item. */
+  LEGACY_TEXT_MATCH: 'LEGACY_TEXT_MATCH',
 };
 
 const RESOLUTION_OPTIONS = ['KEEP_COMPANY', 'USE_NEW_ESSENTIAL_SOP'];
@@ -75,10 +85,12 @@ function itemFingerprint(item: any): string {
   });
 }
 
-// ── Logical identity key for master items (cross-version matching) ────────────
-// Two master items are considered "the same item" if their identity key matches.
+// ── Logical identity key for master items — LEGACY TEXT-BASED FALLBACK ONLY ──
+// Used ONLY when an item lacks a logicalItemId.
+// A match via this key is NOT authoritative — it is emitted as AMBIGUOUS_IDENTITY.
+// Never use this as the primary matching mechanism.
 
-function itemIdentityKey(item: any): string {
+function _legacyTextKey(item: any): string {
   return `${item.contentType || ''}::${item.title || ''}`;
 }
 
@@ -108,6 +120,24 @@ export function computePreviewFingerprint(
 // 4. Unmatched TARGET items → MASTER_ADDED.
 // 5. Matched pairs → compare fingerprints; consult company override for three-way.
 
+/**
+ * diffSection — Three-way section diff engine.
+ *
+ * MATCHING PRIORITY:
+ * 1. PRIMARY: logicalItemId (stable, assigned once at item creation, never changes)
+ *    When both base and target items have a matching logicalItemId → same logical item.
+ *
+ * 2. LEGACY FALLBACK: contentType::title text key
+ *    Used ONLY for items lacking logicalItemId on either side.
+ *    A match via this path is ALWAYS emitted as AMBIGUOUS_IDENTITY with
+ *    conflictSubtype=LEGACY_TEXT_MATCH so the company admin must confirm.
+ *    Items unmatched by either path → MASTER_ADDED or MASTER_REMOVED.
+ *
+ * This ensures a renamed Master item (same logicalItemId, different title) is
+ * classified as MASTER_MODIFIED, not REMOVED + ADDED.
+ * Duplicate visible titles do not cause incorrect cross-item matching because
+ * logicalItemIds are unique.
+ */
 export function diffSection(
   sectionType: string,
   baseSectionId: string,
@@ -119,19 +149,17 @@ export function diffSection(
   const hasCompanyOverride = companyItems !== null && companyItems !== undefined;
   const changes: any[] = [];
 
-  // Augment each item with its stable index-based ID (for company override lookup)
+  // Augment with stable per-section index IDs for company override lookup (_itemId uses these)
   const baseArr = (baseItems || []).map((item: any, idx: number) => ({
     ...item,
     _stableId: `m_${baseSectionId}_${idx}`,
-    _identityKey: itemIdentityKey(item),
   }));
   const targetArr = (targetItems || []).map((item: any, idx: number) => ({
     ...item,
     _stableId: `m_${targetSectionId}_${idx}`,
-    _identityKey: itemIdentityKey(item),
   }));
 
-  // Build company override map keyed by _itemId (which are BASE stable IDs)
+  // Build company override map keyed by _itemId (BASE stable IDs)
   const companyMap: Record<string, any> = {};
   if (hasCompanyOverride && companyItems) {
     for (const item of companyItems) {
@@ -139,27 +167,180 @@ export function diffSection(
     }
   }
 
-  // Group BASE and TARGET items by identity key
-  const baseByKey: Record<string, any[]> = {};
-  for (const item of baseArr) {
-    if (!baseByKey[item._identityKey]) baseByKey[item._identityKey] = [];
-    baseByKey[item._identityKey].push(item);
-  }
-  const targetByKey: Record<string, any[]> = {};
-  for (const item of targetArr) {
-    if (!targetByKey[item._identityKey]) targetByKey[item._identityKey] = [];
-    targetByKey[item._identityKey].push(item);
-  }
-
   const matchedBaseStableIds = new Set<string>();
   const matchedTargetStableIds = new Set<string>();
   const processedCompanyIds = new Set<string>();
   let changeCounter = 0;
 
-  // ── Match BASE ↔ TARGET by identity key ──────────────────────────────────────
-  for (const key of Object.keys(baseByKey)) {
-    const baseGroup = baseByKey[key];
-    const targetGroup = targetByKey[key] || [];
+  // ── PASS 1: Match by logicalItemId (primary, authoritative) ──────────────
+  // Build logicalItemId → item maps for both sides.
+  const baseByLid: Record<string, any> = {};
+  for (const item of baseArr) {
+    if (item.logicalItemId) baseByLid[item.logicalItemId] = item;
+  }
+  const targetByLid: Record<string, any> = {};
+  for (const item of targetArr) {
+    if (item.logicalItemId) targetByLid[item.logicalItemId] = item;
+  }
+
+  // Match items that exist in BOTH base and target by logicalItemId
+  for (const lid of Object.keys(baseByLid)) {
+    const baseItem = baseByLid[lid];
+    const targetItem = targetByLid[lid];
+    if (!targetItem) continue; // will be handled as MASTER_REMOVED below
+
+    matchedBaseStableIds.add(baseItem._stableId);
+    matchedTargetStableIds.add(targetItem._stableId);
+
+    const companyItem = companyMap[baseItem._stableId] || null;
+    if (companyItem?._itemId) processedCompanyIds.add(companyItem._itemId);
+
+    const changeId = `chg_${sectionType}_${changeCounter++}`;
+    const baseFp = itemFingerprint(baseItem);
+    const targetFp = itemFingerprint(targetItem);
+    const companyFp = companyItem ? itemFingerprint(companyItem) : null;
+    const masterChanged = baseFp !== targetFp;
+    const companyChanged = companyItem ? (companyFp !== baseFp) : false;
+
+    if (!masterChanged && !companyChanged) continue; // no change
+
+    if (masterChanged && !companyChanged) {
+      changes.push({
+        changeId, sectionType,
+        baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+        logicalItemId: lid,
+        fieldLabel: targetItem.title || baseItem.title || `Item ${changeCounter}`,
+        changeType: CHANGE_TYPES.MASTER_MODIFIED,
+        baseValue: { title: baseItem.title, body: baseItem.body },
+        targetValue: { title: targetItem.title, body: targetItem.body },
+        companyValue: null, conflictSubtype: null,
+        resolutionRequired: false, resolutionOptions: [],
+      });
+    } else if (!masterChanged && companyChanged) {
+      changes.push({
+        changeId, sectionType,
+        baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+        logicalItemId: lid,
+        fieldLabel: companyItem?.title || baseItem?.title || `Item ${changeCounter}`,
+        changeType: CHANGE_TYPES.COMPANY_ONLY_CUSTOMIZATION,
+        baseValue: { title: baseItem.title, body: baseItem.body },
+        targetValue: { title: targetItem.title, body: targetItem.body },
+        companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
+        conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
+      });
+    } else {
+      // Both changed
+      if (targetFp === companyFp) {
+        changes.push({
+          changeId, sectionType,
+          baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+          logicalItemId: lid,
+          fieldLabel: targetItem.title || `Item ${changeCounter}`,
+          changeType: CHANGE_TYPES.AUTOMATICALLY_COMPATIBLE,
+          baseValue: { title: baseItem.title, body: baseItem.body },
+          targetValue: { title: targetItem.title, body: targetItem.body },
+          companyValue: { title: companyItem?.title, body: companyItem?.body },
+          conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
+        });
+      } else {
+        changes.push({
+          changeId, sectionType,
+          baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+          logicalItemId: lid,
+          fieldLabel: baseItem.title || `Item ${changeCounter}`,
+          changeType: CHANGE_TYPES.CONFLICT,
+          baseValue: { title: baseItem.title, body: baseItem.body },
+          targetValue: { title: targetItem.title, body: targetItem.body },
+          companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
+          conflictSubtype: CONFLICT_SUBTYPES.BOTH_MODIFIED_DIFFERENTLY,
+          resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
+        });
+      }
+    }
+  }
+
+  // ── PASS 1b: logicalItemId-matched MASTER_REMOVED (in base, not in target) ─
+  for (const lid of Object.keys(baseByLid)) {
+    const baseItem = baseByLid[lid];
+    if (matchedBaseStableIds.has(baseItem._stableId)) continue; // already matched
+
+    matchedBaseStableIds.add(baseItem._stableId);
+    const companyItem = companyMap[baseItem._stableId] || null;
+    if (companyItem?._itemId) processedCompanyIds.add(companyItem._itemId);
+    const changeId = `chg_${sectionType}_${changeCounter++}`;
+
+    if (companyItem && itemFingerprint(companyItem) !== itemFingerprint(baseItem)) {
+      changes.push({
+        changeId, sectionType,
+        baseItemId: baseItem._stableId, targetItemId: null,
+        logicalItemId: lid,
+        fieldLabel: companyItem.title || baseItem.title || `Item ${changeCounter}`,
+        changeType: CHANGE_TYPES.CONFLICT,
+        baseValue: { title: baseItem.title, body: baseItem.body },
+        targetValue: null,
+        companyValue: { title: companyItem.title, body: companyItem.body, _itemId: companyItem._itemId },
+        conflictSubtype: CONFLICT_SUBTYPES.MASTER_REMOVED_COMPANY_MODIFIED,
+        resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
+      });
+    } else {
+      changes.push({
+        changeId, sectionType,
+        baseItemId: baseItem._stableId, targetItemId: null,
+        logicalItemId: lid,
+        fieldLabel: baseItem.title || `Item ${changeCounter}`,
+        changeType: CHANGE_TYPES.MASTER_REMOVED,
+        baseValue: { title: baseItem.title, body: baseItem.body },
+        targetValue: null, companyValue: null,
+        conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
+      });
+    }
+  }
+
+  // ── PASS 1c: logicalItemId-matched MASTER_ADDED (in target, not in base) ──
+  for (const lid of Object.keys(targetByLid)) {
+    const targetItem = targetByLid[lid];
+    if (matchedTargetStableIds.has(targetItem._stableId)) continue;
+    matchedTargetStableIds.add(targetItem._stableId);
+    const changeId = `chg_${sectionType}_${changeCounter++}`;
+    changes.push({
+      changeId, sectionType,
+      baseItemId: null, targetItemId: targetItem._stableId,
+      logicalItemId: lid,
+      fieldLabel: targetItem.title || `New Item ${changeCounter}`,
+      changeType: CHANGE_TYPES.MASTER_ADDED,
+      baseValue: null,
+      targetValue: { title: targetItem.title, body: targetItem.body },
+      companyValue: null, conflictSubtype: null,
+      resolutionRequired: false, resolutionOptions: [],
+    });
+  }
+
+  // ── PASS 2: Legacy text-based fallback for items WITHOUT logicalItemId ──────
+  // Collect unmatched items from both sides that lack logicalItemId.
+  const unmatchedBase = baseArr.filter(
+    item => !matchedBaseStableIds.has(item._stableId) && !item.logicalItemId
+  );
+  const unmatchedTarget = targetArr.filter(
+    item => !matchedTargetStableIds.has(item._stableId) && !item.logicalItemId
+  );
+
+  // Group by legacy text key for positional matching within key group
+  const legacyBaseByKey: Record<string, any[]> = {};
+  for (const item of unmatchedBase) {
+    const k = _legacyTextKey(item);
+    if (!legacyBaseByKey[k]) legacyBaseByKey[k] = [];
+    legacyBaseByKey[k].push(item);
+  }
+  const legacyTargetByKey: Record<string, any[]> = {};
+  for (const item of unmatchedTarget) {
+    const k = _legacyTextKey(item);
+    if (!legacyTargetByKey[k]) legacyTargetByKey[k] = [];
+    legacyTargetByKey[k].push(item);
+  }
+
+  for (const key of Object.keys(legacyBaseByKey)) {
+    const baseGroup = legacyBaseByKey[key];
+    const targetGroup = legacyTargetByKey[key] || [];
     const matchCount = Math.min(baseGroup.length, targetGroup.length);
 
     for (let i = 0; i < matchCount; i++) {
@@ -174,101 +355,53 @@ export function diffSection(
       const changeId = `chg_${sectionType}_${changeCounter++}`;
       const baseFp = itemFingerprint(baseItem);
       const targetFp = itemFingerprint(targetItem);
-      const companyFp = companyItem ? itemFingerprint(companyItem) : null;
       const masterChanged = baseFp !== targetFp;
-      const companyChanged = companyItem ? (companyFp !== baseFp) : false;
+      const companyChanged = companyItem ? (itemFingerprint(companyItem) !== baseFp) : false;
 
-      if (!masterChanged && !companyChanged) continue; // No change
-
-      if (masterChanged && !companyChanged) {
-        changes.push({
-          changeId, sectionType,
-          baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
-          fieldLabel: targetItem.title || `Item ${changeCounter}`,
-          changeType: CHANGE_TYPES.MASTER_MODIFIED,
-          baseValue: { title: baseItem.title, body: baseItem.body },
-          targetValue: { title: targetItem.title, body: targetItem.body },
-          companyValue: null, conflictSubtype: null,
-          resolutionRequired: false, resolutionOptions: [],
-        });
-      } else if (!masterChanged && companyChanged) {
-        changes.push({
-          changeId, sectionType,
-          baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
-          fieldLabel: companyItem?.title || baseItem?.title || `Item ${changeCounter}`,
-          changeType: CHANGE_TYPES.COMPANY_ONLY_CUSTOMIZATION,
-          baseValue: { title: baseItem.title, body: baseItem.body },
-          targetValue: { title: targetItem.title, body: targetItem.body },
-          companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
-          conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
-        });
-      } else {
-        // Both changed
-        if (targetFp === companyFp) {
-          changes.push({
-            changeId, sectionType,
-            baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
-            fieldLabel: targetItem.title || `Item ${changeCounter}`,
-            changeType: CHANGE_TYPES.AUTOMATICALLY_COMPATIBLE,
-            baseValue: { title: baseItem.title, body: baseItem.body },
-            targetValue: { title: targetItem.title, body: targetItem.body },
-            companyValue: { title: companyItem?.title, body: companyItem?.body },
-            conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
-          });
-        } else {
-          changes.push({
-            changeId, sectionType,
-            baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
-            fieldLabel: `${baseItem.title || `Item ${changeCounter}`}`,
-            changeType: CHANGE_TYPES.CONFLICT,
-            baseValue: { title: baseItem.title, body: baseItem.body },
-            targetValue: { title: targetItem.title, body: targetItem.body },
-            companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
-            conflictSubtype: CONFLICT_SUBTYPES.BOTH_MODIFIED_DIFFERENTLY,
-            resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
-          });
-        }
-      }
+      // Legacy match — always AMBIGUOUS_IDENTITY requiring admin review
+      // even when content appears unchanged, because the match itself is uncertain.
+      changes.push({
+        changeId, sectionType,
+        baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+        logicalItemId: null,
+        fieldLabel: baseItem.title || `Item ${changeCounter}`,
+        changeType: CHANGE_TYPES.AMBIGUOUS_IDENTITY,
+        baseValue: { title: baseItem.title, body: baseItem.body },
+        targetValue: { title: targetItem.title, body: targetItem.body },
+        companyValue: companyItem
+          ? { title: companyItem.title, body: companyItem.body, _itemId: companyItem._itemId }
+          : null,
+        conflictSubtype: CONFLICT_SUBTYPES.LEGACY_TEXT_MATCH,
+        resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
+        isLegacyFallback: true,
+      });
     }
 
-    // Excess BASE items (more base than target for this key) → MASTER_REMOVED
+    // Excess base items → MASTER_REMOVED
     for (let i = matchCount; i < baseGroup.length; i++) {
       const baseItem = baseGroup[i];
       matchedBaseStableIds.add(baseItem._stableId);
       const companyItem = companyMap[baseItem._stableId] || null;
       if (companyItem?._itemId) processedCompanyIds.add(companyItem._itemId);
       const changeId = `chg_${sectionType}_${changeCounter++}`;
-
-      if (companyItem) {
-        const companyFp = itemFingerprint(companyItem);
-        const baseFp = itemFingerprint(baseItem);
-        if (companyFp !== baseFp) {
-          changes.push({
-            changeId, sectionType,
-            baseItemId: baseItem._stableId, targetItemId: null,
-            fieldLabel: companyItem.title || baseItem.title || `Item ${changeCounter}`,
-            changeType: CHANGE_TYPES.CONFLICT,
-            baseValue: { title: baseItem.title, body: baseItem.body },
-            targetValue: null,
-            companyValue: { title: companyItem.title, body: companyItem.body, _itemId: companyItem._itemId },
-            conflictSubtype: CONFLICT_SUBTYPES.MASTER_REMOVED_COMPANY_MODIFIED,
-            resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
-          });
-        } else {
-          changes.push({
-            changeId, sectionType,
-            baseItemId: baseItem._stableId, targetItemId: null,
-            fieldLabel: baseItem.title || `Item ${changeCounter}`,
-            changeType: CHANGE_TYPES.MASTER_REMOVED,
-            baseValue: { title: baseItem.title, body: baseItem.body },
-            targetValue: null, companyValue: null,
-            conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
-          });
-        }
+      if (companyItem && itemFingerprint(companyItem) !== itemFingerprint(baseItem)) {
+        changes.push({
+          changeId, sectionType,
+          baseItemId: baseItem._stableId, targetItemId: null,
+          logicalItemId: null,
+          fieldLabel: companyItem.title || baseItem.title || `Item ${changeCounter}`,
+          changeType: CHANGE_TYPES.CONFLICT,
+          baseValue: { title: baseItem.title, body: baseItem.body },
+          targetValue: null,
+          companyValue: { title: companyItem.title, body: companyItem.body, _itemId: companyItem._itemId },
+          conflictSubtype: CONFLICT_SUBTYPES.MASTER_REMOVED_COMPANY_MODIFIED,
+          resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
+        });
       } else {
         changes.push({
           changeId, sectionType,
           baseItemId: baseItem._stableId, targetItemId: null,
+          logicalItemId: null,
           fieldLabel: baseItem.title || `Item ${changeCounter}`,
           changeType: CHANGE_TYPES.MASTER_REMOVED,
           baseValue: { title: baseItem.title, body: baseItem.body },
@@ -279,13 +412,14 @@ export function diffSection(
     }
   }
 
-  // ── Unmatched TARGET items → MASTER_ADDED ─────────────────────────────────
-  for (const item of targetArr) {
+  // ── Unmatched TARGET items with no logicalItemId → MASTER_ADDED ───────────
+  for (const item of unmatchedTarget) {
     if (matchedTargetStableIds.has(item._stableId)) continue;
     const changeId = `chg_${sectionType}_${changeCounter++}`;
     changes.push({
       changeId, sectionType,
       baseItemId: null, targetItemId: item._stableId,
+      logicalItemId: null,
       fieldLabel: item.title || `New Item ${changeCounter}`,
       changeType: CHANGE_TYPES.MASTER_ADDED,
       baseValue: null,
@@ -295,7 +429,11 @@ export function diffSection(
     });
   }
 
-  // ── Company-added items (not anchored to any base item) → COMPANY_ONLY ────
+  // ── PASS 3: Also flag unmatched items that HAVE logicalItemId on one side ─
+  // These were items with logicalItemId not found on the other side (already handled above
+  // in PASS 1b and 1c). No additional work needed here.
+
+  // ── Company-added items not anchored to any base item → COMPANY_ONLY ──────
   if (hasCompanyOverride) {
     for (const [cid, ci] of Object.entries(companyMap)) {
       if (processedCompanyIds.has(cid)) continue;
@@ -303,6 +441,7 @@ export function diffSection(
       changes.push({
         changeId, sectionType,
         baseItemId: null, targetItemId: null,
+        logicalItemId: null,
         fieldLabel: (ci as any).title || 'Company Added Item',
         changeType: CHANGE_TYPES.COMPANY_ONLY_CUSTOMIZATION,
         baseValue: null, targetValue: null,

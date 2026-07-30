@@ -94,7 +94,7 @@
  */
 
 import { writePlatformAudit, requirePlatformSuperAdmin, getActiveCompanyMembership } from './platformAuth.ts';
-// NOTE: sanitizeStoredOverride not imported — inlined below to avoid cross-module Set iteration issues
+import { sanitizeOverrideData } from './overrideSanitizer.ts';
 import { diffSection, diffMetadata, CHANGE_TYPES, CONFLICT_SUBTYPES } from './versionDiff.ts';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -390,6 +390,18 @@ function _classifyChangeEntry(change: any): {
         compatibility: COMPATIBILITY.REVIEW_REQUIRED,
         reasonCode: REASON_CODE.BOTH_CHANGED_SAME_FIELD,
         reasonMessage: 'Both master and company modified this item differently. Admin must choose which version to keep.',
+        masterChangeTypes: [MASTER_CHANGE.MODIFIED],
+        requiresAdminAction: true,
+        recommendedDefaultAction: 'REVIEW_BEFORE_ADOPTING',
+      };
+
+    case CHANGE_TYPES.AMBIGUOUS_IDENTITY:
+      // Legacy text-based match — cannot be confirmed as the same logical item.
+      // Always REVIEW_REQUIRED so the company admin can verify the match.
+      return {
+        compatibility: COMPATIBILITY.REVIEW_REQUIRED,
+        reasonCode: REASON_CODE.MISSING_CURRENT_TARGET,
+        reasonMessage: 'Item matched by text only (no logicalItemId). Identity is ambiguous — admin must confirm this is the same item.',
         masterChangeTypes: [MASTER_CHANGE.MODIFIED],
         requiresAdminAction: true,
         recommendedDefaultAction: 'REVIEW_BEFORE_ADOPTING',
@@ -866,39 +878,12 @@ async function _runAnalysisPipeline(params: {
   const overrideIntegrity = _validateOverrideIntegrity(override, job);
   // Store integrity result for later — invalid override is classified but doesn't crash the pipeline
 
-  // ── Step 2: Sanitize override data (inlined — avoids cross-module Set issues) ─
+  // ── Step 2: Sanitize override data via canonical overrideSanitizer.ts ────────
+  // The inlined copy has been removed. sanitizeOverrideData() is the one canonical
+  // implementation of override sanitization rules in the Deno runtime.
   let sanitizedOverrideData: any = null;
-  if (override?.overrideData && typeof override.overrideData === 'object' &&
-      !Array.isArray(override.overrideData) && overrideIntegrity.valid) {
-    try {
-      const raw = override.overrideData;
-      const san: any = {};
-      if (typeof raw.title === 'string' && raw.title.trim()) san.title = raw.title.trim();
-      if (typeof raw.shortDescription === 'string') san.shortDescription = raw.shortDescription;
-      const validST = ['tools','materials','scope','procedure','safety','quality'];
-      if (raw.sectionOverrides && typeof raw.sectionOverrides === 'object' && !Array.isArray(raw.sectionOverrides)) {
-        const cleanSections: any = {};
-        const soEntries = Object.keys(raw.sectionOverrides);
-        for (const st of soEntries) {
-          if (!validST.includes(st)) continue;
-          const items = raw.sectionOverrides[st];
-          if (!Array.isArray(items)) continue;
-          const allowedItemFields = ['contentType','title','body','sortOrder','isRequired','isCritical','metadata','_itemId'];
-          const cleanItems = items.map((item: any) => {
-            const ci: any = {};
-            for (const k of Object.keys(item)) {
-              if (allowedItemFields.includes(k)) ci[k] = item[k];
-            }
-            return ci;
-          });
-          cleanSections[st] = cleanItems;
-        }
-        if (Object.keys(cleanSections).length > 0) san.sectionOverrides = cleanSections;
-      }
-      sanitizedOverrideData = san;
-    } catch (sanErr: any) {
-      sanitizedOverrideData = null; // fallback — treat as no override
-    }
+  if (override?.overrideData && overrideIntegrity.valid) {
+    sanitizedOverrideData = sanitizeOverrideData(override.overrideData, companyJobId);
   }
 
   // ── Step 3: Load BASE and TARGET sections in parallel ─────────────────────
