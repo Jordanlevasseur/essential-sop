@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { AlertTriangle, RotateCcw, ArrowLeft, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
+import { useAuth } from '@/lib/AuthContext';
 
 /**
  * VersionAdoptionIncomplete — Edit 5D Final Correction
@@ -29,8 +30,11 @@ import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
  */
 
 export default function VersionAdoptionIncomplete({ job, onRecovered, onClose }) {
+  const { user } = useAuth();
+  const userId = user?.id || null;
+
   const { persistedMutationKey, persistedAnalysisId, clearDraft } = useAdoptionDraftState(
-    job.companyId, job.id, null
+    job.companyId, job.id, null, userId
   );
 
   const [serverRecovery, setServerRecovery] = useState(null); // { mutationKey, analysisId } | null

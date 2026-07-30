@@ -5,6 +5,7 @@ import VersionReviewItems from './VersionReviewItems';
 import VersionPreview from './VersionPreview';
 import VersionHistory from './VersionHistory';
 import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
+import { useAuth } from '@/lib/AuthContext';
 
 /**
  * VersionWorkspace — Edit 5D Hardening
@@ -22,13 +23,15 @@ const TABS = [
 ];
 
 export default function VersionWorkspace({ job, overrideMeta, targetVersionId, onAdopted, onClose }) {
+  const { user } = useAuth();
+  const userId = user?.id || null;
+
   const [tab, setTab] = useState('review');
   const [analysis, setAnalysis] = useState(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(true);
   const [analysisError, setAnalysisError] = useState(null);
 
-  // Persistent draft state — survives refresh, navigation, crash
-  // companyId included in storage key to prevent cross-company collisions
+  // Persistent draft state — scoped by companyId + jobId + userId for full isolation
   const {
     reviewDecisions,
     orphanDispositions,
@@ -39,7 +42,7 @@ export default function VersionWorkspace({ job, overrideMeta, targetVersionId, o
     persistAdoptionStart,
     clearDraft,
     hasDraft,
-  } = useAdoptionDraftState(job.companyId, job.id, targetVersionId);
+  } = useAdoptionDraftState(job.companyId, job.id, targetVersionId, userId);
 
   const [adopting, setAdopting] = useState(false);
   const [adoptError, setAdoptError] = useState(null);
