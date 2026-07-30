@@ -75,10 +75,23 @@ export default async function(req: Request): Promise<Response> {
       }, { status: 403 });
     }
 
-    // Step 4: The ADMINS_EXIST guard only blocks non-owner emails.
-    // The configured Platform Owner can always claim their own seat, even if other admins
-    // were created first (e.g. during earlier test runs by a different account).
-    // Non-owner emails reaching this point cannot bootstrap regardless of admin count.
+    // Step 4: Count all existing active Platform Super Admins system-wide.
+    // If any exist, the bootstrap path is permanently closed — including for the owner email.
+    // The owner email is only privileged during the zero-admin window.
+    const allActiveMemberships = await SR.entities.PlatformMembership.filter({
+      status: 'ACTIVE',
+      platformRole: 'SUPER_ADMIN',
+    }, '-createdAt', 5).catch(() => []);
+
+    if (allActiveMemberships && allActiveMemberships.length > 0) {
+      return Response.json({
+        success: false,
+        bootstrapped: false,
+        blocked: true,
+        reason: 'ADMINS_EXIST',
+        message: 'Platform Super Admins already exist. Bootstrap path is permanently closed. An existing Platform Super Admin must grant access via /platform/admins.',
+      }, { status: 409 });
+    }
 
     // Step 5: Create the first PlatformMembership — email verified, zero admins confirmed.
     const now = new Date().toISOString();
