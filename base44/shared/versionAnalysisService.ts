@@ -342,11 +342,14 @@ function _classifyChangeEntry(change: any): {
       };
 
     case CHANGE_TYPES.MASTER_MODIFIED:
-      // Master changed, company did not override → SAFE
+      // Master changed. Company either has no override, or changed independent fields (disjoint).
+      // In both cases: SAFE — the company override on non-overlapping fields is preserved.
       return {
         compatibility: COMPATIBILITY.SAFE,
-        reasonCode: REASON_CODE.MASTER_FIELD_CHANGED,
-        reasonMessage: 'Master modified this item. Company has no override for it.',
+        reasonCode: change.companyValue ? REASON_CODE.STABLE_ID_MATCH : REASON_CODE.MASTER_FIELD_CHANGED,
+        reasonMessage: change.companyValue
+          ? 'Master and company changed different fields on this item. Both changes are independently safe.'
+          : 'Master modified this item. Company has no override for it.',
         masterChangeTypes: [MASTER_CHANGE.MODIFIED],
         requiresAdminAction: false,
         recommendedDefaultAction: 'ACCEPT_MASTER_CHANGE',

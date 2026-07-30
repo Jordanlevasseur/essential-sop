@@ -71,7 +71,7 @@ export const SECTION_LABELS: Record<string, string> = {
   metadata: 'Job Information',
 };
 
-// ── Content fingerprint (field-level comparison) ──────────────────────────────
+// ── Content fingerprint (whole-item, used for identity equality checks) ──────
 
 function itemFingerprint(item: any): string {
   if (!item) return '';
@@ -83,6 +83,29 @@ function itemFingerprint(item: any): string {
     isCritical: item.isCritical ?? false,
     metadata: item.metadata || {},
   });
+}
+
+// ── Per-field changed-set extraction ──────────────────────────────────────────
+// Returns the set of field names that differ between two items.
+// Used to determine whether master and company changes are on OVERLAPPING fields
+// (true conflict) vs INDEPENDENT fields (SAFE — both changes can coexist).
+const COMPARABLE_FIELDS = ['contentType', 'title', 'body', 'isRequired', 'isCritical', 'metadata'];
+
+function changedFields(from: any, to: any): Set<string> {
+  const changed = new Set<string>();
+  if (!from || !to) return changed;
+  for (const f of COMPARABLE_FIELDS) {
+    const fv = from[f] ?? (f === 'isRequired' || f === 'isCritical' ? false : f === 'metadata' ? {} : '');
+    const tv = to[f] ?? (f === 'isRequired' || f === 'isCritical' ? false : f === 'metadata' ? {} : '');
+    if (JSON.stringify(fv) !== JSON.stringify(tv)) changed.add(f);
+  }
+  return changed;
+}
+
+// Returns true if two changed-field sets have any overlap.
+function setsOverlap(a: Set<string>, b: Set<string>): boolean {
+  for (const x of a) { if (b.has(x)) return true; }
+  return false;
 }
 
 // ── Logical identity key for master items — LEGACY TEXT-BASED FALLBACK ONLY ──
@@ -229,8 +252,9 @@ export function diffSection(
         conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
       });
     } else {
-      // Both changed
+      // Both changed — check convergence first, then field overlap
       if (targetFp === companyFp) {
+        // Both changed to identical result — AUTOMATICALLY_COMPATIBLE
         changes.push({
           changeId, sectionType,
           baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
@@ -243,18 +267,41 @@ export function diffSection(
           conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
         });
       } else {
-        changes.push({
-          changeId, sectionType,
-          baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
-          logicalItemId: lid,
-          fieldLabel: baseItem.title || `Item ${changeCounter}`,
-          changeType: CHANGE_TYPES.CONFLICT,
-          baseValue: { title: baseItem.title, body: baseItem.body },
-          targetValue: { title: targetItem.title, body: targetItem.body },
-          companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
-          conflictSubtype: CONFLICT_SUBTYPES.BOTH_MODIFIED_DIFFERENTLY,
-          resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
-        });
+        // Check whether master and company changed OVERLAPPING fields.
+        // If the changed field sets are disjoint (e.g. master changed body, company changed isCritical),
+        // both changes can coexist — emit MASTER_MODIFIED so the analysis classifies this as SAFE
+        // rather than triggering a false BOTH_MODIFIED_DIFFERENTLY conflict.
+        const masterChangedFields = changedFields(baseItem, targetItem);
+        const companyChangedFields = changedFields(baseItem, companyItem);
+        if (!setsOverlap(masterChangedFields, companyChangedFields)) {
+          // Independent field changes — no genuine conflict.
+          // Emit as MASTER_MODIFIED (company override is on different fields and will be preserved).
+          changes.push({
+            changeId, sectionType,
+            baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+            logicalItemId: lid,
+            fieldLabel: targetItem.title || baseItem.title || `Item ${changeCounter}`,
+            changeType: CHANGE_TYPES.MASTER_MODIFIED,
+            baseValue: { title: baseItem.title, body: baseItem.body },
+            targetValue: { title: targetItem.title, body: targetItem.body },
+            companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
+            conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
+          });
+        } else {
+          // Overlapping fields — genuine conflict
+          changes.push({
+            changeId, sectionType,
+            baseItemId: baseItem._stableId, targetItemId: targetItem._stableId,
+            logicalItemId: lid,
+            fieldLabel: baseItem.title || `Item ${changeCounter}`,
+            changeType: CHANGE_TYPES.CONFLICT,
+            baseValue: { title: baseItem.title, body: baseItem.body },
+            targetValue: { title: targetItem.title, body: targetItem.body },
+            companyValue: { title: companyItem?.title, body: companyItem?.body, _itemId: companyItem?._itemId },
+            conflictSubtype: CONFLICT_SUBTYPES.BOTH_MODIFIED_DIFFERENTLY,
+            resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
+          });
+        }
       }
     }
   }
