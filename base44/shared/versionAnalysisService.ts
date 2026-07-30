@@ -1123,10 +1123,9 @@ async function _runAnalysisPipeline(params: {
   let safeCount = 0, reviewRequiredCount = 0, orphanedCount = 0, invalidCount = 0, noOpCount = 0;
 
   for (const item of itemResults) {
-    // Only count items that actually have an override (company stake)
-    if (!item.overrideId && item.masterChangeTypes.length > 0 &&
-        !item.overriddenFields.length) continue;
-    // Still count all items that have a classification
+    // Only count items where the company has a stake (overrideId set OR overriddenFields non-empty)
+    const hasCompanyStake = !!item.overrideId || (Array.isArray(item.overriddenFields) && item.overriddenFields.length > 0);
+    if (!hasCompanyStake) continue;
     switch (item.compatibility) {
       case COMPATIBILITY.SAFE: safeCount++; break;
       case COMPATIBILITY.REVIEW_REQUIRED: reviewRequiredCount++; break;
