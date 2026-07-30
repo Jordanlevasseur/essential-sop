@@ -159,6 +159,39 @@ export default async function(req: Request): Promise<Response> {
       compatibility = predictedConflicts.length > 0 ? 'conflicts_detected' : 'compatible';
     }
 
+    // ── Deferral suppression check ──────────────────────────────────────────────
+    // Only relevant when an update is available and the user is a company admin.
+    // Suppression is version-specific: NOT_NOW suppresses until expiresAt, DISMISSED suppresses permanently.
+    // A newer version than the deferred one is never suppressed.
+    let isSuppressed = false;
+    let suppressionAction: string | null = null;
+    let suppressionExpiresAt: string | null = null;
+
+    if (updateAvailable && isCompanyAdmin && newestVersion) {
+      const deferrals = await SR.entities.CompanyVersionDeferral.filter({
+        companyId: job.companyId,
+        jobId,
+        deferredVersionId: newestVersion.id,
+      }).catch(() => []);
+
+      const now = new Date();
+      for (const d of (deferrals || [])) {
+        if (d.clearedAt) continue; // explicitly cleared (e.g. post-adoption)
+        if (d.action === 'DISMISSED') {
+          isSuppressed = true;
+          suppressionAction = 'DISMISSED';
+          break;
+        }
+        if (d.action === 'NOT_NOW' && d.expiresAt && new Date(d.expiresAt) > now) {
+          isSuppressed = true;
+          suppressionAction = 'NOT_NOW';
+          suppressionExpiresAt = d.expiresAt;
+          break;
+        }
+        // NOT_NOW that has expired — suppress no longer; ignore
+      }
+    }
+
     return Response.json({
       pinnedVersion,
       newestVersion,
@@ -167,6 +200,9 @@ export default async function(req: Request): Promise<Response> {
       overridePresent,
       predictedConflicts,
       compatibility,
+      isSuppressed,
+      suppressionAction,
+      suppressionExpiresAt,
       capabilities: {
         canAdoptVersion: isCompanyAdmin,
       },

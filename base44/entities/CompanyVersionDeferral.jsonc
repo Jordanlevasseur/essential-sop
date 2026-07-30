@@ -1,0 +1,82 @@
+{
+  "name": "CompanyVersionDeferral",
+  "type": "object",
+  "description": "Persists a company admin's deferral or dismissal of a pending version update for a specific job. Created and cleared exclusively by the manageVersionDeferral backend function. All direct client writes are blocked. Reads are also blocked \u2014 deferral status is surfaced through getVersionStatus only.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "Company that owns the Job. Enforced server-side from the authenticated user's membership."
+    },
+    "jobId": {
+      "type": "string",
+      "description": "The stable Company Job ID (Job.id)."
+    },
+    "masterId": {
+      "type": "string",
+      "description": "EssentialSOPMaster.id this Job was provisioned from."
+    },
+    "deferredVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id that is being deferred or dismissed. A newer version published after this record was created will not be suppressed."
+    },
+    "userId": {
+      "type": "string",
+      "description": "User who created this deferral."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "NOT_NOW",
+        "DISMISSED"
+      ],
+      "description": "NOT_NOW: suppress banner until expiresAt. DISMISSED: suppress this specific version permanently (no expiry)."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "For NOT_NOW: the datetime after which the banner should reappear. Null for DISMISSED records."
+    },
+    "clearedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Set when this deferral was explicitly cleared (e.g. after a successful adoption or a newer version arrived)."
+    },
+    "clearedReason": {
+      "type": "string",
+      "enum": [
+        "ADOPTION_COMPLETED",
+        "NEWER_VERSION_PUBLISHED",
+        "MANUAL_CLEAR"
+      ],
+      "description": "Why this deferral was cleared."
+    },
+    "deterministicKey": {
+      "type": "string",
+      "description": "Stable deduplication key: 'deferral_{companyId}_{jobId}_{deferredVersionId}_{action}'. Checked before creation to prevent duplicate active records."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "masterId",
+    "deferredVersionId",
+    "userId",
+    "action",
+    "deterministicKey",
+    "createdAt"
+  ]
+}

@@ -269,16 +269,13 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
   }, [canAutoAdopt, adopting, analysis, job, overrideMeta, onAdopted, currentVersion, newVersion, userId, targetVersionId, clearDraft, persistAdoptionStart]);
 
   const handleDefer = async (type) => {
+    // Persist deferral server-side so it survives refresh/logout.
+    // Errors are silent — if the write fails we close anyway (no broken UX).
     try {
-      await base44.entities.ActivityLog.create({
-        companyId: job.companyId,
-        actingUserId: userId,
-        actionType: 'job_edited',
-        targetType: 'Job',
-        targetId: job.id,
-        summary: type === 'dismiss' ? `Update dismissed: staying on v${currentVersion?.versionNumber}` : `Update deferred: will review later`,
-        metadata: { event: type === 'dismiss' ? 'update_dismissed' : 'update_deferred', previousVersionId: job.sourceVersionId, targetVersionId },
-        timestamp: new Date().toISOString(),
+      await base44.functions.invoke('manageVersionDeferral', {
+        action: type === 'dismiss' ? 'DISMISS' : 'DEFER',
+        jobId: job.id,
+        deferredVersionId: targetVersionId,
       });
     } catch (_) {}
     onClose();
