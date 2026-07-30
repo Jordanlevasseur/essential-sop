@@ -201,7 +201,11 @@ export default function MasterLibrary() {
           onClose={() => setShowCreate(false)}
           onCreated={(master) => {
             setShowCreate(false);
-            navigate(`${basePath}/${master.id}`);
+            // New masters open directly in the editor
+            const editPath = window.location.pathname.startsWith('/platform')
+              ? `/platform/master-library/${master.id}/edit`
+              : `/admin/master-library/${master.id}`;
+            navigate(editPath);
           }}
         />
       )}

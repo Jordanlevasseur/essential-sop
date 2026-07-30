@@ -426,7 +426,8 @@ export default function MasterSOPEditor() {
   };
 
   // ── Navigation guard ──────────────────────────────────────────────────────
-  const libraryPath = window.location.pathname.startsWith('/platform') ? '/platform/master-library' : '/admin/master-library';
+  const isPlatform = window.location.pathname.startsWith('/platform');
+  const libraryPath = isPlatform ? '/platform/master-library' : '/admin/master-library';
 
   const handleBack = async () => {
     const hasUnsaved = saveStatus === STATUS.DIRTY || saveStatus === STATUS.FAILED || saveStatus === STATUS.OFFLINE;
