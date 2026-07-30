@@ -1,191 +1,210 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Search, Plus, BookOpen, FileText, Archive, CheckCircle, ChevronRight, Filter } from 'lucide-react';
-
-const STATUS_COLORS = {
-  draft:    'bg-app-warning-bg text-app-warning',
-  active:   'bg-app-success-bg text-app-success',
-  archived: 'bg-app-disabled text-app-text-muted',
-};
+import { Search, SlidersHorizontal, Plus, X, AlertTriangle } from 'lucide-react';
+import MasterJobCard from '@/components/platform/MasterJobCard';
+import MasterJobFilterSheet from '@/components/platform/MasterJobFilterSheet';
+import CreateMasterJobSheet from '@/components/platform/CreateMasterJobSheet';
 
 export default function MasterLibrary() {
   const navigate = useNavigate();
   const [masters, setMasters] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [tradeFilter, setTradeFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState('');
-  const [newTrade, setNewTrade] = useState('');
+  const [filters, setFilters] = useState({ status: '', trade: '', category: '' });
+  const [showFilters, setShowFilters] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const searchRef = useRef(null);
+
+  const basePath = window.location.pathname.startsWith('/platform')
+    ? '/platform/master-library'
+    : '/admin/master-library';
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await base44.functions.invoke('manageMasterSOP', { action: 'list' });
       setMasters(res.data?.masters || []);
     } catch (_) {
-      // non-fatal — list stays empty
+      setError('Unable to load Master Jobs. Please try again.');
     }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
-  const stats = useMemo(() => ({
-    total:    masters.length,
-    draft:    masters.filter(m => m.status === 'draft').length,
-    active:   masters.filter(m => m.status === 'active').length,
-    archived: masters.filter(m => m.status === 'archived').length,
-    lastModified: masters.reduce((latest, m) => {
-      const d = new Date(m.updatedAt || m.created_date);
-      return d > latest ? d : latest;
-    }, new Date(0)),
-  }), [masters]);
-
   const trades = useMemo(() => [...new Set(masters.map(m => m.trade).filter(Boolean))], [masters]);
   const categories = useMemo(() => [...new Set(masters.map(m => m.category).filter(Boolean))], [masters]);
 
   const filtered = useMemo(() => {
     let list = masters;
-    if (statusFilter) list = list.filter(m => m.status === statusFilter);
-    if (tradeFilter) list = list.filter(m => m.trade === tradeFilter);
-    if (categoryFilter) list = list.filter(m => m.category === categoryFilter);
+    if (filters.status) list = list.filter(m => m.status === filters.status);
+    if (filters.trade) list = list.filter(m => m.trade === filters.trade);
+    if (filters.category) list = list.filter(m => m.category === filters.category);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(m => m.title.toLowerCase().includes(q) || m.trade?.toLowerCase().includes(q) || m.category?.toLowerCase().includes(q));
+      list = list.filter(m =>
+        m.title?.toLowerCase().includes(q) ||
+        m.trade?.toLowerCase().includes(q) ||
+        m.category?.toLowerCase().includes(q)
+      );
     }
-    return list;
-  }, [masters, statusFilter, tradeFilter, categoryFilter, search]);
+    // Most recently updated first
+    return [...list].sort((a, b) => new Date(b.updatedAt || b.created_date) - new Date(a.updatedAt || a.created_date));
+  }, [masters, filters, search]);
 
-  const basePath = window.location.pathname.startsWith('/platform') ? '/platform/master-library' : '/admin/master-library';
+  const hasActiveFilters = search.trim() || Object.values(filters).some(Boolean);
 
-  const handleCreate = async () => {
-    if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      const res = await base44.functions.invoke('manageMasterSOP', { action: 'create', title: newTitle.trim(), category: newCategory.trim(), trade: newTrade.trim() });
-      const created = res.data?.master;
-      if (created) navigate(`${basePath}/${created.id}`);
-    } catch (e) {
-      alert('Failed to create: ' + e.message);
-    }
-    setCreating(false);
-  };
+  // ── Loading ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-app-bg">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />
+          <p className="text-sm text-app-text-muted">Loading Master Jobs…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error ──────────────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center gap-4">
+        <AlertTriangle size={36} className="text-app-warning" />
+        <p className="text-base font-semibold text-app-text">Unable to load Master Jobs</p>
+        <p className="text-sm text-app-text-muted">{error}</p>
+        <button
+          onClick={load}
+          className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-medium"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-app-bg">
-      {/* Header */}
-      <div className="bg-app-surface border-b border-app-border px-6 py-5">
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-2xl font-bold text-app-text">Master SOP Library</h1>
-          <span className="text-xs px-2.5 py-1 bg-app-info-bg text-app-info rounded-full font-semibold">ESOP Admin</span>
+    <div className="px-4 pt-6 pb-4">
+      {/* Header — mirrors Company Jobs page heading */}
+      <h1 className="text-2xl font-bold text-app-text mb-1">Master Jobs</h1>
+      <p className="text-xs text-app-text-muted mb-4">Essential SOP Platform</p>
+
+      {/* Search + filter bar — identical structure to Company Jobs */}
+      <div className="flex gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
+          <input
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search master jobs, trade, category…"
+            aria-label="Search master jobs"
+            enterKeyHint="search"
+            className="w-full pl-10 pr-9 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-app-text-muted"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
-        <p className="text-sm text-app-text-muted">Essential SOP administration — internal use only</p>
+        <button
+          onClick={() => setShowFilters(true)}
+          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 no-select touch-active ${
+            Object.values(filters).some(Boolean)
+              ? 'border-app-accent bg-app-info-bg text-app-accent'
+              : 'border-app-border bg-app-surface text-app-text-2'
+          }`}
+          aria-label="Filters"
+        >
+          <SlidersHorizontal size={18} />
+        </button>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium"
+        >
+          <Plus size={18} />
+          <span className="hidden sm:inline">New</span>
+        </button>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          {[
-            { label: 'Total', value: stats.total, icon: BookOpen, cls: 'text-app-accent' },
-            { label: 'Published', value: stats.active, icon: CheckCircle, cls: 'text-app-success' },
-            { label: 'Draft', value: stats.draft, icon: FileText, cls: 'text-app-warning' },
-            { label: 'Archived', value: stats.archived, icon: Archive, cls: 'text-app-text-muted' },
-          ].map(s => (
-            <div key={s.label} className="bg-app-card border border-app-border rounded-xl p-4 flex items-center gap-3">
-              <s.icon size={20} className={s.cls} />
-              <div>
-                <p className="text-xl font-bold text-app-text">{s.value}</p>
-                <p className="text-xs text-app-text-muted">{s.label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Result count when searching / filtering */}
+      {hasActiveFilters && (
+        <p className="text-xs text-app-text-muted mb-3">
+          {filtered.length} master job{filtered.length !== 1 ? 's' : ''} found
+        </p>
+      )}
 
-        {/* Create new */}
-        <div className="bg-app-card border border-app-border rounded-xl p-4 mb-5">
-          <h2 className="text-sm font-semibold text-app-text mb-3">Create New Master SOP</h2>
-          <div className="flex flex-wrap gap-2">
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-              placeholder="SOP Title *"
-              className="flex-1 min-w-40 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-            <input value={newTrade} onChange={e => setNewTrade(e.target.value)}
-              placeholder="Trade"
-              className="w-36 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-            <input value={newCategory} onChange={e => setNewCategory(e.target.value)}
-              placeholder="Category"
-              className="w-36 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-            <button onClick={handleCreate} disabled={!newTitle.trim() || creating}
-              className="px-4 py-2 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium flex items-center gap-1.5 disabled:opacity-50">
-              <Plus size={15} /> {creating ? 'Creating…' : 'Create'}
+      {/* List */}
+      {!hasActiveFilters && (
+        <h2 className="text-sm font-semibold text-app-text-2 mb-2">All Master Jobs</h2>
+      )}
+
+      {filtered.length === 0 ? (
+        masters.length === 0 ? (
+          // True empty state
+          <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
+            <div className="w-16 h-16 bg-app-elevated rounded-2xl flex items-center justify-center text-3xl">
+              📋
+            </div>
+            <div>
+              <p className="text-base font-semibold text-app-text mb-1">No Master Jobs yet</p>
+              <p className="text-sm text-app-text-muted max-w-xs">
+                Create the first Master Job to begin building the standards companies will receive.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold inline-flex items-center gap-1.5"
+            >
+              <Plus size={15} /> Create Master Job
             </button>
           </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          <div className="relative flex-1 min-w-48">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search SOPs…"
-              className="w-full pl-9 pr-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-          </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text">
-            <option value="">All Statuses</option>
-            <option value="draft">Draft</option>
-            <option value="active">Published</option>
-            <option value="archived">Archived</option>
-          </select>
-          {trades.length > 0 && (
-            <select value={tradeFilter} onChange={e => setTradeFilter(e.target.value)}
-              className="px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text">
-              <option value="">All Trades</option>
-              {trades.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          )}
-          {categories.length > 0 && (
-            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
-              className="px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text">
-              <option value="">All Categories</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          )}
-        </div>
-
-        {/* SOP list */}
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-app-border border-t-app-accent rounded-full animate-spin" />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-app-text-muted text-sm">
-            {masters.length === 0 ? 'No SOPs yet. Create the first one above.' : 'No SOPs match the current filters.'}
-          </div>
         ) : (
-          <div className="space-y-2">
-            {filtered.map(master => (
-              <button key={master.id} onClick={() => navigate(`${basePath}/${master.id}`)}
-                className="w-full bg-app-card border border-app-border rounded-xl p-4 flex items-center gap-4 text-left hover:border-app-accent transition-colors">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-semibold text-sm text-app-text truncate">{master.title}</span>
-                    <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[master.status]}`}>
-                      {master.status === 'active' ? 'Published' : master.status.charAt(0).toUpperCase() + master.status.slice(1)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-app-text-muted">{[master.trade, master.category].filter(Boolean).join(' · ') || 'No trade/category'}</p>
-                </div>
-                <ChevronRight size={16} className="text-app-text-disabled flex-shrink-0" />
-              </button>
-            ))}
+          // Filter/search empty state
+          <div className="text-center py-12">
+            <p className="text-sm text-app-text-muted">No master jobs match your search or filters.</p>
           </div>
-        )}
-      </div>
+        )
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(master => (
+            <MasterJobCard
+              key={master.id}
+              master={master}
+              onClick={() => navigate(`${basePath}/${master.id}`)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Filter sheet */}
+      <MasterJobFilterSheet
+        open={showFilters}
+        onClose={() => setShowFilters(false)}
+        filters={filters}
+        setFilters={setFilters}
+        trades={trades}
+        categories={categories}
+      />
+
+      {/* Create sheet */}
+      {showCreate && (
+        <CreateMasterJobSheet
+          onClose={() => setShowCreate(false)}
+          onCreated={(master) => {
+            setShowCreate(false);
+            navigate(`${basePath}/${master.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -139,11 +139,14 @@ const SeededApp = () => {
       {/* Platform Admin environment — /platform/* */}
       <Route path="/platform/bootstrap" element={<PlatformBootstrap />} />
       <Route element={<PlatformGuard><PlatformLayout /></PlatformGuard>}>
-        <Route path="/platform" element={<PlatformDashboard />} />
+        {/* /platform lands on Master Jobs — the God Mode front door */}
+        <Route path="/platform" element={<Navigate to="/platform/master-library" replace />} />
         <Route path="/platform/master-library" element={<MasterLibrary />} />
         <Route path="/platform/master-library/:masterId" element={<MasterSOPEditor />} />
+        <Route path="/platform/companies" element={<PlatformDashboard />} />
         <Route path="/platform/admins" element={<PlatformAdmins />} />
         <Route path="/platform/audit" element={<PlatformAuditLog />} />
+        <Route path="/platform/profile" element={<PlatformDashboard />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
