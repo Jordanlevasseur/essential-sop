@@ -1016,7 +1016,7 @@ async function _runAnalysisPipeline(params: {
         const isNoOp = change.changeType === CHANGE_TYPES.AUTOMATICALLY_COMPATIBLE;
 
         itemResults.push({
-          logicalItemId: change.changeId,
+          logicalItemId: change.logicalItemId || change.changeId,
           currentItemId: change.baseItemId || null,
           targetItemId: change.targetItemId || null,
           parentLogicalItemId: sectionType,
