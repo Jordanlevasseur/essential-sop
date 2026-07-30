@@ -19,16 +19,14 @@ export default function JobDetail() {
   const { isFavorite, toggleFavorite, addRecentlyViewed, isCompanyAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
   const isProjectLead = activeMembership?.role === 'project_lead';
-  // The backend is the single authority on what actions are available.
-  // The frontend must not infer permissions from job origin fields.
-  // capabilities is null until the resolver responds; treat null as read-only.
-  // canEdit: company admin presentation toggle AND backend-verified capability both required.
-  // isCompanyAdmin is from CompanyMembership only — never from platform authority.
-  const canEdit = isCompanyAdmin && (capabilities?.canEditContent ?? false);
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
   const [contentBySection, setContentBySection] = useState({});
   const [capabilities, setCapabilities] = useState(null);
+  // canEdit: company admin presentation toggle AND backend-verified capability both required.
+  // capabilities is null until the resolver responds; treat null as read-only.
+  // isCompanyAdmin is from CompanyMembership only — never from platform authority.
+  const canEdit = isCompanyAdmin && (capabilities?.canEditContent ?? false);
   const [overrideMeta, setOverrideMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
