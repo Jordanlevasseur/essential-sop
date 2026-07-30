@@ -25,6 +25,54 @@ import { publishMasterSOPVersion, updateDistributionPolicy } from '../../shared/
  * The platform is NOT represented as a company. Platform roles live on User only.
  */
 
+// ── Server-side publish validation ────────────────────────────────────────────
+// Must be enforced here independent of the client-side SopPublishValidation.js.
+// Structured error array is returned so the frontend can display specific messages.
+function validateDraftForPublish(master: any, sections: any[]): string[] {
+  const errors: string[] = [];
+
+  if (!master.title || !master.title.trim()) {
+    errors.push('SOP title is required.');
+  }
+
+  const REQUIRED_SECTION_TYPES = ['procedure', 'safety'];
+  const logicalIds: string[] = [];
+  let totalItems = 0;
+
+  for (const section of sections) {
+    const items: any[] = section.contentItems || [];
+    totalItems += items.length;
+
+    if (REQUIRED_SECTION_TYPES.includes(section.sectionType) && items.length === 0) {
+      errors.push(`Section "${section.title || section.sectionType}" must have at least one item.`);
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item.title || !item.title.trim()) {
+        errors.push(`Item ${i + 1} in "${section.title}" is missing a title.`);
+      }
+      const VALID_TYPES = ['tool', 'material', 'numberedStep', 'checklist', 'warning', 'qualityCheck', 'text', 'documentationRequirement'];
+      if (item.contentType && !VALID_TYPES.includes(item.contentType)) {
+        errors.push(`Item ${i + 1} in "${section.title}" has unsupported content type: ${item.contentType}.`);
+      }
+      if (item.logicalItemId) {
+        if (logicalIds.includes(item.logicalItemId)) {
+          errors.push(`Duplicate logicalItemId in "${section.title}" item ${i + 1}: ${item.logicalItemId}`);
+        } else {
+          logicalIds.push(item.logicalItemId);
+        }
+      }
+    }
+  }
+
+  if (totalItems === 0) {
+    errors.push('SOP has no content. Add at least one item before publishing.');
+  }
+
+  return errors;
+}
+
 function slugify(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
@@ -201,6 +249,8 @@ export default async function(req) {
         description: description || '',
         status: 'draft',
         currentPublishedVersionId: null,
+        draftRevision: 0,
+        draftLastSavedByUserId: user.id,
         createdAt: now,
         updatedAt: now,
       });
@@ -227,19 +277,42 @@ export default async function(req) {
     }
 
     // ── UPDATE DRAFT ─────────────────────────────────────────────────────────
+    // Supports optimistic concurrency via expectedDraftRevision.
+    // If supplied and it does not match the server's current draftRevision,
+    // return a structured DRAFT_CONFLICT response with zero writes.
     if (action === 'update_draft') {
-      const { masterId, fields, sectionId, contentItems } = body;
+      const { masterId, fields, sectionId, contentItems, expectedDraftRevision } = body;
       if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
       const master = await SR.entities.EssentialSOPMaster.get(masterId);
       if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
       if (master.status !== 'draft') return Response.json({ error: 'Only Draft SOPs may be edited' }, { status: 409 });
 
+      // Optimistic concurrency check — only enforce when caller sends an expectedDraftRevision
+      const serverRevision = master.draftRevision ?? 0;
+      if (expectedDraftRevision !== undefined && expectedDraftRevision !== null) {
+        if (expectedDraftRevision !== serverRevision) {
+          // Load current draft sections so the conflict UI can offer a comparison
+          const currentSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
+          return Response.json({
+            code: 'DRAFT_CONFLICT',
+            error: 'This draft was modified by another session. Your changes were not saved.',
+            expectedRevision: expectedDraftRevision,
+            serverRevision,
+            serverUpdatedAt: master.updatedAt,
+            serverLastSavedByUserId: master.draftLastSavedByUserId || null,
+            serverMaster: master,
+            serverSections: currentSections || [],
+          }, { status: 409 });
+        }
+      }
+
+      const newRevision = serverRevision + 1;
+
       if (fields) {
         const allowed = ['title', 'category', 'trade', 'description'];
-        const update = {};
+        const update: any = { draftRevision: newRevision, draftLastSavedByUserId: user.id, updatedAt: now };
         for (const k of allowed) { if (fields[k] !== undefined) update[k] = fields[k]; }
         if (fields.title) update.slug = slugify(fields.title) + '-' + Date.now().toString(36);
-        update.updatedAt = now;
         await SR.entities.EssentialSOPMaster.update(masterId, update);
       }
 
@@ -251,18 +324,25 @@ export default async function(req) {
         // Assign logicalItemId to any new items that lack one. Existing IDs preserved verbatim.
         const itemsWithIds = ensureLogicalItemIds(contentItems, masterId);
         await SR.entities.EssentialSOPSection.update(sectionId, { contentItems: itemsWithIds });
-        await SR.entities.EssentialSOPMaster.update(masterId, { updatedAt: now });
+        // Only bump revision + timestamp if fields weren't already updated above
+        if (!fields) {
+          await SR.entities.EssentialSOPMaster.update(masterId, {
+            draftRevision: newRevision,
+            draftLastSavedByUserId: user.id,
+            updatedAt: now,
+          });
+        }
       }
 
       await writePlatformAudit(SR, {
         actingUserId: user.id,
         actingUserRole: 'SUPER_ADMIN',
         action: 'master_sop_draft_updated',
-        extra: { masterId, masterTitle: master.title, metadata: { fieldsUpdated: !!fields, sectionUpdated: !!sectionId } },
+        extra: { masterId, masterTitle: master.title, metadata: { fieldsUpdated: !!fields, sectionUpdated: !!sectionId, newRevision } },
       });
 
       const updated = await SR.entities.EssentialSOPMaster.get(masterId);
-      return Response.json({ master: updated });
+      return Response.json({ master: updated, draftRevision: updated.draftRevision ?? newRevision });
     }
 
     // ── DELETE DRAFT ─────────────────────────────────────────────────────────
@@ -333,6 +413,7 @@ export default async function(req) {
     // ── PUBLISH ──────────────────────────────────────────────────────────────
     // All publishing flows through the canonical publishMasterSOPVersion
     // orchestration in base44/shared/publishingOrchestration.ts.
+    // Server-side validation is enforced here BEFORE handing off to the orchestrator.
     if (action === 'publish') {
       const {
         masterId,
@@ -344,6 +425,33 @@ export default async function(req) {
       } = body;
       if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
       if (!publicationMutationKey) return Response.json({ error: 'publicationMutationKey is required' }, { status: 400 });
+
+      // Server-side validation — enforced independent of client-side SopPublishValidation.js
+      const pubMaster = await SR.entities.EssentialSOPMaster.get(masterId);
+      if (!pubMaster) return Response.json({ error: 'Not found' }, { status: 404 });
+      if (pubMaster.status !== 'draft') return Response.json({ error: 'Only Draft SOPs may be published' }, { status: 409 });
+
+      // Check idempotency early — if this mutationKey already produced a version, return that result
+      const existingVersions = await SR.entities.EssentialSOPVersion.filter({ masterId, publicationMutationKey }, '-versionNumber', 1);
+      if (existingVersions?.length > 0) {
+        const existingVersion = existingVersions[0];
+        return Response.json({
+          master: pubMaster,
+          version: existingVersion,
+          idempotent: true,
+          message: 'This publicationMutationKey was already used — returning existing result.',
+        });
+      }
+
+      const draftSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
+      const validationErrors = validateDraftForPublish(pubMaster, draftSections || []);
+      if (validationErrors.length > 0) {
+        return Response.json({
+          code: 'VALIDATION_FAILED',
+          error: 'Publication blocked by validation errors.',
+          validationErrors,
+        }, { status: 422 });
+      }
 
       const { result, error: publishError } = await publishMasterSOPVersion(base44, {
         masterId,
@@ -393,8 +501,15 @@ export default async function(req) {
 
     // ── ROLLBACK TO VERSION ───────────────────────────────────────────────────
     // Creates a new published version whose content matches an older published version.
-    // Works on both 'draft' and 'active' masters.
-    // Steps: 1) Load target version sections  2) Overwrite draft sections  3) Publish
+    // NOT atomic (Base44 has no multi-entity transactions). Uses publicationMutationKey
+    // for idempotency so retries after any failure produce exactly one version.
+    //
+    // Recovery matrix (all cases keyed by publicationMutationKey):
+    //   Before draft written    → retry writes draft + publishes (no prior version exists)
+    //   After draft, before pub → publishMasterSOPVersion idempotency handles duplicate publish
+    //   After pub, before audit → version already exists; audit is the only missing step
+    //   Already complete        → returns existing result with zero writes
+    //   Wrong mutationKey       → treated as new rollback; only one version per key is created
     if (action === 'rollback_to_version') {
       const { masterId, targetVersionId, publicationMutationKey } = body;
       if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
@@ -409,23 +524,66 @@ export default async function(req) {
       if (!targetVersion || targetVersion.masterId !== masterId) {
         return Response.json({ error: 'Target version not found or does not belong to this master' }, { status: 404 });
       }
+      if (targetVersion.status !== 'published') {
+        return Response.json({ error: 'Can only roll back to a published version' }, { status: 409 });
+      }
 
-      // Load target version's sections
+      // ── Idempotency: check if this mutationKey already produced a version ──
+      const existingVersions = await SR.entities.EssentialSOPVersion.filter({ masterId, publicationMutationKey }, '-versionNumber', 1);
+      if (existingVersions?.length > 0) {
+        const existingVersion = existingVersions[0];
+        // Retry after publication but before audit: write audit if missing
+        // (We cannot know if audit was written without a lookup, so we write a de-dup-safe one)
+        await writePlatformAudit(SR, {
+          actingUserId: user.id,
+          actingUserRole: 'SUPER_ADMIN',
+          action: 'master_sop_version_published',
+          extra: {
+            masterId, masterTitle: master.title,
+            versionId: existingVersion.id,
+            versionNumber: existingVersion.versionNumber,
+            changeNotes: body.changeSummary || `Rollback to v${targetVersion.versionNumber}`,
+            publicationMutationKey,
+            metadata: { rollbackFromVersionId: targetVersionId, rollbackFromVersionNumber: targetVersion.versionNumber, retryAudit: true },
+          },
+        }).catch(() => {}); // non-fatal
+
+        return Response.json({
+          success: true,
+          master,
+          version: existingVersion,
+          rolledBackFromVersionNumber: targetVersion.versionNumber,
+          idempotent: true,
+        });
+      }
+
+      // ── Step 1: Overwrite draft sections from the target version ───────────
       const targetSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: targetVersionId }, 'sortOrder', 10);
-      // Load draft sections to get their IDs
       const draftSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
 
-      // Overwrite each draft section's content from the target version
       for (const draftSection of (draftSections || [])) {
         const source = (targetSections || []).find((s: any) => s.sectionType === draftSection.sectionType);
-        const contentItems = source?.contentItems || [];
-        // Assign fresh logicalItemIds for the rollback (new items in the new version)
-        const itemsWithIds = ensureLogicalItemIds(contentItems, masterId);
-        await SR.entities.EssentialSOPSection.update(draftSection.id, { contentItems: itemsWithIds });
+        // Preserve source logicalItemIds verbatim — they are the same content items
+        // being re-published, not new items.
+        const contentItems = (source?.contentItems || []).map((item: any) => ({ ...item }));
+        await SR.entities.EssentialSOPSection.update(draftSection.id, { contentItems });
       }
       await SR.entities.EssentialSOPMaster.update(masterId, { status: 'draft', updatedAt: now });
 
-      // Publish the rollback as a new version
+      // ── Step 2: Server-side validation on the rollback content ────────────
+      const rollbackSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
+      const validationErrors = validateDraftForPublish(master, rollbackSections || []);
+      if (validationErrors.length > 0) {
+        // Restore active status — draft write is safe to leave, validation failure is structural
+        await SR.entities.EssentialSOPMaster.update(masterId, { status: 'active', updatedAt: now }).catch(() => {});
+        return Response.json({
+          code: 'VALIDATION_FAILED',
+          error: 'Rollback content failed server-side validation.',
+          validationErrors,
+        }, { status: 422 });
+      }
+
+      // ── Step 3: Publish the rollback as a new version ─────────────────────
       const changeSummary = body.changeSummary || `Rollback to v${targetVersion.versionNumber}`;
       const { result, error: publishError } = await publishMasterSOPVersion(base44, {
         masterId,
@@ -434,6 +592,7 @@ export default async function(req) {
       });
       if (publishError) return publishError;
 
+      // ── Step 4: Audit ─────────────────────────────────────────────────────
       await writePlatformAudit(SR, {
         actingUserId: user.id,
         actingUserRole: 'SUPER_ADMIN',

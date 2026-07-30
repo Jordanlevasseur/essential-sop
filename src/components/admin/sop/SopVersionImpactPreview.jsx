@@ -69,13 +69,12 @@ export default function SopVersionImpactPreview({ master, draftSections }) {
   const totalChanges = diff.reduce((sum, s) => sum + s.added + s.removed + s.modified, 0);
   const hasChanges = totalChanges > 0;
 
-  // Estimate impact (simple heuristic — actual analysis runs per-company)
-  const estimatedSafe = diff.reduce((sum, s) => sum + s.added, 0); // new items → likely SAFE
-  const estimatedReview = diff.reduce((sum, s) => sum + s.modified, 0); // modified → may need review
-  const estimatedOrphaned = diff.reduce((sum, s) => sum + s.removed, 0); // removed → may orphan overrides
-
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2 px-3 py-2 bg-app-info-bg border border-app-info/20 rounded-lg">
+        <Info size={13} className="text-app-info flex-shrink-0" />
+        <p className="text-xs text-app-info">Structural Change Preview — shows what changed in the master content, not per-company adoption results.</p>
+      </div>
       {/* Summary bar */}
       <div className="grid grid-cols-3 gap-2">
         <ImpactBadge icon={Plus} label="Items Added" value={diff.reduce((s,d) => s + d.added, 0)} color="success" />
@@ -93,7 +92,7 @@ export default function SopVersionImpactPreview({ master, draftSections }) {
       {/* Per-section breakdown */}
       {hasChanges && (
         <div className="space-y-1.5">
-          <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide">Section Breakdown</p>
+          <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide">Master Content Changes by Section</p>
           {diff.filter(s => s.added + s.removed + s.modified > 0).map(s => (
             <div key={s.sectionType} className="flex items-center justify-between px-3 py-2 bg-app-elevated rounded-lg text-xs">
               <span className="font-medium text-app-text">{s.title}</span>
@@ -107,16 +106,13 @@ export default function SopVersionImpactPreview({ master, draftSections }) {
         </div>
       )}
 
-      {/* Adoption estimate */}
+      {/* Accurate note: this is structural, not per-company analysis */}
       {hasChanges && (
         <div className="p-3 bg-app-elevated rounded-lg space-y-1.5">
-          <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide">Estimated Adoption Impact per Company</p>
-          <p className="text-xs text-app-text-muted">These are estimates only. Actual impact depends on each company's customizations.</p>
-          <div className="flex flex-wrap gap-2 mt-1.5">
-            {estimatedSafe > 0 && <ImpactTag label="Likely SAFE" value={estimatedSafe} color="success" />}
-            {estimatedReview > 0 && <ImpactTag label="May need REVIEW" value={estimatedReview} color="warning" />}
-            {estimatedOrphaned > 0 && <ImpactTag label="May ORPHAN overrides" value={estimatedOrphaned} color="danger" />}
-          </div>
+          <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide">About Company Impact</p>
+          <p className="text-xs text-app-text-muted leading-relaxed">
+            Actual company adoption impact (SAFE / REVIEW REQUIRED / ORPHANED) is calculated after publication based on each company's specific customizations. The structural counts above show what changed in the master content — they are not confirmed adoption classifications.
+          </p>
         </div>
       )}
     </div>

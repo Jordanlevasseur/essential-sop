@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Send, X, ChevronDown, ChevronUp } from 'lucide-react';
 import SopVersionImpactPreview from './SopVersionImpactPreview';
 
-export default function SopPublishDialog({ master, draftSections, validation, onPublish, onClose, publishing }) {
+export default function SopPublishDialog({ master, draftSections, validation, onPublish, onClose, publishing, publishError, serverValidationErrors }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [majorChanges, setMajorChanges] = useState('');
@@ -90,6 +90,27 @@ export default function SopPublishDialog({ master, draftSections, validation, on
             </div>
           )}
 
+          {/* Server validation errors from last attempt */}
+          {serverValidationErrors?.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-app-danger uppercase tracking-wide">Server Validation Errors</p>
+              {serverValidationErrors.map((e, i) => (
+                <div key={i} className="flex items-start gap-2 p-2.5 bg-app-danger-bg border border-app-danger/20 rounded-lg">
+                  <AlertTriangle size={13} className="text-app-danger flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-app-danger">{e}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Publish error */}
+          {publishError && !serverValidationErrors?.length && (
+            <div className="flex items-start gap-2 p-2.5 bg-app-danger-bg border border-app-danger/20 rounded-lg">
+              <AlertTriangle size={13} className="text-app-danger flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-app-danger">{publishError}</p>
+            </div>
+          )}
+
           {/* Impact preview */}
           {!hasErrors && (
             <div>
@@ -97,7 +118,7 @@ export default function SopPublishDialog({ master, draftSections, validation, on
                 onClick={() => setShowImpact(v => !v)}
                 className="w-full flex items-center justify-between text-xs font-bold text-app-text-muted uppercase tracking-wide mb-2"
               >
-                <span>Version Impact Preview</span>
+                <span>Structural Change Preview</span>
                 {showImpact ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
               {showImpact && (
