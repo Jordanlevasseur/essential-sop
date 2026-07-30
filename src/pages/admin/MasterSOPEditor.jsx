@@ -441,7 +441,12 @@ export default function MasterSOPEditor() {
       // Attempt final flush
       await flushPendingSave();
     }
-    navigate(libraryPath);
+    // When on platform, return to the detail view of this master, not the list
+    if (isPlatform) {
+      navigate(`${libraryPath}/${masterId}`);
+    } else {
+      navigate(libraryPath);
+    }
   };
 
   // ── Loading ───────────────────────────────────────────────────────────────

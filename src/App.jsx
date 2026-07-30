@@ -41,6 +41,7 @@ import PlatformGuard from '@/components/platform/PlatformGuard';
 import PlatformDashboard from '@/pages/platform/PlatformDashboard';
 import PlatformAdmins from '@/pages/platform/PlatformAdmins';
 import PlatformAuditLog from '@/pages/platform/PlatformAuditLog';
+import PlatformCompanies from '@/pages/platform/PlatformCompanies';
 import PlatformBootstrap from '@/pages/platform/PlatformBootstrap';
 import MasterJobDetail from '@/pages/platform/MasterJobDetail';
 
@@ -145,7 +146,7 @@ const SeededApp = () => {
         <Route path="/platform/master-library" element={<MasterLibrary />} />
         <Route path="/platform/master-library/:masterId" element={<MasterJobDetail />} />
         <Route path="/platform/master-library/:masterId/edit" element={<MasterSOPEditor />} />
-        <Route path="/platform/companies" element={<PlatformDashboard />} />
+        <Route path="/platform/companies" element={<PlatformCompanies />} />
         <Route path="/platform/admins" element={<PlatformAdmins />} />
         <Route path="/platform/audit" element={<PlatformAuditLog />} />
         <Route path="/platform/profile" element={<PlatformDashboard />} />

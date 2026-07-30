@@ -159,7 +159,7 @@ export default function MasterJobDetail() {
         <Eye size={14} /> Preview
       </button>
       <button
-        onClick={() => navigate(`${libraryPath}/${masterId}`)}
+        onClick={() => navigate(`${libraryPath}/${masterId}/edit`)}
         className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active bg-app-accent text-app-accent-text"
         title="Open editor"
       >
