@@ -69,7 +69,7 @@ export default function Onboarding() {
 
             <div className="bg-app-warning-bg border border-app-warning/40 rounded-xl px-3 py-2 mb-4">
               <p className="text-xs text-app-warning">
-                <span className="font-semibold">Prototype mode:</span> No payment will be processed. This is a test environment.
+                <span className="font-semibold">Prototype mode:</span> No payment is processed during testing.
               </p>
             </div>
 
@@ -110,11 +110,14 @@ export default function Onboarding() {
         </div>
 
         <p className="text-xs text-app-text-muted text-center mt-6">
-          All plans run in prototype mode — no charges apply during testing.
+          All plans run in test mode — no charges apply.
         </p>
 
         <button
-          onClick={() => { localStorage.clear(); window.location.href = '/'; }}
+          onClick={() => {
+            ['esop_mode','esop_favorites','esop_recent','esop_prefs','esop_session','esop_user','esop_fav_init','esop_active_company_id'].forEach(k => localStorage.removeItem(k));
+            base44.auth.logout('/');
+          }}
           className="mt-4 w-full text-xs text-app-text-muted underline text-center"
         >
           Sign out

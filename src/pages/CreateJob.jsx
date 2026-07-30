@@ -101,7 +101,7 @@ export default function CreateJob() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)}>
+          <button onClick={() => navigate(-1)} className="icon-btn touch-active no-select" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1">{editId ? 'Edit Job' : 'Create Job'}</h1>

@@ -97,7 +97,7 @@ export default function CompanyProfile() {
           </div>
           <div>
             <p className="text-sm font-semibold text-app-text">{form.name || 'Company Name'}</p>
-            <p className="text-xs text-app-text-muted mt-0.5">Logo upload coming soon</p>
+            <p className="text-xs text-app-text-muted mt-0.5">Company workspace</p>
           </div>
         </div>
 

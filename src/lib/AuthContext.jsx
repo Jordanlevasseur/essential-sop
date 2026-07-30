@@ -48,7 +48,7 @@ export const AuthProvider = ({ children }) => {
         }
         setIsLoadingPublicSettings(false);
       } catch (appError) {
-        console.error('App state check failed:', appError);
+        // Auth check failed — handled below via authError state
         
         // Handle app-level errors
         if (appError.status === 403 && appError.data?.extra_data?.reason) {
@@ -79,7 +79,7 @@ export const AuthProvider = ({ children }) => {
         setIsLoadingAuth(false);
       }
     } catch (error) {
-      console.error('Unexpected error:', error);
+        // Unexpected error during app state check
       setAuthError({
         type: 'unknown',
         message: error.message || 'An unexpected error occurred'
@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       setAuthChecked(true);
     } catch (error) {
-      console.error('User auth check failed:', error);
+        // User auth check failed — handled via authError state
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
       setAuthChecked(true);
