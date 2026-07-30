@@ -29,4 +29,9 @@ export const SORT_OPTIONS = [
 
 export const DISCLAIMER = 'Verify local code, project specifications, and manufacturer instructions before proceeding.';
 
+export const TRADE_EMOJI = {
+  Plumbing: '🔧', Carpentry: '🪚', Electrical: '⚡', Drywall: '🧱',
+  Inspection: '🔍', Waterproofing: '💧', Roofing: '🏠', HVAC: '❄️', Painting: '🎨',
+};
+
 export { FileText, ListOrdered, Wrench, Package, ShieldAlert, Camera, ClipboardCheck, Briefcase, MessageSquare, User, Star, ArrowLeft, Search, SlidersHorizontal, Plus, ChevronRight, Pencil, Trash2, Save, ArrowUp, ArrowDown, Check, X, AlertTriangle, Info, AlertCircle, Copy, Eye, Send, Clock, Tag, Filter, Settings, LogOut, RotateCcw, ShieldCheck, HardHat, ChevronLeft, MoreVertical, GripVertical, CircleDot, Square, CheckCircle2, Circle, FileCheck };

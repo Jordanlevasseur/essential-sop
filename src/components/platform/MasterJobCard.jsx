@@ -1,10 +1,6 @@
 import React from 'react';
 import { GitBranch, Globe, Lock } from 'lucide-react';
-
-const TRADE_EMOJI = {
-  Plumbing: '🔧', Carpentry: '🪚', Electrical: '⚡', Drywall: '🧱',
-  Inspection: '🔍', Waterproofing: '💧', Roofing: '🏠', HVAC: '❄️', Painting: '🎨',
-};
+import { TRADE_EMOJI } from '@/lib/constants';
 
 const STATUS_CONFIG = {
   draft:    { label: 'Draft',     cls: 'text-app-warning bg-app-warning-bg' },
@@ -48,11 +44,6 @@ export default function MasterJobCard({ master, onClick }) {
           <p className="text-xs text-app-accent font-medium mt-0.5">
             {[master.trade, master.category].filter(Boolean).join(' · ') || 'No trade set'}
           </p>
-
-          {/* Description if present */}
-          {master.description && (
-            <p className="text-xs text-app-text-muted mt-1 line-clamp-2">{master.description}</p>
-          )}
 
           {/* Platform-specific metadata row */}
           <div className="flex items-center gap-3 mt-2 flex-wrap">

@@ -1,15 +1,11 @@
 import React from 'react';
 import { Star, Clock } from 'lucide-react';
+import { TRADE_EMOJI } from '@/lib/constants';
 
 const SKILL_COLORS = {
   Entry: 'text-app-success bg-app-success-bg',
   Intermediate: 'text-app-warning bg-app-warning-bg',
   Advanced: 'text-app-danger bg-app-danger-bg',
-};
-
-const TRADE_EMOJI = {
-  Plumbing: '🔧', Carpentry: '🪚', Electrical: '⚡', Drywall: '🧱',
-  Inspection: '🔍', Waterproofing: '💧', Roofing: '🏠', HVAC: '❄️', Painting: '🎨',
 };
 
 export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {

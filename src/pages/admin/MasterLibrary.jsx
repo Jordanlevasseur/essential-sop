@@ -131,7 +131,7 @@ export default function MasterLibrary() {
           className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium"
         >
           <Plus size={18} />
-          <span className="hidden sm:inline">New</span>
+          <span className="hidden sm:inline">Create</span>
         </button>
       </div>
 
