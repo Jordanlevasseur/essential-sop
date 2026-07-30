@@ -2,24 +2,70 @@
  * companyLibraryProvisioning.ts — Canonical Company Library Provisioning Service
  *
  * THE SINGLE AUTHORITATIVE IMPLEMENTATION for provisioning Essential SOP Master
- * Jobs to a company. Both entry points — manual platform provisioning and
- * automatic initial provisioning — call provisionCompanyLibraryCore().
+ * Jobs to a company. Every provisioning workflow — company creation, manual admin
+ * provisioning, and NEW_SOP publication distribution — MUST call the canonical
+ * per-company function provisionMasterToOneCompany().
  *
  * ── ENTRY POINTS ──────────────────────────────────────────────────────────────
- * 1. Automatic initial provisioning: triggered from createCompany after the
- *    company and owner membership are confirmed. Source: COMPANY_CREATION.
- *    Authorization already verified by the createCompany auth check.
+ * 1. Automatic initial provisioning (createCompany):
+ *    provisionCompanyLibraryCore() → provisionMasterToOneCompany()
+ *    Source: COMPANY_CREATION.
  *
- * 2. Manual platform provisioning: triggered from provisionCompanyLibrary
- *    after requirePlatformSuperAdmin() succeeds. Source: MANUAL_PLATFORM_ADMIN.
+ * 2. Manual platform provisioning (provisionCompanyLibrary):
+ *    provisionCompanyLibraryCore() → provisionMasterToOneCompany()
+ *    Source: MANUAL_PLATFORM_ADMIN.
  *
- * 3. Future: publication distribution workflow. Source: FUTURE_DISTRIBUTION_EVENT.
- *    (Not yet implemented — architecture supports it.)
+ * 3. NEW_SOP publication distribution (publishingOrchestration):
+ *    _distributeNewSOPToExistingCompanies() → provisionMasterToOneCompany()
+ *    Source: FUTURE_DISTRIBUTION_EVENT.
+ *
+ * ── CANONICAL PER-COMPANY FUNCTION ────────────────────────────────────────────
+ * provisionMasterToOneCompany() is the SINGLE implementation for:
+ *   - Company Job existence check (duplicate prevention)
+ *   - Deterministic provisioning key generation
+ *   - ProvisioningRecord lookup, creation, and repair
+ *   - Partial-state recovery
+ *   - Company Job creation
+ *   - Source Master and version linkage on the Job record
+ *   - COMPLETED / SKIPPED / FAILED result
+ *
+ * The orchestration layer (provisionCompanyLibraryCore or
+ * _distributeNewSOPToExistingCompanies) is responsible for:
+ *   - Loading candidate companies
+ *   - Evaluating policy eligibility via isCompanyEligibleForMaster()
+ *   - Calling provisionMasterToOneCompany() per company
+ *   - Catching per-company failures
+ *   - Aggregating counts and updating DistributionEvent / ProvisioningRun
+ *
+ * ── DETERMINISTIC PROVISIONING KEY ────────────────────────────────────────────
+ * provisioningKey = `ESOP_PROVISION:${companyId}:${masterId}`
+ *
+ * This key is:
+ *   - Deterministic for any (companyId, masterId) pair regardless of trigger source
+ *   - Used to look up the canonical ProvisioningRecord before any insert
+ *   - Collision-proof: the same pair always maps to exactly one logical key
+ *   - NOT a random UUID; NOT source-prefixed; NOT distributionEventId-prefixed
+ *
+ * Previous key scheme `INITIAL_COMPANY_LIBRARY:${companyId}:${masterId}` is
+ * preserved by buildProvisioningKey() which is now an alias for backward compat.
+ * The NEW_SOP distribution path previously used `dist_${eventId}_${companyId}_${masterId}`
+ * — this scheme is retired; records created under the old key are not migrated
+ * (they were test-only; no production records existed).
+ *
+ * ── OPERATION TYPE ────────────────────────────────────────────────────────────
+ * All ProvisioningRecords use operationType = 'INITIAL_COMPANY_LIBRARY'.
+ * The previous 'CREATE_NEW_COMPANY_JOB' and 'SKIP_ALREADY_PROVISIONED' types
+ * used by the old _distributeNewSOPToExistingCompanies loop are retired.
+ * No production records existed under 'CREATE_NEW_COMPANY_JOB'.
  *
  * ── ELIGIBILITY ───────────────────────────────────────────────────────────────
  * Policy eligibility is evaluated by isCompanyEligibleForMaster(), which is
  * COMPLETELY INDEPENDENT of trigger source. The source identifies why provisioning
  * was called; it never determines whether a company qualifies under the policy.
+ *
+ * Eligibility is ALWAYS evaluated by the orchestration layer before calling
+ * provisionMasterToOneCompany(). The per-company function does not re-evaluate
+ * policy; it defensively validates required state (version exists + published).
  *
  * A Master SOP is eligible for provisioning when ALL of:
  *   - Master.status === 'active'
@@ -34,96 +80,41 @@
  *       FUTURE_COMPANIES_ONLY
  *         → eligible only when company.created_date is AFTER the policy cutoff.
  *         → Cutoff authority (in order):
- *             1. Master.distributionPolicyUpdatedAt  (preferred — set when policy was last changed)
- *             2. Master.created_date                 (fallback — set at master creation)
- *         → This rule applies identically for COMPANY_CREATION and MANUAL_PLATFORM_ADMIN.
- *         → A manual re-run does NOT bypass the timing rule.
+ *             1. Master.distributionPolicyUpdatedAt  (preferred)
+ *             2. Master.created_date                 (fallback)
  *         → Skip reason: COMPANY_PREDATES_FUTURE_ONLY_CUTOFF
  *
  *       SELECTED_COMPANIES
- *         → eligible whenever companyId is included in Master.defaultSelectedCompanyIds.
- *         → Applies during COMPANY_CREATION (companyId known after Company record is created).
- *         → Applies during MANUAL_PLATFORM_ADMIN.
- *         → Applies for future distribution workflows.
- *         → Source does NOT gate this — only list membership matters.
+ *         → eligible when companyId is in the authoritative selected-company list.
+ *         → effectiveSelectedIds (from DistributionEvent) takes precedence when provided.
  *         → Skip reason: COMPANY_NOT_SELECTED
  *
  *       MANUAL
- *         → Never eligible for automatic provisioning.
- *         → May only be provisioned through an explicit authorized action that
- *           sets includeManual=true (not currently exposed on any endpoint).
+ *         → Never auto-provisioned.
  *         → Skip reason: POLICY_MANUAL
- *
- * ── AUTHORITATIVE SELECTED-COMPANY FIELD ─────────────────────────────────────
- * For initial company provisioning and manual reconciliation:
- *   → Master.defaultSelectedCompanyIds  (current policy configuration on the Master)
- * For future publication distribution events (Edit 4+):
- *   → DistributionEvent.selectedCompanyIds (override for that specific publication)
- * When a DistributionEvent is present and its policy is SELECTED_COMPANIES,
- * its selectedCompanyIds takes precedence over the Master's defaultSelectedCompanyIds.
- *
- * ── FUTURE_COMPANIES_ONLY CUTOFF ─────────────────────────────────────────────
- * The cutoff is the timestamp at which the FUTURE_COMPANIES_ONLY policy became
- * effective for this master. Companies created AFTER this timestamp qualify.
- * Authoritative source: Master.distributionPolicyUpdatedAt (set by manageMasterSOP
- * when the policy is changed). Fallback: Master.created_date.
- * Limitation: if distributionPolicyUpdatedAt was not recorded (masters predating
- * Edit 2), the fallback is master.created_date, which may be earlier than the
- * intended cutoff. This is documented as an open limitation.
- *
- * Source of truth for policy: Master.defaultDistributionPolicy and
- * Master.defaultSelectedCompanyIds. DistributionEvent records publication
- * history but do NOT override the current Master policy for initial provisioning.
  *
  * ── COMPANY JOB INVARIANT ─────────────────────────────────────────────────────
  * ONE COMPANY + ONE MASTER SOP = NO MORE THAN ONE NON-DELETED COMPANY JOB.
- *
- * Detection strategy (in order):
- *   1. Pre-load all existing essential_sop Jobs for this company into a masterId Map.
- *   2. Look up by (companyId, sourceType='essential_sop', sourceMasterId).
- *   3. Check in-memory Map from step 1 (fast, avoids per-master query).
- *   4. Archived Jobs: treated as SKIP — do not create a duplicate, do not reactivate.
- *   5. Active/Published Jobs: treated as SKIP.
- *
- * ── DETERMINISTIC PROVISIONING KEY ────────────────────────────────────────────
- * provisioningKey = `INITIAL_COMPANY_LIBRARY:${companyId}:${masterId}`
- * Stored on the ProvisioningRecord. Used for lookup before insert.
- * Deterministic for the same company+master+operationType combination.
- * NOT a random UUID.
+ * Enforced exclusively inside provisionMasterToOneCompany().
  *
  * ── PROVISIONINGRECORD LIFECYCLE ──────────────────────────────────────────────
- * One logical ProvisioningRecord per (companyId, masterId, INITIAL_COMPANY_LIBRARY).
- * Created with operationType=INITIAL_COMPANY_LIBRARY.
+ * One logical ProvisioningRecord per (companyId, masterId) pair.
+ * operationType: INITIAL_COMPANY_LIBRARY.
+ * Key: `ESOP_PROVISION:${companyId}:${masterId}`.
  * On success:  status=COMPLETED, companyJobId=job.id, completedAt set.
  * On skip:     status=SKIPPED, companyJobId=existing job.id, completedAt set.
  * On failure:  status=FAILED, errorCode + errorMessage set.
- * On retry with existing completed record: returns existing result (idempotent).
- * On retry with existing FAILED record:    attempts again, updates the record.
- * Partial-state recovery: if a Job exists but record is missing or FAILED,
- * create/update the record to COMPLETED using the found Job.
- *
- * ── DISTRIBUTION EVENT LINKING ────────────────────────────────────────────────
- * When a related DistributionEvent can be found for the Master (the most recent
- * NEW_SOP event for the master's currentPublishedVersionId), it is linked.
- * Fallback when not found: distributionEventId = null (field is nullable on the schema).
- * No fake DistributionEvents are ever created.
- * If the schema required non-null distributionEventId, we would set it null and
- * rely on the nullable representation — no fabrication.
+ * On retry with existing COMPLETED record: idempotent skip.
+ * On retry with existing FAILED record: attempt again, update the record.
+ * Partial-state recovery: if a Job exists but record is missing or FAILED, repair.
  *
  * ── FAILURE ISOLATION ─────────────────────────────────────────────────────────
- * Individual Master failures are caught and recorded without aborting other Masters.
+ * Individual Master/company failures are caught without aborting other iterations.
  * Company + initial CompanyMembership are NEVER deleted due to provisioning failures.
- * A complete provisioning service failure still returns the company with
- * provisioningStatus=FAILED and enough information for safe retry.
  *
  * ── CONCURRENCY RACE RISK ─────────────────────────────────────────────────────
- * Base44 has no database-level unique constraints. If two simultaneous requests
- * call provisionCompanyLibraryCore for the same company+master pair, it is
- * possible (though unlikely) to create two Jobs before either detects the other.
- * Mitigation: pre-load existing Jobs + ProvisioningRecords before the loop,
- * check both before creation, use deterministic provisioningKey for ProvisioningRecord
- * lookup. The duplicate-detection strategy reduces but cannot eliminate the risk.
- * Documented as an open reliability risk.
+ * Base44 has no database-level unique constraints. Deterministic key deduplication
+ * reduces but cannot eliminate the concurrent-create race window. Documented.
  *
  * ── BASE44 LIMITATIONS ────────────────────────────────────────────────────────
  * - No multi-entity transactions: partial writes can occur on infrastructure failure.
@@ -135,16 +126,17 @@
 
 import { writePlatformAudit } from './platformAuth.ts';
 
-// ── Deterministic provisioning key ────────────────────────────────────────────
+// ── Canonical deterministic provisioning key ──────────────────────────────────
+// One key per (companyId, masterId) pair. Source-independent.
 export function buildProvisioningKey(companyId: string, masterId: string): string {
-  return `INITIAL_COMPANY_LIBRARY:${companyId}:${masterId}`;
+  return `ESOP_PROVISION:${companyId}:${masterId}`;
 }
 
 // ── Provisioning source — identifies WHY provisioning was called ───────────────
 // Does NOT determine policy eligibility. Never used as a policy gate.
 export type ProvisioningSource = 'COMPANY_CREATION' | 'MANUAL_PLATFORM_ADMIN' | 'FUTURE_DISTRIBUTION_EVENT';
 
-// ── Skip reasons — policy exclusion is a normal eligibility result, not a failure ──
+// ── Skip reasons ──────────────────────────────────────────────────────────────
 export type SkipReason =
   | 'ALREADY_PROVISIONED'
   | 'POLICY_MANUAL'
@@ -154,7 +146,7 @@ export type SkipReason =
   | 'MASTER_NOT_ACTIVE'
   | 'NO_PUBLISHED_VERSION';
 
-// ── Eligibility result — returned by isCompanyEligibleForMaster ───────────────
+// ── Eligibility result ────────────────────────────────────────────────────────
 export interface EligibilityResult {
   eligible: boolean;
   skipReason?: SkipReason;
@@ -162,22 +154,8 @@ export interface EligibilityResult {
 
 /**
  * isCompanyEligibleForMaster — Pure policy eligibility function.
- *
- * Evaluates whether a company should receive a provisioned Job for a given
- * master SOP. This function is COMPLETELY INDEPENDENT of trigger source.
- * The caller's source (COMPANY_CREATION, MANUAL_PLATFORM_ADMIN, etc.) is
- * irrelevant to the result — only the company, master policy, and optional
- * distribution event context matter.
- *
- * Parameters:
- *   companyCreatedDate        ISO string from Company.created_date
- *   masterPolicy              Master.defaultDistributionPolicy
- *   masterSelectedCompanyIds  Master.defaultSelectedCompanyIds
- *   masterPolicyCutoffDate    Master.distributionPolicyUpdatedAt ?? Master.created_date
- *                             (the timestamp after which new companies qualify for FUTURE_ONLY)
- *   effectiveSelectedIds      Optional override (e.g. from DistributionEvent.selectedCompanyIds)
- *                             When provided, takes precedence over masterSelectedCompanyIds
- *                             for SELECTED_COMPANIES policy evaluation.
+ * Source-independent: trigger source never affects the result.
+ * Called by the orchestration layer before provisionMasterToOneCompany().
  */
 export function isCompanyEligibleForMaster(params: {
   companyId: string;
@@ -195,12 +173,9 @@ export function isCompanyEligibleForMaster(params: {
 
   switch (masterPolicy) {
     case 'ALL_EXISTING_AND_FUTURE_COMPANIES':
-      // Always eligible — no timing or list restriction.
       return { eligible: true };
 
     case 'FUTURE_COMPANIES_ONLY': {
-      // Eligible only when the company was created AFTER the policy cutoff.
-      // Cutoff: distributionPolicyUpdatedAt ?? master.created_date (caller resolves this).
       const cutoff = new Date(masterPolicyCutoffDate).getTime();
       const companyCreated = new Date(companyCreatedDate).getTime();
       if (!isNaN(cutoff) && !isNaN(companyCreated) && companyCreated > cutoff) {
@@ -210,8 +185,6 @@ export function isCompanyEligibleForMaster(params: {
     }
 
     case 'SELECTED_COMPANIES': {
-      // Eligible when companyId is in the authoritative selected-company list.
-      // effectiveSelectedIds (e.g. from a DistributionEvent) takes precedence when provided.
       const list = (effectiveSelectedIds != null ? effectiveSelectedIds : masterSelectedCompanyIds) || [];
       if (list.includes(companyId)) {
         return { eligible: true };
@@ -221,10 +194,183 @@ export function isCompanyEligibleForMaster(params: {
 
     case 'MANUAL':
     default:
-      // Never auto-provisioned. Requires an explicit authorized manual-policy override
-      // (includeManual=true parameter — not currently exposed on any endpoint).
       return { eligible: false, skipReason: 'POLICY_MANUAL' };
   }
+}
+
+// ── ProvisioningItemResult — returned by provisionMasterToOneCompany ──────────
+export interface ProvisioningItemResult {
+  masterId: string;
+  masterTitle: string;
+  result: 'COMPLETED' | 'SKIPPED' | 'FAILED';
+  skipReason?: SkipReason;
+  companyJobId: string | null;
+  versionId: string | null;
+  provisioningRecordId: string | null;
+  provisioningKey: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+// ── params for provisionMasterToOneCompany ────────────────────────────────────
+export interface ProvisionMasterToOneCompanyParams {
+  SR: any;
+  company: any;                       // full Company record (needs .id and .created_date)
+  master: any;                        // full EssentialSOPMaster record
+  publishedVersion: any;              // full EssentialSOPVersion record (must have status='published')
+  source: ProvisioningSource;
+  distributionEventId: string | null; // linked DistributionEvent.id, or null
+  // In-memory state passed by the caller to avoid per-company DB round-trips:
+  existingJob: any | null;            // pre-loaded Job for (companyId, masterId), or null
+  existingRecord: any | null;         // pre-loaded ProvisioningRecord for this key, or null
+  now: string;
+}
+
+/**
+ * provisionMasterToOneCompany — Canonical per-company provisioning function.
+ *
+ * The SINGLE implementation for:
+ *   - Company Job existence check (duplicate prevention using caller-supplied existingJob)
+ *   - Deterministic provisioning key generation via buildProvisioningKey()
+ *   - ProvisioningRecord lookup / create / update via _upsertProvisioningRecord()
+ *   - Partial-state recovery (job exists but record is missing or FAILED)
+ *   - Company Job creation
+ *   - Source Master and version linkage on the Job record
+ *
+ * Called by:
+ *   - provisionCompanyLibraryCore() (COMPANY_CREATION, MANUAL_PLATFORM_ADMIN)
+ *   - _distributeNewSOPToExistingCompanies() (FUTURE_DISTRIBUTION_EVENT)
+ *
+ * The orchestration layer is responsible for eligibility evaluation before
+ * calling this function. This function does NOT re-evaluate policy; it performs
+ * a defensive version-state check and then provisions.
+ *
+ * Returns a structured ProvisioningItemResult: COMPLETED, SKIPPED, or FAILED.
+ */
+export async function provisionMasterToOneCompany(
+  params: ProvisionMasterToOneCompanyParams
+): Promise<ProvisioningItemResult> {
+  const { SR, company, master, publishedVersion, source, distributionEventId, existingJob, existingRecord, now } = params;
+  const companyId = company.id;
+  const masterId = master.id;
+  const versionId = publishedVersion?.id || null;
+  const provisioningKey = buildProvisioningKey(companyId, masterId);
+
+  // ── Defensive: validate version ──────────────────────────────────────────
+  if (!publishedVersion || publishedVersion.status !== 'published') {
+    const errorCode = !publishedVersion ? 'VERSION_NOT_FOUND' : 'VERSION_NOT_PUBLISHED';
+    const errorMessage = !publishedVersion
+      ? 'Referenced version record does not exist.'
+      : 'Referenced version is not in published status.';
+
+    await _upsertProvisioningRecord(SR, {
+      existingRecord,
+      provisioningKey, companyId, masterId, versionId,
+      distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
+      status: 'FAILED', companyJobId: null,
+      errorCode, errorMessage, now,
+    });
+
+    return {
+      masterId, masterTitle: master.title,
+      result: 'FAILED', companyJobId: null, versionId,
+      provisioningRecordId: null, provisioningKey,
+      errorCode, errorMessage,
+    };
+  }
+
+  // ── Idempotency: existing completed record ────────────────────────────────
+  if (existingRecord?.status === 'COMPLETED' && existingRecord?.companyJobId) {
+    if (existingJob) {
+      return {
+        masterId, masterTitle: master.title,
+        result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
+        companyJobId: existingJob.id,
+        versionId: existingRecord.versionId || versionId,
+        provisioningRecordId: existingRecord.id, provisioningKey,
+      };
+    }
+    // Record says COMPLETED but job is missing — fall through to create
+  }
+
+  // ── Duplicate prevention: existing job ────────────────────────────────────
+  if (existingJob) {
+    // Partial-state recovery: job exists but record is missing or FAILED — repair
+    const repairRecord = await _upsertProvisioningRecord(SR, {
+      existingRecord,
+      provisioningKey, companyId, masterId,
+      versionId: existingJob.sourceVersionId || versionId,
+      distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
+      status: 'SKIPPED', companyJobId: existingJob.id,
+      errorCode: null, errorMessage: null, now,
+    });
+
+    return {
+      masterId, masterTitle: master.title,
+      result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
+      companyJobId: existingJob.id,
+      versionId: existingJob.sourceVersionId || versionId,
+      provisioningRecordId: repairRecord?.id || existingRecord?.id || null,
+      provisioningKey,
+    };
+  }
+
+  // ── Create Company Job ─────────────────────────────────────────────────────
+  let createdJob: any = null;
+  try {
+    createdJob = await SR.entities.Job.create({
+      companyId,
+      title: master.title,
+      shortDescription: master.description || '',
+      trade: master.trade || '',
+      category: master.category || '',
+      status: 'Published',
+      isArchived: false,
+      sourceType: 'essential_sop',
+      sourceMasterId: masterId,
+      sourceVersionId: publishedVersion.id,
+      isCustomized: false,
+      customizedAt: null,
+      customizedBy: null,
+    });
+  } catch (_) {}
+
+  if (!createdJob) {
+    const failedRec = await _upsertProvisioningRecord(SR, {
+      existingRecord,
+      provisioningKey, companyId, masterId, versionId,
+      distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
+      status: 'FAILED', companyJobId: null,
+      errorCode: 'JOB_CREATE_FAILED',
+      errorMessage: 'Failed to create company job record.',
+      now,
+    });
+
+    return {
+      masterId, masterTitle: master.title,
+      result: 'FAILED', companyJobId: null, versionId,
+      provisioningRecordId: failedRec?.id || null, provisioningKey,
+      errorCode: 'JOB_CREATE_FAILED',
+      errorMessage: 'Failed to create company job record.',
+    };
+  }
+
+  // ── Write COMPLETED ProvisioningRecord ────────────────────────────────────
+  const completedRec = await _upsertProvisioningRecord(SR, {
+    existingRecord,
+    provisioningKey, companyId, masterId, versionId: publishedVersion.id,
+    distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
+    status: 'COMPLETED', companyJobId: createdJob.id,
+    errorCode: null, errorMessage: null, now,
+  });
+
+  return {
+    masterId, masterTitle: master.title,
+    result: 'COMPLETED', companyJobId: createdJob.id,
+    versionId: publishedVersion.id,
+    provisioningRecordId: completedRec?.id || null,
+    provisioningKey,
+  };
 }
 
 // ── Core params ───────────────────────────────────────────────────────────────
@@ -232,23 +378,10 @@ export interface ProvisionCompanyLibraryCoreParams {
   companyId: string;
   initiatedByUserId: string;
   source: ProvisioningSource;
-  SR: any; // service-role SDK client — authorization already verified by caller
+  SR: any;
 }
 
 // ── Core result ───────────────────────────────────────────────────────────────
-export interface ProvisioningItemResult {
-  masterId: string;
-  masterTitle: string;
-  result: 'COMPLETED' | 'SKIPPED' | 'FAILED';
-  skipReason?: SkipReason;        // populated when result === 'SKIPPED' (policy exclusion or already provisioned)
-  companyJobId: string | null;
-  versionId: string | null;
-  provisioningRecordId: string | null;
-  provisioningKey: string;
-  errorCode?: string;             // populated when result === 'FAILED' (infrastructure/data errors only)
-  errorMessage?: string;
-}
-
 export interface ProvisionCompanyLibraryCoreResult {
   provisioningRunId: string | null;
   overallStatus: 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
@@ -263,7 +396,9 @@ export interface ProvisionCompanyLibraryCoreResult {
   items: ProvisioningItemResult[];
 }
 
-// ── Main canonical service ─────────────────────────────────────────────────────
+// ── Main canonical orchestration service ──────────────────────────────────────
+// Loads all eligible masters for one company, calls provisionMasterToOneCompany()
+// per master, aggregates results, and writes run records + audit entries.
 
 export async function provisionCompanyLibraryCore(
   params: ProvisionCompanyLibraryCoreParams
@@ -271,16 +406,15 @@ export async function provisionCompanyLibraryCore(
   const { companyId, initiatedByUserId, source, SR } = params;
   const startedAt = new Date().toISOString();
 
-  // ── Load company record — needed for FUTURE_COMPANIES_ONLY timing ────────
+  // ── Load company record ───────────────────────────────────────────────────
   let company: any = null;
   try { company = await SR.entities.Company.get(companyId); } catch (_) {}
   if (!company) {
-    return _buildFailResult(null); // Company not found — safe abort
+    return _buildFailResult(null);
   }
-  // created_date is the authoritative company creation timestamp (built-in field)
   const companyCreatedDate: string = company.created_date || startedAt;
 
-  // ── Create CompanyLibraryProvisioningRun (started) ────────────────────────
+  // ── Create CompanyLibraryProvisioningRun ──────────────────────────────────
   let runRecord: any = null;
   try {
     runRecord = await SR.entities.CompanyLibraryProvisioningRun.create({
@@ -297,29 +431,20 @@ export async function provisionCompanyLibraryCore(
       createdJobIds: [],
       errors: [],
     });
-  } catch (_) {
-    // Non-fatal — run record is informational. Provisioning continues without it.
-  }
+  } catch (_) {}
 
-  // ── Audit: provisioning started ───────────────────────────────────────────
   try {
     await writePlatformAudit(SR, {
       actingUserId: initiatedByUserId,
       actingUserRole: 'SUPER_ADMIN',
       action: 'company_library_provisioned',
       extra: {
-        metadata: {
-          companyId,
-          provisioningRunId: runRecord?.id || null,
-          source,
-          phase: 'started',
-        },
+        metadata: { companyId, provisioningRunId: runRecord?.id || null, source, phase: 'started' },
       },
     });
   } catch (_) {}
 
-  // ── Step 1: Load eligible Masters in one bounded query ────────────────────
-  // Filter server-side on status + distributionStatus. Policy filtering is in-memory.
+  // ── Step 1: Load eligible Masters ─────────────────────────────────────────
   let allMasters: any[] = [];
   try {
     allMasters = await SR.entities.EssentialSOPMaster.filter(
@@ -327,22 +452,18 @@ export async function provisionCompanyLibraryCore(
       '-updatedAt',
       500
     ) || [];
-  } catch (err: any) {
-    // Infrastructure failure loading masters — report full failure
+  } catch (_) {
     const failResult = _buildFailResult(runRecord?.id || null);
     await _finalizeRun(SR, runRecord, failResult, startedAt);
     await _writeCompletionAudit(SR, initiatedByUserId, companyId, runRecord?.id || null, source, failResult);
     return failResult;
   }
 
-  // ── Step 2: Apply policy eligibility in memory ────────────────────────────
-  // isCompanyEligibleForMaster() is source-independent — trigger source never gates eligibility.
-  // Policy-excluded masters are collected separately as pre-loop SKIPPED items (not FAILED).
+  // ── Step 2: Apply policy eligibility ─────────────────────────────────────
   const eligibleMasters: any[] = [];
   const preSkippedItems: ProvisioningItemResult[] = [];
 
   for (const m of allMasters) {
-    // Basic structural checks first (not policy)
     if (!m.currentPublishedVersionId || !m.currentPublishedVersionId.trim()) {
       preSkippedItems.push({
         masterId: m.id, masterTitle: m.title,
@@ -355,7 +476,6 @@ export async function provisionCompanyLibraryCore(
     }
 
     const policy = m.defaultDistributionPolicy || 'MANUAL';
-    // Cutoff for FUTURE_COMPANIES_ONLY: distributionPolicyUpdatedAt preferred, else created_date
     const masterPolicyCutoffDate = m.distributionPolicyUpdatedAt || m.created_date || startedAt;
 
     const eligibility = isCompanyEligibleForMaster({
@@ -364,14 +484,12 @@ export async function provisionCompanyLibraryCore(
       masterPolicy: policy,
       masterSelectedCompanyIds: Array.isArray(m.defaultSelectedCompanyIds) ? m.defaultSelectedCompanyIds : [],
       masterPolicyCutoffDate,
-      effectiveSelectedIds: null, // no DistributionEvent override at initial provisioning
+      effectiveSelectedIds: null,
     });
 
     if (eligibility.eligible) {
       eligibleMasters.push(m);
     } else {
-      // Policy exclusion — record as SKIPPED (not FAILED). No ProvisioningRecord written
-      // for pure policy exclusions to avoid polluting the record table with expected skips.
       preSkippedItems.push({
         masterId: m.id, masterTitle: m.title,
         result: 'SKIPPED', skipReason: eligibility.skipReason,
@@ -384,23 +502,14 @@ export async function provisionCompanyLibraryCore(
 
   const totalEligible = eligibleMasters.length;
 
-  // ── Step 3: Bulk-load published versions for eligible masters ─────────────
-  // Build a Map<versionId, version> to avoid per-master version fetch.
+  // ── Step 3: Bulk-load published versions ──────────────────────────────────
   const versionIdSet = new Set<string>(
     eligibleMasters.map((m: any) => m.currentPublishedVersionId).filter(Boolean)
   );
   const versionMap = new Map<string, any>();
-  // Load versions in one query per 100 IDs — Base44 filter can handle this via
-  // individual get calls since there's no $in operator. For typical library sizes
-  // (≤100 SOPs), parallel gets are acceptable.
   const versionFetches = await Promise.allSettled(
     [...versionIdSet].map(async (vid: string) => {
-      try {
-        const v = await SR.entities.EssentialSOPVersion.get(vid);
-        return { vid, v };
-      } catch (_) {
-        return { vid, v: null };
-      }
+      try { const v = await SR.entities.EssentialSOPVersion.get(vid); return { vid, v }; } catch (_) { return { vid, v: null }; }
     })
   );
   for (const r of versionFetches) {
@@ -419,15 +528,12 @@ export async function provisionCompanyLibraryCore(
     ) || [];
   } catch (_) {}
 
-  // Map: masterId → existing Job (all states including archived)
   const existingJobByMasterId = new Map<string, any>();
   for (const j of existingJobs) {
     if (j.sourceMasterId) existingJobByMasterId.set(j.sourceMasterId, j);
   }
-  const existingProvisionedCount = [...existingJobByMasterId.values()].filter((j: any) => !j.isArchived).length;
 
   // ── Step 5: Load existing ProvisioningRecords ONCE ────────────────────────
-  // We query all ProvisioningRecords for this company with INITIAL_COMPANY_LIBRARY operationType.
   let existingRecords: any[] = [];
   try {
     existingRecords = await SR.entities.ProvisioningRecord.filter(
@@ -437,28 +543,15 @@ export async function provisionCompanyLibraryCore(
     ) || [];
   } catch (_) {}
 
-  // Map: provisioningKey → ProvisioningRecord
   const existingRecordByKey = new Map<string, any>();
   for (const rec of existingRecords) {
     if (rec.provisioningKey) existingRecordByKey.set(rec.provisioningKey, rec);
   }
 
-  // ── Step 6: Bulk-load most recent DistributionEvents per eligible master ──
-  // Used to link distributionEventId on ProvisioningRecord when available.
-  // Fallback: null. No failure if not found.
-  const distEventMap = new Map<string, string>(); // masterId → distributionEvent.id
+  // ── Step 6: Bulk-load DistributionEvent links ─────────────────────────────
+  const distEventMap = new Map<string, string>();
   try {
-    // Load NEW_SOP events for all eligible master IDs. We use the versionId match
-    // to find the most specific event for the currently pinned version.
-    const eligibleMasterIds = eligibleMasters.map((m: any) => m.id);
-    // Per-master dist event lookup is only needed for record-linking — best effort.
-    // For performance we accept one pass through filter results per master in-memory.
-    const distEvents = await SR.entities.DistributionEvent.filter(
-      {},
-      '-createdAt',
-      500
-    ) || [];
-    // Build map: versionId → distributionEvent.id (most recent)
+    const distEvents = await SR.entities.DistributionEvent.filter({}, '-createdAt', 500) || [];
     const distEventByVersionId = new Map<string, string>();
     for (const de of distEvents) {
       if (de.versionId && !distEventByVersionId.has(de.versionId)) {
@@ -471,16 +564,12 @@ export async function provisionCompanyLibraryCore(
         distEventMap.set(m.id, distEventByVersionId.get(vid)!);
       }
     }
-  } catch (_) {
-    // Non-fatal — distEventMap stays empty; distributionEventId will be null.
-  }
+  } catch (_) {}
 
-  // ── Step 7: Per-master provisioning loop ─────────────────────────────────
+  // ── Step 7: Per-master provisioning loop — calls canonical function ────────
   const now = new Date().toISOString();
   const items: ProvisioningItemResult[] = [];
   const companyJobIds: string[] = [];
-  const runErrors: Array<{ sourceMasterId: string; code: string; message: string }> = [];
-  const createdJobIds: string[] = [];
   let skipped = 0;
   let completed = 0;
   let failed = 0;
@@ -489,150 +578,49 @@ export async function provisionCompanyLibraryCore(
     const provisioningKey = buildProvisioningKey(companyId, master.id);
     const distributionEventId = distEventMap.get(master.id) || null;
     const versionId = master.currentPublishedVersionId;
-    const version = versionMap.get(versionId);
+    const publishedVersion = versionMap.get(versionId) || null;
+    const existingJob = existingJobByMasterId.get(master.id) || null;
+    const existingRecord = existingRecordByKey.get(provisioningKey) || null;
 
-    // ── Validate version ───────────────────────────────────────────────────
-    if (!version || version.status !== 'published') {
-      const errorCode = !version ? 'VERSION_NOT_FOUND' : 'VERSION_NOT_PUBLISHED';
-      const errorMessage = !version
-        ? 'Referenced version record does not exist.'
-        : 'Referenced version is not in published status.';
-
-      // Upsert ProvisioningRecord as FAILED
-      await _upsertProvisioningRecord(SR, {
-        existingRecord: existingRecordByKey.get(provisioningKey) || null,
-        provisioningKey, companyId, masterId: master.id, versionId,
-        distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-        status: 'FAILED', companyJobId: null,
-        errorCode, errorMessage, now,
-        initiatedByUserId,
+    try {
+      // ── Call canonical per-company provisioning function ─────────────────
+      const itemResult = await provisionMasterToOneCompany({
+        SR,
+        company,
+        master,
+        publishedVersion,
+        source,
+        distributionEventId,
+        existingJob,
+        existingRecord,
+        now,
       });
 
+      items.push(itemResult);
+
+      if (itemResult.result === 'COMPLETED') {
+        companyJobIds.push(itemResult.companyJobId!);
+        // Track in-memory for intra-loop duplicate prevention
+        if (itemResult.companyJobId) {
+          existingJobByMasterId.set(master.id, { id: itemResult.companyJobId, sourceMasterId: master.id });
+        }
+        completed++;
+      } else if (itemResult.result === 'SKIPPED') {
+        if (itemResult.companyJobId) companyJobIds.push(itemResult.companyJobId);
+        skipped++;
+      } else {
+        failed++;
+      }
+    } catch (outerErr: any) {
       items.push({
         masterId: master.id, masterTitle: master.title,
         result: 'FAILED', companyJobId: null, versionId,
         provisioningRecordId: null, provisioningKey,
-        errorCode, errorMessage,
+        errorCode: 'UNEXPECTED_ERROR',
+        errorMessage: outerErr?.message || 'Unexpected error.',
       });
-      runErrors.push({ sourceMasterId: master.id, code: errorCode, message: errorMessage });
       failed++;
-      continue;
     }
-
-    // ── Check existing record (idempotency) ────────────────────────────────
-    const existingRecord = existingRecordByKey.get(provisioningKey) || null;
-    if (existingRecord?.status === 'COMPLETED' && existingRecord?.companyJobId) {
-      // Already completed successfully — verify the job still exists
-      const existingJob = existingJobByMasterId.get(master.id);
-      if (existingJob) {
-        companyJobIds.push(existingJob.id);
-        items.push({
-          masterId: master.id, masterTitle: master.title,
-          result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
-          companyJobId: existingJob.id,
-          versionId: existingRecord.versionId || versionId,
-          provisioningRecordId: existingRecord.id, provisioningKey,
-        });
-        skipped++;
-        continue;
-      }
-      // Record says COMPLETED but job is missing — fall through to create
-    }
-
-    // ── Check existing Job (duplicate prevention) ──────────────────────────
-    const existingJob = existingJobByMasterId.get(master.id);
-    if (existingJob) {
-      // Partial-state recovery: if record is missing or FAILED but job exists, repair record
-      const repairRecord = await _upsertProvisioningRecord(SR, {
-        existingRecord,
-        provisioningKey, companyId, masterId: master.id, versionId: existingJob.sourceVersionId || versionId,
-        distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-        status: 'SKIPPED', companyJobId: existingJob.id,
-        errorCode: null, errorMessage: null, now,
-        initiatedByUserId,
-      });
-
-      companyJobIds.push(existingJob.id);
-      items.push({
-        masterId: master.id, masterTitle: master.title,
-        result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
-        companyJobId: existingJob.id,
-        versionId: existingJob.sourceVersionId || versionId,
-        provisioningRecordId: repairRecord?.id || existingRecord?.id || null,
-        provisioningKey,
-      });
-      skipped++;
-      continue;
-    }
-
-    // ── Create Company Job ─────────────────────────────────────────────────
-    let createdJob: any = null;
-    let jobCreateError: string | null = null;
-    try {
-      createdJob = await SR.entities.Job.create({
-        companyId,
-        title: master.title,
-        shortDescription: master.description || '',
-        trade: master.trade || '',
-        category: master.category || '',
-        status: 'Published',
-        isArchived: false,
-        sourceType: 'essential_sop',
-        sourceMasterId: master.id,
-        sourceVersionId: version.id,
-        isCustomized: false,
-        customizedAt: null,
-        customizedBy: null,
-      });
-      // Track in-memory to prevent duplicate creation within this loop run
-      existingJobByMasterId.set(master.id, createdJob);
-    } catch (err: any) {
-      jobCreateError = 'Failed to create company job record.';
-    }
-
-    if (!createdJob) {
-      // Write FAILED ProvisioningRecord
-      const failedRec = await _upsertProvisioningRecord(SR, {
-        existingRecord,
-        provisioningKey, companyId, masterId: master.id, versionId,
-        distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-        status: 'FAILED', companyJobId: null,
-        errorCode: 'JOB_CREATE_FAILED', errorMessage: jobCreateError || 'Unknown create error.',
-        now, initiatedByUserId,
-      });
-
-      items.push({
-        masterId: master.id, masterTitle: master.title,
-        result: 'FAILED', companyJobId: null, versionId,
-        provisioningRecordId: failedRec?.id || null, provisioningKey,
-        errorCode: 'JOB_CREATE_FAILED',
-        errorMessage: jobCreateError || 'Unknown create error.',
-      });
-      runErrors.push({ sourceMasterId: master.id, code: 'JOB_CREATE_FAILED', message: 'Failed to create company job.' });
-      failed++;
-      continue;
-    }
-
-    // ── Write COMPLETED ProvisioningRecord ─────────────────────────────────
-    const completedRec = await _upsertProvisioningRecord(SR, {
-      existingRecord,
-      provisioningKey, companyId, masterId: master.id, versionId: version.id,
-      distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-      status: 'COMPLETED', companyJobId: createdJob.id,
-      errorCode: null, errorMessage: null, now,
-      initiatedByUserId,
-    });
-
-    companyJobIds.push(createdJob.id);
-    createdJobIds.push(createdJob.id);
-    items.push({
-      masterId: master.id, masterTitle: master.title,
-      result: 'COMPLETED', companyJobId: createdJob.id,
-      versionId: version.id,
-      provisioningRecordId: completedRec?.id || null,
-      provisioningKey,
-    });
-    completed++;
   }
 
   // ── Build final result ─────────────────────────────────────────────────────
@@ -641,7 +629,6 @@ export async function provisionCompanyLibraryCore(
     : completed > 0 || skipped > 0 ? 'COMPLETED_WITH_ERRORS'
     : 'FAILED';
 
-  // Combine policy-skipped items (pre-loop) with per-master loop items
   const allItems: ProvisioningItemResult[] = [...preSkippedItems, ...items];
 
   const result: ProvisionCompanyLibraryCoreResult = {
@@ -663,23 +650,21 @@ export async function provisionCompanyLibraryCore(
     items: allItems,
   };
 
-  // ── Finalize provisioning run record ──────────────────────────────────────
   await _finalizeRun(SR, runRecord, result, startedAt);
-
-  // ── Audit: provisioning completed ─────────────────────────────────────────
   await _writeCompletionAudit(SR, initiatedByUserId, companyId, runRecord?.id || null, source, result);
 
   return result;
 }
 
 // ── Internal: upsert a ProvisioningRecord ────────────────────────────────────
+// Single implementation — called exclusively by provisionMasterToOneCompany().
 
 async function _upsertProvisioningRecord(SR: any, params: {
   existingRecord: any;
   provisioningKey: string;
   companyId: string;
   masterId: string;
-  versionId: string;
+  versionId: string | null;
   distributionEventId: string | null;
   operationType: string;
   status: string;
@@ -687,12 +672,11 @@ async function _upsertProvisioningRecord(SR: any, params: {
   errorCode: string | null;
   errorMessage: string | null;
   now: string;
-  initiatedByUserId: string;
 }): Promise<any> {
   const {
     existingRecord, provisioningKey, companyId, masterId, versionId,
     distributionEventId, operationType, status, companyJobId,
-    errorCode, errorMessage, now, initiatedByUserId,
+    errorCode, errorMessage, now,
   } = params;
 
   const isCompleted = status === 'COMPLETED' || status === 'SKIPPED';
@@ -710,7 +694,6 @@ async function _upsertProvisioningRecord(SR: any, params: {
     payload.errorCode = null;
     payload.errorMessage = null;
   } else {
-    // FAILED
     payload.completedAt = null;
     payload.errorCode = errorCode || 'UNKNOWN';
     payload.errorMessage = errorMessage || 'Unknown error.';
@@ -718,10 +701,9 @@ async function _upsertProvisioningRecord(SR: any, params: {
 
   try {
     if (existingRecord) {
-      const newAttemptCount = (existingRecord.attemptCount || 0) + 1;
       return await SR.entities.ProvisioningRecord.update(existingRecord.id, {
         ...payload,
-        attemptCount: newAttemptCount,
+        attemptCount: (existingRecord.attemptCount || 0) + 1,
       });
     } else {
       return await SR.entities.ProvisioningRecord.create({
@@ -735,7 +717,6 @@ async function _upsertProvisioningRecord(SR: any, params: {
       });
     }
   } catch (_) {
-    // Non-fatal — provisioning continues even if record write fails
     return null;
   }
 }
@@ -809,7 +790,7 @@ async function _writeCompletionAudit(
   } catch (_) {}
 }
 
-// ── Internal: build a full-failure result when infrastructure is unavailable ──
+// ── Internal: build a full-failure result ─────────────────────────────────────
 
 function _buildFailResult(provisioningRunId: string | null): ProvisionCompanyLibraryCoreResult {
   return {

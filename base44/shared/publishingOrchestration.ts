@@ -68,7 +68,7 @@
  */
 
 import { requirePlatformSuperAdmin, writePlatformAudit } from './platformAuth.ts';
-import { isCompanyEligibleForMaster, buildProvisioningKey } from './companyLibraryProvisioning.ts';
+import { isCompanyEligibleForMaster, buildProvisioningKey, provisionMasterToOneCompany } from './companyLibraryProvisioning.ts';
 
 const VALID_POLICIES = [
   'ALL_EXISTING_AND_FUTURE_COMPANIES',
@@ -530,15 +530,17 @@ export async function updateDistributionPolicy(
 
 // ── Internal: distribute a NEW_SOP to all existing eligible companies ────────
 //
-// Called only when eventType === 'NEW_SOP'. Loads every active company once,
-// evaluates eligibility using the canonical isCompanyEligibleForMaster() engine
-// (same function used by companyLibraryProvisioning.ts), then provisions each
-// eligible company via a direct Job + ProvisioningRecord write.
+// Orchestration responsibilities only:
+//   - Load candidate companies
+//   - Evaluate policy eligibility via isCompanyEligibleForMaster()
+//   - Call canonical provisionMasterToOneCompany() per company
+//   - Catch per-company failures (failure isolation)
+//   - Aggregate counts and update DistributionEvent lifecycle
+//   - Write distribution-level audit entries
 //
-// Isolation: one company failure never stops the loop.
-// Idempotency: existing Jobs and COMPLETED ProvisioningRecords are detected
-//   and skipped without modification.
-// No existing Company Jobs are ever updated, overwritten, or merged.
+// All per-company provisioning logic (Job creation, ProvisioningRecord
+// management, idempotency, partial-state recovery, key generation) is owned
+// exclusively by provisionMasterToOneCompany() in companyLibraryProvisioning.ts.
 
 async function _distributeNewSOPToExistingCompanies(SR: any, params: {
   master: any;
@@ -563,12 +565,11 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
     });
   } catch (_) {}
 
-  // ── Load all active companies once ─────────────────────────────────────────
+  // ── Load all active companies once ────────────────────────────────────────
   let allCompanies: any[] = [];
   try {
     allCompanies = await SR.entities.Company.filter({ status: 'active' }, '-created_date', 1000) || [];
-  } catch (err: any) {
-    // Cannot load companies — mark event FAILED and abort
+  } catch (_) {
     try {
       await SR.entities.DistributionEvent.update(distributionEventId, {
         status: 'FAILED',
@@ -580,31 +581,28 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
     await writePlatformAudit(SR, {
       actingUserId,
       actingUserRole: 'SUPER_ADMIN',
-      action: 'distribution_event_created', // reuse closest available action
+      action: 'distribution_event_created',
       extra: { masterId, versionId, distributionEventId, metadata: { phase: 'FAILED', reason: 'company_load_failed' } },
     });
     return;
   }
 
-  // Policy cutoff for FUTURE_COMPANIES_ONLY
+  // ── Evaluate eligibility via the canonical eligibility function ───────────
   const masterPolicyCutoffDate = master.distributionPolicyUpdatedAt || master.created_date || now;
 
-  // Filter eligible companies in-memory using the canonical eligibility engine
-  const eligibleCompanies = allCompanies.filter((c: any) => {
-    const result = isCompanyEligibleForMaster({
+  const eligibleCompanies = allCompanies.filter((c: any) =>
+    isCompanyEligibleForMaster({
       companyId: c.id,
       companyCreatedDate: c.created_date || now,
       masterPolicy: effectivePolicy,
       masterSelectedCompanyIds: Array.isArray(master.defaultSelectedCompanyIds) ? master.defaultSelectedCompanyIds : [],
       masterPolicyCutoffDate,
       effectiveSelectedIds: normalizedSelectedCompanyIds.length > 0 ? normalizedSelectedCompanyIds : null,
-    });
-    return result.eligible;
-  });
+    }).eligible
+  );
 
   const totalEligible = eligibleCompanies.length;
 
-  // Update event with total eligible count
   try {
     await SR.entities.DistributionEvent.update(distributionEventId, {
       totalEligibleCompanies: totalEligible,
@@ -627,9 +625,12 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
     return;
   }
 
-  // ── Load existing essential_sop Jobs for all eligible companies in one pass ─
-  // Build masterId → Set<companyId> of already-provisioned companies
-  let existingJobCompanyIds = new Set<string>();
+  // ── Bulk pre-load to supply the canonical function's in-memory params ─────
+  // These are passed into provisionMasterToOneCompany() to avoid per-company
+  // DB round-trips. The canonical function never does its own bulk load.
+
+  // Load existing Jobs for this master across all companies
+  const existingJobByCompanyId = new Map<string, any>();
   try {
     const existingJobs = await SR.entities.Job.filter(
       { sourceType: 'essential_sop', sourceMasterId: masterId },
@@ -637,16 +638,15 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
       1000
     ) || [];
     for (const j of existingJobs) {
-      existingJobCompanyIds.add(j.companyId);
+      existingJobByCompanyId.set(j.companyId, j);
     }
   } catch (_) {}
 
-  // ── Load existing ProvisioningRecords for this master across all companies ──
-  // Used for idempotency lookup before insert
+  // Load existing ProvisioningRecords for this master (all companies, canonical key scheme)
   const existingRecordByKey = new Map<string, any>();
   try {
     const existingRecords = await SR.entities.ProvisioningRecord.filter(
-      { masterId, operationType: 'CREATE_NEW_COMPANY_JOB' },
+      { masterId, operationType: 'INITIAL_COMPANY_LIBRARY' },
       '-createdAt',
       1000
     ) || [];
@@ -655,7 +655,7 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
     }
   } catch (_) {}
 
-  // ── Per-company provisioning loop ─────────────────────────────────────────
+  // ── Per-company loop — delegates all provisioning to canonical function ────
   let processed = 0;
   let successful = 0;
   let skipped = 0;
@@ -663,127 +663,40 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
 
   for (const company of eligibleCompanies) {
     const companyId = company.id;
-    const provisioningKey = `dist_${distributionEventId}_${companyId}_${masterId}`;
+    const provisioningKey = buildProvisioningKey(companyId, masterId);
+    const existingJob = existingJobByCompanyId.get(companyId) || null;
+    const existingRecord = existingRecordByKey.get(provisioningKey) || null;
 
     try {
-      // ── Idempotency: check existing ProvisioningRecord ───────────────────
-      const existingRecord = existingRecordByKey.get(provisioningKey) || null;
-      if (existingRecord?.status === 'COMPLETED' && existingRecord?.companyJobId) {
-        processed++;
-        skipped++;
-        continue;
-      }
-
-      // ── Idempotency: check existing Job ──────────────────────────────────
-      if (existingJobCompanyIds.has(companyId)) {
-        // Job exists — record as SKIPPED, do not modify the existing job
-        try {
-          if (!existingRecord) {
-            await SR.entities.ProvisioningRecord.create({
-              distributionEventId,
-              companyId,
-              masterId,
-              versionId,
-              provisioningKey,
-              operationType: 'SKIP_ALREADY_PROVISIONED',
-              status: 'SKIPPED',
-              companyJobId: null, // we don't re-query for the job ID here
-              attemptCount: 1,
-              lastAttemptAt: now,
-              completedAt: now,
-              createdAt: now,
-              updatedAt: now,
-            });
-          }
-        } catch (_) {}
-        processed++;
-        skipped++;
-        continue;
-      }
-
-      // ── Create Company Job ────────────────────────────────────────────────
-      let createdJob: any = null;
-      try {
-        createdJob = await SR.entities.Job.create({
-          companyId,
-          title: master.title,
-          shortDescription: master.description || '',
-          trade: master.trade || '',
-          category: master.category || '',
-          status: 'Published',
-          isArchived: false,
-          sourceType: 'essential_sop',
-          sourceMasterId: masterId,
-          sourceVersionId: versionId,
-          isCustomized: false,
-          customizedAt: null,
-          customizedBy: null,
-        });
-        // Track in-memory to prevent duplicate within this loop
-        existingJobCompanyIds.add(companyId);
-      } catch (jobErr: any) {
-        // Job creation failed — write FAILED ProvisioningRecord
-        try {
-          await SR.entities.ProvisioningRecord.create({
-            distributionEventId,
-            companyId,
-            masterId,
-            versionId,
-            provisioningKey,
-            operationType: 'CREATE_NEW_COMPANY_JOB',
-            status: 'FAILED',
-            companyJobId: null,
-            errorCode: 'JOB_CREATE_FAILED',
-            errorMessage: 'Failed to create company job record.',
-            attemptCount: 1,
-            lastAttemptAt: now,
-            createdAt: now,
-            updatedAt: now,
-          });
-        } catch (_) {}
-        processed++;
-        failed++;
-        continue;
-      }
-
-      // ── Write COMPLETED ProvisioningRecord ────────────────────────────────
-      try {
-        const rec = existingRecord
-          ? await SR.entities.ProvisioningRecord.update(existingRecord.id, {
-              status: 'COMPLETED',
-              companyJobId: createdJob.id,
-              versionId,
-              distributionEventId,
-              lastAttemptAt: now,
-              completedAt: now,
-              errorCode: null,
-              errorMessage: null,
-              updatedAt: now,
-              attemptCount: (existingRecord.attemptCount || 0) + 1,
-            })
-          : await SR.entities.ProvisioningRecord.create({
-              distributionEventId,
-              companyId,
-              masterId,
-              versionId,
-              provisioningKey,
-              operationType: 'CREATE_NEW_COMPANY_JOB',
-              status: 'COMPLETED',
-              companyJobId: createdJob.id,
-              attemptCount: 1,
-              lastAttemptAt: now,
-              completedAt: now,
-              createdAt: now,
-              updatedAt: now,
-            });
-        existingRecordByKey.set(provisioningKey, rec);
-      } catch (_) {}
+      // ── Delegate to the canonical per-company provisioning function ──────
+      const itemResult = await provisionMasterToOneCompany({
+        SR,
+        company,
+        master,
+        publishedVersion: version,
+        source: 'FUTURE_DISTRIBUTION_EVENT',
+        distributionEventId,
+        existingJob,
+        existingRecord,
+        now,
+      });
 
       processed++;
-      successful++;
+
+      if (itemResult.result === 'COMPLETED') {
+        // Track in-memory for intra-loop duplicate prevention
+        if (itemResult.companyJobId) {
+          existingJobByCompanyId.set(companyId, { id: itemResult.companyJobId, companyId, sourceMasterId: masterId });
+        }
+        successful++;
+      } else if (itemResult.result === 'SKIPPED') {
+        skipped++;
+      } else {
+        failed++;
+      }
 
     } catch (outerErr: any) {
-      // Catch-all — ensures one company never stops the loop
+      // Catch-all — ensures one company failure never stops the loop
       processed++;
       failed++;
     }
@@ -815,7 +728,7 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
   await writePlatformAudit(SR, {
     actingUserId,
     actingUserRole: 'SUPER_ADMIN',
-    action: 'publication_completed', // closest available enum value
+    action: 'publication_completed',
     extra: {
       masterId,
       masterTitle: master.title,
