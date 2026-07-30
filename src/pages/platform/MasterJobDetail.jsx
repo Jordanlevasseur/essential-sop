@@ -32,7 +32,7 @@ function normalizeMasterToJob(master) {
     category:          master.category || '',
     skillLevel:        null,
     estimatedDuration: null,
-    tags:              [],
+    tags:              Array.isArray(master.tags) ? master.tags : [],
     // pass-through for platform metadata display
     _status:           master.status,
     _currentPublishedVersionId: master.currentPublishedVersionId,

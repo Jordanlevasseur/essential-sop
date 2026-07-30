@@ -55,7 +55,8 @@ export default function MasterSOPEditor() {
 
   // Meta editing
   const [editingMeta, setEditingMeta] = useState(false);
-  const [metaFields, setMetaFields] = useState({ title: '', category: '', trade: '', description: '' });
+  const [metaFields, setMetaFields] = useState({ title: '', category: '', trade: '', description: '', tags: [] });
+  const [tagInput, setTagInput] = useState('');
 
   // Save state
   const [saveStatus, setSaveStatus] = useState(STATUS.IDLE);
@@ -103,7 +104,7 @@ export default function MasterSOPEditor() {
       setCurrentUserId(userId);
       setMaster(m);
       setSections(s || []);
-      setMetaFields({ title: m.title, category: m.category || '', trade: m.trade || '', description: m.description || '' });
+      setMetaFields({ title: m.title, category: m.category || '', trade: m.trade || '', description: m.description || '', tags: Array.isArray(m.tags) ? m.tags : [] });
       const rev = m.draftRevision ?? 0;
       setDraftRevision(rev);
       draftRevisionRef.current = rev;
@@ -681,6 +682,51 @@ export default function MasterSOPEditor() {
                 className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
                 placeholder="Description (optional)"
               />
+              {/* Tags */}
+              <div>
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {(metaFields.tags || []).map(tag => (
+                    <span key={tag} className="flex items-center gap-1 px-2 py-0.5 bg-app-info-bg text-app-accent text-xs rounded-full font-medium">
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => handleMetaChange('tags', metaFields.tags.filter(t => t !== tag))}
+                        className="text-app-accent/60 hover:text-app-danger ml-0.5"
+                        aria-label={`Remove tag ${tag}`}
+                      >×</button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={e => {
+                      if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
+                        e.preventDefault();
+                        const newTag = tagInput.trim().replace(/,$/, '');
+                        if (newTag && !(metaFields.tags || []).includes(newTag)) {
+                          handleMetaChange('tags', [...(metaFields.tags || []), newTag]);
+                        }
+                        setTagInput('');
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+                    placeholder="Add tag (Enter or comma to add)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newTag = tagInput.trim();
+                      if (newTag && !(metaFields.tags || []).includes(newTag)) {
+                        handleMetaChange('tags', [...(metaFields.tags || []), newTag]);
+                      }
+                      setTagInput('');
+                    }}
+                    className="px-3 py-2 border border-app-border rounded-lg text-sm text-app-text-2 hover:border-app-accent"
+                  >Add</button>
+                </div>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={saveMeta}
@@ -698,6 +744,13 @@ export default function MasterSOPEditor() {
                 <h2 className="text-lg font-bold text-app-text mb-1">{master?.title}</h2>
                 <p className="text-xs text-app-accent font-medium mb-1">{[master?.trade, master?.category].filter(Boolean).join(' · ')}</p>
                 {master?.description && <p className="text-sm text-app-text-2">{master.description}</p>}
+                {master?.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {master.tags.map(tag => (
+                      <span key={tag} className="px-2 py-0.5 bg-app-info-bg text-app-accent text-xs rounded-full font-medium">{tag}</span>
+                    ))}
+                  </div>
+                )}
                 {isActive && master?.currentPublishedVersionId && (
                   <p className="text-xs text-app-text-muted mt-2 flex items-center gap-1">
                     <CheckCircle2 size={11} className="text-app-success" /> Published version active

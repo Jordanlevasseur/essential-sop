@@ -45,6 +45,18 @@ export default function MasterJobCard({ master, onClick }) {
             {[master.trade, master.category].filter(Boolean).join(' · ') || 'No trade set'}
           </p>
 
+          {/* Tags */}
+          {master.tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {master.tags.slice(0, 4).map(tag => (
+                <span key={tag} className="px-1.5 py-0.5 bg-app-info-bg text-app-accent text-[10px] rounded font-medium">{tag}</span>
+              ))}
+              {master.tags.length > 4 && (
+                <span className="px-1.5 py-0.5 bg-app-elevated text-app-text-muted text-[10px] rounded">+{master.tags.length - 4}</span>
+              )}
+            </div>
+          )}
+
           {/* Platform-specific metadata row */}
           <div className="flex items-center gap-3 mt-2 flex-wrap">
             {hasVersion && (

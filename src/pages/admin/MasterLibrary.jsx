@@ -48,7 +48,8 @@ export default function MasterLibrary() {
       list = list.filter(m =>
         m.title?.toLowerCase().includes(q) ||
         m.trade?.toLowerCase().includes(q) ||
-        m.category?.toLowerCase().includes(q)
+        m.category?.toLowerCase().includes(q) ||
+        (m.tags || []).some(t => t.toLowerCase().includes(q))
       );
     }
     // Most recently updated first

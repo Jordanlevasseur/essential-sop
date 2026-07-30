@@ -15,6 +15,13 @@
     "trade": {
       "type": "string"
     },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Freeform classification tags, e.g. ['Interior', 'Apprentice', 'Safety']"
+    },
     "status": {
       "type": "string",
       "enum": [
@@ -64,11 +71,11 @@
     "draftRevision": {
       "type": "number",
       "default": 0,
-      "description": "Monotonically incremented on every successful draft save. Used for optimistic concurrency control. Client must submit expectedDraftRevision matching this value; server rejects stale writes with DRAFT_CONFLICT. Reset to 0 on new draft creation. Not present on non-draft (active/archived) masters \u2014 not applicable once published."
+      "description": "Monotonically incremented on every successful draft save. Used for optimistic concurrency control."
     },
     "draftLastSavedByUserId": {
       "type": "string",
-      "description": "userId of the admin who last successfully saved this draft. Returned in DRAFT_CONFLICT responses so the conflicting party can be identified."
+      "description": "userId of the admin who last successfully saved this draft."
     },
     "createdAt": {
       "type": "string",

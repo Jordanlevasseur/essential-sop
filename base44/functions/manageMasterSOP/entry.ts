@@ -250,12 +250,13 @@ export default async function(req) {
 
     // ── CREATE ───────────────────────────────────────────────────────────────
     if (action === 'create') {
-      const { title, category, trade, description } = body;
+      const { title, category, trade, description, tags } = body;
       if (!title) return Response.json({ error: 'title is required' }, { status: 400 });
       const slug = slugify(title) + '-' + Date.now().toString(36);
       const master = await SR.entities.EssentialSOPMaster.create({
         title, slug,
         category: category || '', trade: trade || '', description: description || '',
+        tags: Array.isArray(tags) ? tags : [],
         status: 'draft', currentPublishedVersionId: null,
         draftRevision: 0, draftLastSavedByUserId: user.id,
         createdAt: now, updatedAt: now,
@@ -312,7 +313,7 @@ export default async function(req) {
       const newRevision = serverRevision + 1;
 
       if (fields) {
-        const allowed = ['title', 'category', 'trade', 'description'];
+        const allowed = ['title', 'category', 'trade', 'description', 'tags'];
         const update: any = { draftRevision: newRevision, draftLastSavedByUserId: user.id, updatedAt: now };
         for (const k of allowed) { if (fields[k] !== undefined) update[k] = fields[k]; }
         if (fields.title) update.slug = slugify(fields.title) + '-' + Date.now().toString(36);
@@ -369,6 +370,7 @@ export default async function(req) {
         title: source.title + ' (Copy)', slug: newSlug,
         category: source.category, trade: source.trade,
         description: source.description || '',
+        tags: Array.isArray(source.tags) ? [...source.tags] : [],
         status: 'draft', currentPublishedVersionId: null,
         draftRevision: 0, draftLastSavedByUserId: user.id,
         createdAt: now, updatedAt: now,
