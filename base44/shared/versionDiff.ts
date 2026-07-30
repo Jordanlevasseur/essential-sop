@@ -283,6 +283,11 @@ export function diffSection(
         resolutionRequired: true, resolutionOptions: RESOLUTION_OPTIONS,
       });
     } else {
+      // Item removed from master. Company may still have an override entry for it (unmodified copy).
+      // Expose companyValue so the ORPHANED classification path in versionAnalysisService is reachable.
+      const orphanedCompanyValue = companyItem
+        ? { title: companyItem.title, body: companyItem.body, _itemId: companyItem._itemId }
+        : null;
       changes.push({
         changeId, sectionType,
         baseItemId: baseItem._stableId, targetItemId: null,
@@ -290,7 +295,7 @@ export function diffSection(
         fieldLabel: baseItem.title || `Item ${changeCounter}`,
         changeType: CHANGE_TYPES.MASTER_REMOVED,
         baseValue: { title: baseItem.title, body: baseItem.body },
-        targetValue: null, companyValue: null,
+        targetValue: null, companyValue: orphanedCompanyValue,
         conflictSubtype: null, resolutionRequired: false, resolutionOptions: [],
       });
     }
