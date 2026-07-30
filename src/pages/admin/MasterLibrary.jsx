@@ -27,8 +27,8 @@ export default function MasterLibrary() {
     try {
       const res = await base44.functions.invoke('manageMasterSOP', { action: 'list' });
       setMasters(res.data?.masters || []);
-    } catch (e) {
-      console.error(e);
+    } catch (_) {
+      // non-fatal — list stays empty
     }
     setLoading(false);
   };

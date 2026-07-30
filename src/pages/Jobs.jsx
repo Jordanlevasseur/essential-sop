@@ -202,7 +202,21 @@ export default function Jobs() {
       <div className="space-y-3">
         {!search && <h2 className="text-sm font-semibold text-app-text-2">All Jobs</h2>}
         {filteredJobs.length === 0 ? (
-          <div className="text-center py-12 text-app-text-muted text-sm">No jobs found.</div>
+          <div className="text-center py-12">
+            <p className="text-app-text-muted text-sm mb-3">
+              {search || Object.values(filters).some(Boolean)
+                ? 'No jobs match your search or filters.'
+                : 'No published jobs yet.'}
+            </p>
+            {!search && !Object.values(filters).some(Boolean) && isCompanyAdmin && (
+              <button
+                onClick={() => navigate('/create-job')}
+                className="px-4 py-2 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium inline-flex items-center gap-1.5"
+              >
+                <Plus size={15} /> Create your first job
+              </button>
+            )}
+          </div>
         ) : (
           filteredJobs.map(job => {
             const match = searchResults?.find(r => r.job.id === job.id)?.match;

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { resetDemoData } from '@/lib/seedData';
@@ -218,7 +219,11 @@ export default function Profile() {
       <Section title="Account">
         <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />
         <Divider />
-        <Row icon={LogOut} label="Sign Out" onClick={() => { localStorage.clear(); window.location.href = '/'; }} />
+        <Row icon={LogOut} label="Sign Out" onClick={() => {
+          // Only clear this app's known keys — do not wipe origin-wide localStorage
+          ['esop_mode','esop_favorites','esop_recent','esop_prefs','esop_session','esop_user','esop_fav_init'].forEach(k => localStorage.removeItem(k));
+          base44.auth.logout('/');
+        }} />
       </Section>
 
       <Section title="Legal">
@@ -253,7 +258,7 @@ export default function Profile() {
 
       {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
 
-      <p className="text-xs text-app-text-muted text-center mt-6">Essential SOP v1.0 · Prototype</p>
+      <p className="text-xs text-app-text-muted text-center mt-6">Essential SOP v4.2</p>
     </div>
   );
 }

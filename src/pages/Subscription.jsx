@@ -9,7 +9,7 @@ import { ArrowLeft, CreditCard, Users, ArrowUp, ArrowDown, AlertTriangle, CheckC
 export default function Subscription() {
   const navigate = useNavigate();
   const { activeCompany, refreshCompanies, activeMembership } = useCompany();
-  const { isAdmin } = useApp();
+  const { isCompanyAdmin: isAdmin } = useApp();
   const [usage, setUsage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [planAction, setPlanAction] = useState(null); // { plan, type: 'upgrade'|'downgrade' }
