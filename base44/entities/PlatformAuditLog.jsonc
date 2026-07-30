@@ -26,7 +26,17 @@
         "distribution_policy_changed",
         "publication_requested",
         "publication_completed",
-        "publication_failed"
+        "publication_failed",
+        "version_decision_created",
+        "version_decision_already_exists",
+        "version_decision_superseded",
+        "version_decision_creation_failed",
+        "new_version_decision_distribution_completed",
+        "version_analysis_started",
+        "version_analysis_completed",
+        "version_analysis_failed",
+        "version_analysis_reused",
+        "version_analysis_marked_stale"
       ]
     },
     "targetUserId": {

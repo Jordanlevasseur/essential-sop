@@ -1,0 +1,226 @@
+{
+  "name": "CompanyVersionAnalysis",
+  "type": "object",
+  "description": "Platform-owned record representing the result of a version compatibility analysis for a Company Job. Created exclusively by analyzeCompanyJobVersionUpdate(). No client writes permitted. Immutable after status=COMPLETED. One logical analysis per (companyJobId, fromVersionId, toVersionId, overrideStateFingerprint, analysisSchemaVersion) tuple, enforced via deterministic analysisKey.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "Company that owns the Company Job."
+    },
+    "companyJobId": {
+      "type": "string",
+      "description": "The stable Company Job ID (Job.id) this analysis pertains to."
+    },
+    "masterId": {
+      "type": "string",
+      "description": "EssentialSOPMaster.id this Company Job was provisioned from."
+    },
+    "fromVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id the Company Job is currently pinned to."
+    },
+    "toVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id being analyzed as the potential update target."
+    },
+    "companyVersionDecisionId": {
+      "type": "string",
+      "description": "Optional CompanyVersionDecision.id that initiated or is associated with this analysis."
+    },
+    "analysisKey": {
+      "type": "string",
+      "description": "Deterministic deduplication key: 'VERSION_ANALYSIS:{companyJobId}:{fromVersionId}:{toVersionId}:{overrideStateFingerprint}:{analysisSchemaVersion}'. Stored at creation; used to detect and reuse existing analyses with identical inputs."
+    },
+    "analysisSchemaVersion": {
+      "type": "string",
+      "description": "Version of the analysis schema used to produce this result. Bump when the output structure or classification rules change."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "ANALYZING",
+        "COMPLETED",
+        "FAILED",
+        "STALE"
+      ],
+      "default": "PENDING",
+      "description": "Lifecycle status. PENDING=created, ANALYZING=in progress, COMPLETED=successful, FAILED=error, STALE=inputs changed since completion."
+    },
+    "overrideStateFingerprint": {
+      "type": "string",
+      "description": "Deterministic fingerprint of the override state at analysis time. If override changes, fingerprint changes and a new analysis key is required."
+    },
+    "masterChangeSummary": {
+      "type": "object",
+      "description": "Counts of master content changes: additions, removals, modifications, reorders.",
+      "properties": {
+        "additions": {
+          "type": "number"
+        },
+        "removals": {
+          "type": "number"
+        },
+        "modifications": {
+          "type": "number"
+        },
+        "reorders": {
+          "type": "number"
+        }
+      }
+    },
+    "overrideCompatibilitySummary": {
+      "type": "object",
+      "description": "Counts of override compatibility classifications.",
+      "properties": {
+        "safe": {
+          "type": "number"
+        },
+        "reviewRequired": {
+          "type": "number"
+        },
+        "orphaned": {
+          "type": "number"
+        },
+        "invalid": {
+          "type": "number"
+        },
+        "noOp": {
+          "type": "number"
+        }
+      }
+    },
+    "safeCount": {
+      "type": "number",
+      "default": 0
+    },
+    "reviewRequiredCount": {
+      "type": "number",
+      "default": 0
+    },
+    "orphanedCount": {
+      "type": "number",
+      "default": 0
+    },
+    "invalidCount": {
+      "type": "number",
+      "default": 0
+    },
+    "noOpCount": {
+      "type": "number",
+      "default": 0
+    },
+    "canAutoAdopt": {
+      "type": "boolean",
+      "default": false,
+      "description": "True only when analysis completed successfully, invalidCount=0, orphanedCount=0, reviewRequiredCount=0, and every active override is SAFE or a verified no-op."
+    },
+    "itemResults": {
+      "type": "array",
+      "description": "Per-override-field and per-master-change item-level analysis results.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "logicalItemId": {
+            "type": "string"
+          },
+          "currentItemId": {
+            "type": "string"
+          },
+          "targetItemId": {
+            "type": "string"
+          },
+          "parentLogicalItemId": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "masterChangeTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overrideId": {
+            "type": "string"
+          },
+          "overriddenFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "compatibility": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "reasonMessage": {
+            "type": "string"
+          },
+          "currentMasterValues": {
+            "type": "object"
+          },
+          "companyOverrideValues": {
+            "type": "object"
+          },
+          "targetMasterValues": {
+            "type": "object"
+          },
+          "requiresAdminAction": {
+            "type": "boolean"
+          },
+          "recommendedDefaultAction": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requestedByUserId": {
+      "type": "string",
+      "description": "userId of the user who requested this analysis."
+    },
+    "requestedByRole": {
+      "type": "string",
+      "description": "Platform or company role context of the requester."
+    },
+    "errorCode": {
+      "type": "string"
+    },
+    "errorMessage": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "companyId",
+    "companyJobId",
+    "masterId",
+    "fromVersionId",
+    "toVersionId",
+    "analysisKey",
+    "analysisSchemaVersion",
+    "status",
+    "overrideStateFingerprint",
+    "createdAt"
+  ]
+}
