@@ -1,38 +1,84 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * MasterSOPEditor — Edit 5F
+ *
+ * Phases delivered:
+ *  1 — Rich section/item editor (content types, metadata fields)
+ *  2 — Autosave + draft recovery (localStorage)
+ *  3 — Version impact preview (in publish dialog)
+ *  4 — Structured change summary on publish
+ *  5 — Publish validation (errors block, warnings inform)
+ *  6 — Version timeline (replaces history modal)
+ *  7 — Version comparison (side-by-side)
+ *  8 — Rollback (creates new version from old snapshot)
+ *  9 — UX polish throughout
+ */
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { ArrowLeft, Save, Send, Archive, Copy, Trash2, Plus, Pencil, History, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import {
+  ArrowLeft, Save, Send, Archive, Copy, Trash2,
+  History, AlertTriangle, CheckCircle2, Clock, Pencil,
+} from 'lucide-react';
+import SopSectionEditor from '@/components/admin/sop/SopSectionEditor';
+import SopPublishDialog from '@/components/admin/sop/SopPublishDialog';
+import SopVersionTimeline from '@/components/admin/sop/SopVersionTimeline';
+import SopVersionCompare from '@/components/admin/sop/SopVersionCompare';
+import { saveDraft, readDraft, clearDraft, hasFresherDraft } from '@/components/admin/sop/SopAutosave';
+import { validateForPublish } from '@/components/admin/sop/SopPublishValidation';
 
 const SECTION_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
 const SECTION_TITLES = { tools: 'Tools', materials: 'Materials', scope: 'Scope', procedure: 'Procedure', safety: 'Safety', quality: 'Quality Standards' };
 
+// Autosave interval — 30 seconds after last change
+const AUTOSAVE_DELAY_MS = 30_000;
+
 export default function MasterSOPEditor() {
   const { masterId } = useParams();
   const navigate = useNavigate();
+
   const [master, setMaster] = useState(null);
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [versions, setVersions] = useState([]);
+  const [saveError, setSaveError] = useState(null);
+
+  // Meta editing
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaFields, setMetaFields] = useState({ title: '', category: '', trade: '', description: '' });
-  const [activeSection, setActiveSection] = useState(null);
-  const [editingItem, setEditingItem] = useState(null); // { sectionId, index } | null
-  const [itemDraft, setItemDraft] = useState({ title: '', body: '' });
-  const [changeNotes, setChangeNotes] = useState('');
-  const [showPublishConfirm, setShowPublishConfirm] = useState(false);
 
+  // Dirty / autosave state
+  const [isDirty, setIsDirty] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const autosaveTimerRef = useRef(null);
+
+  // Panels
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [versions, setVersions] = useState([]);
+  const [compareVersions, setCompareVersions] = useState(null); // { a, b }
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState(null);
+  const [publishSuccess, setPublishSuccess] = useState(false);
+
+  // ── Load ───────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
+    setSaveError(null);
     try {
       const res = await base44.functions.invoke('manageMasterSOP', { action: 'get', masterId });
       const { master: m, sections: s } = res.data;
       setMaster(m);
       setSections(s || []);
       setMetaFields({ title: m.title, category: m.category || '', trade: m.trade || '', description: m.description || '' });
+
+      // Check for a fresher local draft
+      if (m.status === 'draft' && hasFresherDraft(masterId, m.updatedAt)) {
+        setShowDraftBanner(true);
+      }
     } catch (e) {
-      alert('Failed to load: ' + e.message);
+      setSaveError('Failed to load SOP: ' + e.message);
       navigate('/admin/master-library');
     }
     setLoading(false);
@@ -40,67 +86,130 @@ export default function MasterSOPEditor() {
 
   useEffect(() => { load(); }, [load]);
 
-  const loadHistory = async () => {
+  const loadVersionHistory = async () => {
     const res = await base44.functions.invoke('manageMasterSOP', { action: 'get_history', masterId });
     setVersions(res.data?.versions || []);
-    setShowHistory(true);
   };
 
+  const openTimeline = async () => {
+    await loadVersionHistory();
+    setShowTimeline(true);
+  };
+
+  // ── Autosave to localStorage ───────────────────────────────────────────────
+  const scheduleAutosave = useCallback((updatedSections, updatedMeta) => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      saveDraft(masterId, {
+        sections: updatedSections,
+        metaFields: updatedMeta,
+        serverUpdatedAt: master?.updatedAt,
+      });
+      setLastSaved(new Date());
+    }, AUTOSAVE_DELAY_MS);
+    setIsDirty(true);
+  }, [masterId, master?.updatedAt]);
+
+  useEffect(() => {
+    return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); };
+  }, []);
+
+  // ── Restore local draft ────────────────────────────────────────────────────
+  const restoreDraft = () => {
+    const draft = readDraft(masterId);
+    if (!draft) return;
+    if (draft.sections) setSections(draft.sections);
+    if (draft.metaFields) setMetaFields(draft.metaFields);
+    setDraftRestored(true);
+    setShowDraftBanner(false);
+    setIsDirty(true);
+  };
+
+  const discardDraft = () => {
+    clearDraft(masterId);
+    setShowDraftBanner(false);
+  };
+
+  // ── Save section to server ─────────────────────────────────────────────────
+  const saveSection = useCallback(async (sectionId, contentItems) => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await base44.functions.invoke('manageMasterSOP', {
+        action: 'update_draft',
+        masterId,
+        sectionId,
+        contentItems,
+      });
+      setSections(prev => prev.map(s => s.id === sectionId ? { ...s, contentItems } : s));
+      clearDraft(masterId);
+      setIsDirty(false);
+      setLastSaved(new Date());
+    } catch (e) {
+      setSaveError('Save failed: ' + e.message);
+      // Keep local draft
+      saveDraft(masterId, { sections, metaFields, serverUpdatedAt: master?.updatedAt });
+    }
+    setSaving(false);
+  }, [masterId, sections, metaFields, master?.updatedAt]);
+
+  const saveSectionWithAutosave = useCallback(async (sectionId, contentItems) => {
+    const updated = sections.map(s => s.id === sectionId ? { ...s, contentItems } : s);
+    scheduleAutosave(updated, metaFields);
+    return saveSection(sectionId, contentItems);
+  }, [sections, metaFields, scheduleAutosave, saveSection]);
+
+  // ── Save meta ──────────────────────────────────────────────────────────────
   const saveMeta = async () => {
     setSaving(true);
-    await base44.functions.invoke('manageMasterSOP', { action: 'update_draft', masterId, fields: metaFields });
-    await load();
-    setEditingMeta(false);
-    setSaving(false);
-  };
-
-  const saveSection = async (sectionId, contentItems) => {
-    setSaving(true);
-    await base44.functions.invoke('manageMasterSOP', { action: 'update_draft', masterId, sectionId, contentItems });
-    setSections(prev => prev.map(s => s.id === sectionId ? { ...s, contentItems } : s));
-    setSaving(false);
-  };
-
-  const addItem = async (sectionId) => {
-    const section = sections.find(s => s.id === sectionId);
-    if (!section) return;
-    const items = [...(section.contentItems || []), { title: '', body: '', sortOrder: (section.contentItems || []).length }];
-    await saveSection(sectionId, items);
-    setEditingItem({ sectionId, index: items.length - 1 });
-    setItemDraft({ title: '', body: '' });
-  };
-
-  const commitItem = async () => {
-    if (!editingItem) return;
-    const { sectionId, index } = editingItem;
-    const section = sections.find(s => s.id === sectionId);
-    if (!section) return;
-    const items = [...(section.contentItems || [])];
-    items[index] = { ...items[index], ...itemDraft };
-    await saveSection(sectionId, items);
-    setEditingItem(null);
-  };
-
-  const deleteItem = async (sectionId, index) => {
-    const section = sections.find(s => s.id === sectionId);
-    if (!section) return;
-    const items = (section.contentItems || []).filter((_, i) => i !== index).map((item, i) => ({ ...item, sortOrder: i }));
-    await saveSection(sectionId, items);
-  };
-
-  const handlePublish = async () => {
-    setSaving(true);
+    setSaveError(null);
     try {
-      await base44.functions.invoke('manageMasterSOP', { action: 'publish', masterId, changeNotes });
-      await load();
-      setShowPublishConfirm(false);
-      setChangeNotes('');
+      await base44.functions.invoke('manageMasterSOP', {
+        action: 'update_draft',
+        masterId,
+        fields: metaFields,
+      });
+      const updated = await base44.functions.invoke('manageMasterSOP', { action: 'get', masterId });
+      setMaster(updated.data.master);
+      clearDraft(masterId);
+      setIsDirty(false);
+      setLastSaved(new Date());
+      setEditingMeta(false);
     } catch (e) {
-      alert('Publish failed: ' + e.message);
+      setSaveError('Save failed: ' + e.message);
     }
     setSaving(false);
   };
 
+  // ── Publish ────────────────────────────────────────────────────────────────
+  const openPublishDialog = () => {
+    setPublishError(null);
+    setShowPublishDialog(true);
+  };
+
+  const handlePublish = async ({ mutationKey, changeSummary }) => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      await base44.functions.invoke('manageMasterSOP', {
+        action: 'publish',
+        masterId,
+        publicationMutationKey: mutationKey,
+        changeSummary,
+      });
+      clearDraft(masterId);
+      setIsDirty(false);
+      setShowPublishDialog(false);
+      setPublishSuccess(true);
+      setTimeout(() => setPublishSuccess(false), 4000);
+      await load();
+    } catch (e) {
+      setPublishError('Publish failed: ' + e.message);
+    }
+    setPublishing(false);
+  };
+
+  // ── Archive / Delete ───────────────────────────────────────────────────────
   const handleArchive = async () => {
     if (!confirm('Archive this SOP? It will no longer be available for provisioning.')) return;
     await base44.functions.invoke('manageMasterSOP', { action: 'archive', masterId });
@@ -108,7 +217,7 @@ export default function MasterSOPEditor() {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Permanently delete this Draft SOP and all its content?')) return;
+    if (!confirm('Permanently delete this Draft SOP?')) return;
     await base44.functions.invoke('manageMasterSOP', { action: 'delete_draft', masterId });
     navigate('/admin/master-library');
   };
@@ -119,6 +228,23 @@ export default function MasterSOPEditor() {
     if (dup) navigate(`/admin/master-library/${dup.id}`);
   };
 
+  // ── Rollback ───────────────────────────────────────────────────────────────
+  const handleRollback = async (targetVersion) => {
+    const mutationKey = `rollback_${masterId}_from_v${targetVersion.versionNumber}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const changeSummary = `Rollback to v${targetVersion.versionNumber} (${new Date().toLocaleDateString()})`;
+    await base44.functions.invoke('manageMasterSOP', {
+      action: 'rollback_to_version',
+      masterId,
+      targetVersionId: targetVersion.id,
+      publicationMutationKey: mutationKey,
+      changeSummary,
+    });
+    clearDraft(masterId);
+    setShowTimeline(false);
+    await load();
+  };
+
+  // ── Loading / Error states ─────────────────────────────────────────────────
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-app-bg">
       <div className="w-8 h-8 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />
@@ -127,37 +253,84 @@ export default function MasterSOPEditor() {
 
   const isDraft = master?.status === 'draft';
   const isActive = master?.status === 'active';
+  const validation = isDraft ? validateForPublish(metaFields, sections) : { errors: [], warnings: [], valid: true };
 
   return (
     <div className="min-h-screen bg-app-bg">
-      {/* Header */}
-      <div className="bg-app-surface border-b border-app-border sticky top-0 z-40 px-6 py-3">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <button onClick={() => navigate('/admin/master-library')} className="icon-btn text-app-text-2"><ArrowLeft size={20} /></button>
+      {/* Sticky header */}
+      <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (isDirty && !confirm('You have unsaved changes. Leave anyway?')) return;
+              navigate('/admin/master-library');
+            }}
+            className="icon-btn text-app-text-2 hover:text-app-text"
+          >
+            <ArrowLeft size={20} />
+          </button>
+
           <div className="flex-1 min-w-0">
             <h1 className="font-semibold text-app-text truncate">{master?.title}</h1>
-            <p className="text-xs text-app-text-muted capitalize">{master?.status === 'active' ? 'Published' : master?.status}</p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`capitalize font-medium ${
+                master?.status === 'active' ? 'text-app-success' :
+                master?.status === 'draft' ? 'text-app-warning' : 'text-app-text-muted'
+              }`}>
+                {master?.status === 'active' ? 'Published' : master?.status}
+              </span>
+              {isDirty && <span className="text-app-warning flex items-center gap-1"><Clock size={10} /> Unsaved changes</span>}
+              {!isDirty && lastSaved && (
+                <span className="text-app-text-muted flex items-center gap-1">
+                  <CheckCircle2 size={10} /> Saved {lastSaved.toLocaleTimeString()}
+                </span>
+              )}
+              {saving && <span className="text-app-accent animate-pulse">Saving…</span>}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={loadHistory} className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent">
-              <History size={13} /> History
+
+          {/* Header actions */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
+              onClick={openTimeline}
+              className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent transition-colors"
+            >
+              <History size={13} /> Timeline
             </button>
-            <button onClick={handleDuplicate} className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent">
+            <button
+              onClick={handleDuplicate}
+              className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent transition-colors"
+            >
               <Copy size={13} /> Duplicate
             </button>
             {isDraft && (
               <>
-                <button onClick={handleDelete} className="px-3 py-1.5 border border-app-danger/40 rounded-lg text-xs text-app-danger flex items-center gap-1.5">
+                <button
+                  onClick={handleDelete}
+                  className="px-3 py-1.5 border border-app-danger/40 rounded-lg text-xs text-app-danger flex items-center gap-1.5 hover:bg-app-danger-bg transition-colors"
+                >
                   <Trash2 size={13} /> Delete
                 </button>
-                <button onClick={() => setShowPublishConfirm(true)} className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                <button
+                  onClick={openPublishDialog}
+                  disabled={saving}
+                  className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50 relative"
+                >
                   <Send size={13} /> Publish
+                  {validation.errors.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-app-danger text-white rounded-full text-[10px] flex items-center justify-center font-bold">
+                      {validation.errors.length}
+                    </span>
+                  )}
                 </button>
               </>
             )}
             {(isActive || master?.status === 'archived') && (
-              <button onClick={handleArchive} disabled={master?.status === 'archived'}
-                className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 disabled:opacity-40">
+              <button
+                onClick={handleArchive}
+                disabled={master?.status === 'archived'}
+                className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 disabled:opacity-40"
+              >
                 <Archive size={13} /> Archive
               </button>
             )}
@@ -166,23 +339,93 @@ export default function MasterSOPEditor() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-6">
-        {/* Meta */}
+        {/* Publish success toast */}
+        {publishSuccess && (
+          <div className="mb-4 flex items-center gap-2 p-3.5 bg-app-success-bg border border-app-success/30 rounded-xl text-sm text-app-success font-medium">
+            <CheckCircle2 size={16} /> Version published successfully!
+          </div>
+        )}
+
+        {/* Save error */}
+        {saveError && (
+          <div className="mb-4 flex items-center gap-2 p-3.5 bg-app-danger-bg border border-app-danger/30 rounded-xl text-sm text-app-danger">
+            <AlertTriangle size={16} /> {saveError}
+          </div>
+        )}
+
+        {/* Draft recovery banner */}
+        {showDraftBanner && (
+          <div className="mb-4 p-4 bg-app-warning-bg border border-app-warning/30 rounded-xl">
+            <div className="flex items-start gap-3">
+              <Clock size={16} className="text-app-warning flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-app-text mb-1">Unfinished draft found</p>
+                <p className="text-xs text-app-text-2 mb-3">
+                  A locally saved draft is newer than the server version. Would you like to restore it?
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={restoreDraft} className="px-3 py-1.5 bg-app-warning text-white rounded-lg text-xs font-semibold">
+                    Restore Draft
+                  </button>
+                  <button onClick={discardDraft} className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {draftRestored && (
+          <div className="mb-4 flex items-center gap-2 p-3 bg-app-info-bg border border-app-info/20 rounded-xl text-xs text-app-info">
+            <CheckCircle2 size={13} /> Local draft restored. Save to commit these changes to the server.
+          </div>
+        )}
+
+        {/* Read-only notice */}
+        {!isDraft && (
+          <div className="mb-4 px-4 py-3 bg-app-info-bg border border-app-info/30 rounded-xl text-sm text-app-info flex items-center gap-2">
+            <AlertTriangle size={14} /> This version is published and read-only. Duplicate it to create a new editable draft.
+          </div>
+        )}
+
+        {/* Meta card */}
         <div className="bg-app-card border border-app-border rounded-xl p-5 mb-6">
           {editingMeta && isDraft ? (
             <div className="space-y-3">
-              <input value={metaFields.title} onChange={e => setMetaFields(p => ({ ...p, title: e.target.value }))}
-                className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" placeholder="Title *" />
+              <input
+                value={metaFields.title}
+                onChange={e => { setMetaFields(p => ({ ...p, title: e.target.value })); scheduleAutosave(sections, { ...metaFields, title: e.target.value }); }}
+                className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+                placeholder="Title *"
+              />
               <div className="flex gap-2">
-                <input value={metaFields.trade} onChange={e => setMetaFields(p => ({ ...p, trade: e.target.value }))}
-                  className="flex-1 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" placeholder="Trade" />
-                <input value={metaFields.category} onChange={e => setMetaFields(p => ({ ...p, category: e.target.value }))}
-                  className="flex-1 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" placeholder="Category" />
+                <input
+                  value={metaFields.trade}
+                  onChange={e => setMetaFields(p => ({ ...p, trade: e.target.value }))}
+                  className="flex-1 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+                  placeholder="Trade"
+                />
+                <input
+                  value={metaFields.category}
+                  onChange={e => setMetaFields(p => ({ ...p, category: e.target.value }))}
+                  className="flex-1 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+                  placeholder="Category"
+                />
               </div>
-              <textarea value={metaFields.description} onChange={e => setMetaFields(p => ({ ...p, description: e.target.value }))}
-                rows={2} className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" placeholder="Description (optional)" />
+              <textarea
+                value={metaFields.description}
+                onChange={e => setMetaFields(p => ({ ...p, description: e.target.value }))}
+                rows={2}
+                className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+                placeholder="Description (optional)"
+              />
               <div className="flex gap-2">
-                <button onClick={saveMeta} disabled={saving || !metaFields.title.trim()}
-                  className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:opacity-50">
+                <button
+                  onClick={saveMeta}
+                  disabled={saving || !metaFields.title.trim()}
+                  className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:opacity-50"
+                >
                   {saving ? 'Saving…' : 'Save'}
                 </button>
                 <button onClick={() => setEditingMeta(false)} className="px-4 py-1.5 border border-app-border rounded-lg text-sm text-app-text-2">Cancel</button>
@@ -194,9 +437,18 @@ export default function MasterSOPEditor() {
                 <h2 className="text-lg font-bold text-app-text mb-1">{master?.title}</h2>
                 <p className="text-xs text-app-accent font-medium mb-1">{[master?.trade, master?.category].filter(Boolean).join(' · ')}</p>
                 {master?.description && <p className="text-sm text-app-text-2">{master.description}</p>}
+                {isActive && master?.currentPublishedVersionId && (
+                  <p className="text-xs text-app-text-muted mt-2 flex items-center gap-1">
+                    <CheckCircle2 size={11} className="text-app-success" />
+                    Published version active
+                  </p>
+                )}
               </div>
               {isDraft && (
-                <button onClick={() => setEditingMeta(true)} className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => setEditingMeta(true)}
+                  className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1 flex-shrink-0 hover:border-app-accent transition-colors"
+                >
                   <Pencil size={12} /> Edit
                 </button>
               )}
@@ -204,9 +456,16 @@ export default function MasterSOPEditor() {
           )}
         </div>
 
-        {!isDraft && (
-          <div className="mb-4 px-4 py-3 bg-app-info-bg border border-app-info/30 rounded-xl text-sm text-app-info flex items-center gap-2">
-            <AlertTriangle size={14} /> This version is published and read-only. Duplicate it to create a new editable draft.
+        {/* Validation summary (non-blocking — shown inline on draft) */}
+        {isDraft && validation.errors.length > 0 && (
+          <div className="mb-4 p-3.5 bg-app-danger-bg border border-app-danger/20 rounded-xl space-y-1.5">
+            <p className="text-xs font-bold text-app-danger uppercase tracking-wide">Publishing Blocked — Fix Required</p>
+            {validation.errors.map((e, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs text-app-danger">
+                <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                <span>{e}</span>
+              </div>
+            ))}
           </div>
         )}
 
@@ -214,115 +473,53 @@ export default function MasterSOPEditor() {
         {SECTION_ORDER.map(st => {
           const section = sections.find(s => s.sectionType === st);
           if (!section) return null;
-          const items = section.contentItems || [];
-          const isOpen = activeSection === section.id;
           return (
-            <div key={st} className="bg-app-card border border-app-border rounded-xl mb-3 overflow-hidden">
-              <button onClick={() => setActiveSection(isOpen ? null : section.id)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left">
-                <span className="text-xs font-bold text-app-text-muted uppercase tracking-widest">{SECTION_TITLES[st]}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-app-text-muted">{items.length} item{items.length !== 1 ? 's' : ''}</span>
-                  {isOpen ? <ChevronUp size={14} className="text-app-text-muted" /> : <ChevronDown size={14} className="text-app-text-muted" />}
-                </div>
-              </button>
-
-              {isOpen && (
-                <div className="border-t border-app-divider px-5 py-4 space-y-3">
-                  {items.length === 0 && <p className="text-sm text-app-text-muted italic">No items yet.</p>}
-                  {items.map((item, idx) => {
-                    const isEditing = editingItem?.sectionId === section.id && editingItem?.index === idx;
-                    return (
-                      <div key={idx} className="border border-app-border rounded-lg p-3">
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <input value={itemDraft.title} onChange={e => setItemDraft(p => ({ ...p, title: e.target.value }))}
-                              placeholder="Title *"
-                              className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" />
-                            <textarea value={itemDraft.body} onChange={e => setItemDraft(p => ({ ...p, body: e.target.value }))}
-                              rows={3} placeholder="Body / notes (optional)"
-                              className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" />
-                            <div className="flex gap-2">
-                              <button onClick={commitItem} disabled={saving || !itemDraft.title.trim()}
-                                className="px-3 py-1 bg-app-accent text-app-accent-text rounded text-xs font-medium disabled:opacity-50">Save</button>
-                              <button onClick={() => setEditingItem(null)} className="px-3 py-1 border border-app-border rounded text-xs text-app-text-2">Cancel</button>
-                              <button onClick={() => { deleteItem(section.id, idx); setEditingItem(null); }} className="px-3 py-1 border border-app-danger/40 rounded text-xs text-app-danger ml-auto">Delete</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-medium text-app-text">{item.title || <span className="italic text-app-text-muted">Untitled</span>}</p>
-                              {item.body && <p className="text-xs text-app-text-2 mt-0.5">{item.body}</p>}
-                            </div>
-                            {isDraft && (
-                              <button onClick={() => { setEditingItem({ sectionId: section.id, index: idx }); setItemDraft({ title: item.title || '', body: item.body || '' }); }}
-                                className="flex-shrink-0 p-1 text-app-text-muted hover:text-app-accent">
-                                <Pencil size={13} />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {isDraft && (
-                    <button onClick={() => addItem(section.id)} disabled={saving}
-                      className="w-full py-2 border-2 border-dashed border-app-border rounded-lg text-xs text-app-text-muted flex items-center justify-center gap-1.5 hover:border-app-accent hover:text-app-accent transition-colors">
-                      <Plus size={13} /> Add Item
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <SopSectionEditor
+              key={st}
+              section={section}
+              isDraft={isDraft}
+              onSave={saveSectionWithAutosave}
+              saving={saving}
+            />
           );
         })}
       </div>
 
-      {/* Version History panel */}
-      {showHistory && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowHistory(false)}>
-          <div className="bg-app-surface rounded-2xl w-full max-w-lg max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-app-border flex items-center justify-between">
-              <h3 className="font-semibold text-app-text">Version History</h3>
-              <button onClick={() => setShowHistory(false)} className="text-app-text-muted text-sm">Close</button>
-            </div>
-            <div className="overflow-y-auto px-5 py-4 space-y-3">
-              {versions.length === 0 ? (
-                <p className="text-sm text-app-text-muted text-center py-4">No published versions yet.</p>
-              ) : versions.map(v => (
-                <div key={v.id} className="border border-app-border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="font-semibold text-sm text-app-text">Version {v.versionNumber}</span>
-                    <span className="text-xs text-app-text-muted">{v.publishedAt ? new Date(v.publishedAt).toLocaleDateString() : '—'}</span>
-                  </div>
-                  <p className="text-xs text-app-text-muted">Published by: {v.publishedBy}</p>
-                  {v.changeNotes && <p className="text-xs text-app-text-2 mt-1">{v.changeNotes}</p>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Publish dialog */}
+      {showPublishDialog && (
+        <SopPublishDialog
+          master={master}
+          draftSections={sections}
+          validation={validation}
+          publishing={publishing}
+          onPublish={handlePublish}
+          onClose={() => setShowPublishDialog(false)}
+        />
       )}
 
-      {/* Publish confirm */}
-      {showPublishConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowPublishConfirm(false)}>
-          <div className="bg-app-surface rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-app-text mb-2">Publish this SOP?</h3>
-            <p className="text-sm text-app-text-2 mb-4">Publishing creates an immutable version. The SOP can still be edited by creating a new draft.</p>
-            <textarea value={changeNotes} onChange={e => setChangeNotes(e.target.value)}
-              rows={2} placeholder="Change notes (optional)"
-              className="w-full mb-4 px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent" />
-            <div className="flex gap-2">
-              <button onClick={handlePublish} disabled={saving}
-                className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-semibold disabled:opacity-50">
-                {saving ? 'Publishing…' : 'Publish'}
-              </button>
-              <button onClick={() => setShowPublishConfirm(false)} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm text-app-text-2">Cancel</button>
-            </div>
-          </div>
-        </div>
+      {/* Version timeline */}
+      {showTimeline && (
+        <SopVersionTimeline
+          master={master}
+          versions={versions}
+          currentVersionId={master?.currentPublishedVersionId}
+          onClose={() => setShowTimeline(false)}
+          onRollback={handleRollback}
+          onCompare={(vA, vB) => {
+            setCompareVersions({ a: vA, b: vB });
+            setShowTimeline(false);
+          }}
+        />
+      )}
+
+      {/* Version compare */}
+      {compareVersions && (
+        <SopVersionCompare
+          master={master}
+          versionA={compareVersions.a}
+          versionB={compareVersions.b}
+          onClose={() => setCompareVersions(null)}
+        />
       )}
     </div>
   );

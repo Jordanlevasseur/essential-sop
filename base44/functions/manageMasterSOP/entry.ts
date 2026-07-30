@@ -391,6 +391,71 @@ export default async function(req) {
       return Response.json({ success: true });
     }
 
+    // ── ROLLBACK TO VERSION ───────────────────────────────────────────────────
+    // Creates a new published version whose content matches an older published version.
+    // Works on both 'draft' and 'active' masters.
+    // Steps: 1) Load target version sections  2) Overwrite draft sections  3) Publish
+    if (action === 'rollback_to_version') {
+      const { masterId, targetVersionId, publicationMutationKey } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+      if (!targetVersionId) return Response.json({ error: 'targetVersionId required' }, { status: 400 });
+      if (!publicationMutationKey) return Response.json({ error: 'publicationMutationKey is required' }, { status: 400 });
+
+      const master = await SR.entities.EssentialSOPMaster.get(masterId);
+      if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
+      if (master.status === 'archived') return Response.json({ error: 'Archived SOPs cannot be rolled back' }, { status: 409 });
+
+      const targetVersion = await SR.entities.EssentialSOPVersion.get(targetVersionId);
+      if (!targetVersion || targetVersion.masterId !== masterId) {
+        return Response.json({ error: 'Target version not found or does not belong to this master' }, { status: 404 });
+      }
+
+      // Load target version's sections
+      const targetSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: targetVersionId }, 'sortOrder', 10);
+      // Load draft sections to get their IDs
+      const draftSections = await SR.entities.EssentialSOPSection.filter({ masterId, versionId: 'draft' }, 'sortOrder', 10);
+
+      // Overwrite each draft section's content from the target version
+      for (const draftSection of (draftSections || [])) {
+        const source = (targetSections || []).find((s: any) => s.sectionType === draftSection.sectionType);
+        const contentItems = source?.contentItems || [];
+        // Assign fresh logicalItemIds for the rollback (new items in the new version)
+        const itemsWithIds = ensureLogicalItemIds(contentItems, masterId);
+        await SR.entities.EssentialSOPSection.update(draftSection.id, { contentItems: itemsWithIds });
+      }
+      await SR.entities.EssentialSOPMaster.update(masterId, { status: 'draft', updatedAt: now });
+
+      // Publish the rollback as a new version
+      const changeSummary = body.changeSummary || `Rollback to v${targetVersion.versionNumber}`;
+      const { result, error: publishError } = await publishMasterSOPVersion(base44, {
+        masterId,
+        publicationMutationKey,
+        changeSummary,
+      });
+      if (publishError) return publishError;
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: 'SUPER_ADMIN',
+        action: 'master_sop_version_published',
+        extra: {
+          masterId, masterTitle: master.title,
+          versionId: result!.version.id,
+          versionNumber: result!.version.versionNumber,
+          changeNotes: changeSummary,
+          publicationMutationKey,
+          metadata: { rollbackFromVersionId: targetVersionId, rollbackFromVersionNumber: targetVersion.versionNumber },
+        },
+      });
+
+      return Response.json({
+        success: true,
+        master: result!.master,
+        version: result!.version,
+        rolledBackFromVersionNumber: targetVersion.versionNumber,
+      });
+    }
+
     // ── GET VERSION HISTORY ──────────────────────────────────────────────────
     if (action === 'get_history') {
       const { masterId } = body;
