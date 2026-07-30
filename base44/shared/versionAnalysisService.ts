@@ -994,6 +994,7 @@ async function _runAnalysisPipeline(params: {
         for (const change of changes) {
           const classification = _classifyChangeEntry(change);
           const isNoOp = change.changeType === CHANGE_TYPES.AUTOMATICALLY_COMPATIBLE;
+          const metaHasCompanyOverride = change.companyValue !== null && change.companyValue !== undefined;
           itemResults.push({
             logicalItemId: `metadata_${change.fieldPath || change.changeId}`,
             currentItemId: null,
@@ -1001,8 +1002,8 @@ async function _runAnalysisPipeline(params: {
             parentLogicalItemId: null,
             itemType: 'metadata_field',
             masterChangeTypes: classification.masterChangeTypes,
-            overrideId: override?.id || null,
-            overriddenFields: [change.fieldPath || sectionType],
+            overrideId: metaHasCompanyOverride ? (override?.id || null) : null,
+            overriddenFields: metaHasCompanyOverride ? [change.fieldPath || sectionType] : [],
             compatibility: isNoOp ? COMPATIBILITY.NO_OP : classification.compatibility,
             reasonCode: isNoOp ? REASON_CODE.REDUNDANT_OVERRIDE : classification.reasonCode,
             reasonMessage: isNoOp
