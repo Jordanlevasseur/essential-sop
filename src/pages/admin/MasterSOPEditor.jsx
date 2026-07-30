@@ -62,6 +62,8 @@ export default function MasterSOPEditor() {
   const [saveError, setSaveError] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [draftRevision, setDraftRevision] = useState(0); // client-tracked server revision
+  // Ref mirror of draftRevision — always current, safe to read inside callbacks without stale closure
+  const draftRevisionRef = useRef(0);
 
   // Conflict state
   const [conflictData, setConflictData] = useState(null); // { serverMaster, serverSections, serverRevision }
@@ -75,6 +77,7 @@ export default function MasterSOPEditor() {
   const pendingSaveRef = useRef(null);      // { sections, metaFields, revision } — the current dirty state
   const serverSaveTimerRef = useRef(null);  // debounce timer handle
   const isSavingRef = useRef(false);         // prevents concurrent server save calls
+  const savingPromiseRef = useRef(null);     // resolves when the in-flight save finishes
 
   // Panels
   const [showTimeline, setShowTimeline] = useState(false);
@@ -103,6 +106,7 @@ export default function MasterSOPEditor() {
       setMetaFields({ title: m.title, category: m.category || '', trade: m.trade || '', description: m.description || '' });
       const rev = m.draftRevision ?? 0;
       setDraftRevision(rev);
+      draftRevisionRef.current = rev;
 
       // Assess local draft recovery
       if (m.status === 'draft') {
@@ -144,6 +148,8 @@ export default function MasterSOPEditor() {
     if (isSavingRef.current) return; // prevent concurrent saves
     if (!snapshot) return;
     isSavingRef.current = true;
+    let resolvePromise;
+    savingPromiseRef.current = new Promise(r => { resolvePromise = r; });
     setSaveStatus(STATUS.SAVING);
     setSaveError(null);
 
@@ -160,10 +166,11 @@ export default function MasterSOPEditor() {
       });
 
       if (metaRes.data?.code === 'REVISION_REQUIRED') {
-        // Server rejected save — no revision sent. This is a client bug; reload to resync.
         setSaveStatus(STATUS.FAILED);
         setSaveError('Save failed: revision sync error. Reloading draft from server…');
         isSavingRef.current = false;
+        if (resolvePromise) resolvePromise();
+        savingPromiseRef.current = null;
         await load();
         return;
       }
@@ -172,6 +179,8 @@ export default function MasterSOPEditor() {
         setConflictData({ serverMaster: conflict.serverMaster, serverSections: conflict.serverSections, serverRevision: conflict.serverRevision });
         setSaveStatus(STATUS.CONFLICT);
         isSavingRef.current = false;
+        if (resolvePromise) resolvePromise();
+        savingPromiseRef.current = null;
         return;
       }
       latestRevision = metaRes.data?.draftRevision ?? latestRevision + 1;
@@ -190,6 +199,8 @@ export default function MasterSOPEditor() {
           setSaveStatus(STATUS.FAILED);
           setSaveError('Save failed: revision sync error. Reloading draft from server…');
           isSavingRef.current = false;
+          if (resolvePromise) resolvePromise();
+          savingPromiseRef.current = null;
           await load();
           return;
         }
@@ -198,6 +209,8 @@ export default function MasterSOPEditor() {
           setConflictData({ serverMaster: conflict.serverMaster, serverSections: conflict.serverSections, serverRevision: conflict.serverRevision });
           setSaveStatus(STATUS.CONFLICT);
           isSavingRef.current = false;
+          if (resolvePromise) resolvePromise();
+          savingPromiseRef.current = null;
           return;
         }
         latestRevision = sectionRes.data?.draftRevision ?? latestRevision + 1;
@@ -205,6 +218,7 @@ export default function MasterSOPEditor() {
 
       // Success
       setDraftRevision(latestRevision);
+      draftRevisionRef.current = latestRevision;
       setMaster(prev => ({ ...prev, draftRevision: latestRevision, updatedAt: new Date().toISOString() }));
       clearDraft(masterId, currentUserId);
       pendingSaveRef.current = null;
@@ -219,24 +233,35 @@ export default function MasterSOPEditor() {
       // localStorage copy already written before the server call — work is safe
     } finally {
       isSavingRef.current = false;
+      if (resolvePromise) resolvePromise();
+      savingPromiseRef.current = null;
     }
   }, [masterId, currentUserId]);
 
   // ── Flush pending save (before publish / navigate) ───────────────────────
   const flushPendingSave = useCallback(async () => {
+    // Cancel any pending debounce
     if (serverSaveTimerRef.current) {
       clearTimeout(serverSaveTimerRef.current);
       serverSaveTimerRef.current = null;
     }
+    // If a save is already in-flight, wait for it to finish first
+    if (savingPromiseRef.current) {
+      await savingPromiseRef.current;
+    }
+    // Now execute any remaining pending snapshot
     if (pendingSaveRef.current) {
       await executeServerSave(pendingSaveRef.current);
     }
   }, [executeServerSave]);
 
   // ── Mark dirty + schedule debounced server save ──────────────────────────
+  // Uses draftRevisionRef (not the draftRevision state) to always read the current
+  // revision — avoids stale-closure bugs where multiple edits use the same old revision.
   const markDirty = useCallback((updatedSections, updatedMeta) => {
     setSaveStatus(STATUS.DIRTY);
-    const snapshot = { sections: updatedSections, metaFields: updatedMeta, expectedRevision: draftRevision };
+    const currentRevision = draftRevisionRef.current;
+    const snapshot = { sections: updatedSections, metaFields: updatedMeta, expectedRevision: currentRevision };
     pendingSaveRef.current = snapshot;
 
     // Immediately update localStorage for crash safety
@@ -244,7 +269,7 @@ export default function MasterSOPEditor() {
       saveDraft(masterId, currentUserId, {
         sections: updatedSections,
         metaFields: updatedMeta,
-        serverDraftRevision: draftRevision,
+        serverDraftRevision: currentRevision,
         serverUpdatedAt: master?.updatedAt,
       });
     }
@@ -254,7 +279,7 @@ export default function MasterSOPEditor() {
     serverSaveTimerRef.current = setTimeout(() => {
       executeServerSave(snapshot);
     }, SERVER_SAVE_DEBOUNCE_MS);
-  }, [masterId, currentUserId, draftRevision, master?.updatedAt, executeServerSave]);
+  }, [masterId, currentUserId, master?.updatedAt, executeServerSave]);
 
   // ── Manual Save Now ───────────────────────────────────────────────────────
   const handleSaveNow = useCallback(async () => {
@@ -292,7 +317,7 @@ export default function MasterSOPEditor() {
     setRecoveryCase(null);
     setSaveStatus(STATUS.DIRTY);
     // Re-schedule a server save immediately for the restored content
-    const snapshot = { sections: localDraft.sections || sections, metaFields: localDraft.metaFields || metaFields, expectedRevision: draftRevision };
+    const snapshot = { sections: localDraft.sections || sections, metaFields: localDraft.metaFields || metaFields, expectedRevision: draftRevisionRef.current };
     pendingSaveRef.current = snapshot;
     if (serverSaveTimerRef.current) clearTimeout(serverSaveTimerRef.current);
     serverSaveTimerRef.current = setTimeout(() => executeServerSave(snapshot), SERVER_SAVE_DEBOUNCE_MS);
@@ -310,6 +335,7 @@ export default function MasterSOPEditor() {
     if (!conflictData) return;
     setSections(conflictData.serverSections);
     setDraftRevision(conflictData.serverRevision);
+    draftRevisionRef.current = conflictData.serverRevision;
     setMaster(prev => ({ ...prev, ...conflictData.serverMaster }));
     setMetaFields({
       title: conflictData.serverMaster?.title || metaFields.title,
@@ -327,7 +353,8 @@ export default function MasterSOPEditor() {
     // Preserve local content in state for comparison, update revision to server's
     // but do NOT save — force user to resolve manually
     if (conflictData) {
-      setDraftRevision(conflictData.serverRevision); // align revision so next save attempt uses correct base
+      setDraftRevision(conflictData.serverRevision);
+      draftRevisionRef.current = conflictData.serverRevision;
     }
     setConflictData(null);
     setSaveStatus(STATUS.DIRTY);
