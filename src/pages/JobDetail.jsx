@@ -10,6 +10,7 @@ import { SECTION_MAP } from '@/lib/constants';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
 import NotificationBell from '@/components/NotificationBell';
+import JobLoadError, { parseJobLoadError } from '@/components/jobs/JobLoadError';
 
 const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
 
@@ -36,12 +37,23 @@ export default function JobDetail() {
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [activeGrant, setActiveGrant] = useState(null);
   const [showCustomizeEditor, setShowCustomizeEditor] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   const loadData = useCallback(async () => {
+    setLoadError(null);
+    setLoading(true);
     try {
       // All Job content is resolved through the centralized resolveJob backend.
       // The frontend does not determine how content is assembled — the backend does.
       const res = await base44.functions.invoke('resolveJob', { jobId });
+
+      // Validate response shape before trusting it
+      if (!res?.data?.job) {
+        const shapeErr = new Error('Response is missing required job data');
+        shapeErr.code = 'INVALID_RESPONSE';
+        throw shapeErr;
+      }
+
       const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = res.data;
 
       setJob(j);
@@ -50,10 +62,6 @@ export default function JobDetail() {
       setCapabilities(caps || null);
       setOverrideMeta(ovr || null);
 
-      if (j && activeCompany && j.companyId && j.companyId !== activeCompany.id) {
-        navigate('/');
-        return;
-      }
       if (j) addRecentlyViewed(j.id, j.title);
 
       // Check for active temporary edit grant (Project Lead)
@@ -64,9 +72,10 @@ export default function JobDetail() {
         setActiveGrant(valid || null);
       }
     } catch (err) {
-      navigate('/');
+      setLoadError(parseJobLoadError(err, jobId));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [jobId]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -123,7 +132,12 @@ export default function JobDetail() {
       </div>
     );
   }
-  if (!job) return <div className="p-4 text-center text-app-text-muted">Job not found.</div>;
+
+  // Any load failure — structured error page, never blank, never silent redirect.
+  if (loadError || !job) {
+    const err = loadError || { title: 'Job not found', body: 'This Job may have been deleted or the link may be incorrect.', errorCode: 'JOB_NOT_FOUND' };
+    return <JobLoadError jobId={jobId} error={err} onRetry={loadData} />;
+  }
 
   return (
     <div className="min-h-screen bg-app-bg">
