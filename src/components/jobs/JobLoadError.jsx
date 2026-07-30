@@ -1,56 +1,146 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, RefreshCw, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ArrowLeft, ChevronDown, ChevronUp, WifiOff, Lock, ServerCrash, Clock, FileWarning } from 'lucide-react';
+import { useJobsListState } from '@/lib/useJobsListState';
 
 const IS_DEV = import.meta.env.DEV;
+
+// ── Per-error-type copy ───────────────────────────────────────────────────────
+
+const ERROR_COPY = {
+  NOT_FOUND: {
+    icon: FileWarning,
+    iconCls: 'text-app-text-muted',
+    bgCls: 'bg-app-elevated',
+    title: 'Job not found',
+    body: 'This Job could not be found. It may have been deleted, moved, or the link is no longer valid.',
+    footer: 'If you believe this is a mistake, contact your administrator.',
+  },
+  FORBIDDEN: {
+    icon: Lock,
+    iconCls: 'text-app-warning',
+    bgCls: 'bg-app-warning-bg',
+    title: 'Access denied',
+    body: "You don't have permission to view this Job.",
+    footer: 'If you need access, contact your administrator.',
+  },
+  PERMISSION_CHANGED: {
+    icon: Lock,
+    iconCls: 'text-app-warning',
+    bgCls: 'bg-app-warning-bg',
+    title: 'Access has changed',
+    body: 'Your permissions changed while this Job was open.',
+    footer: 'Please return to the Jobs list or contact your administrator if you believe this is an error.',
+  },
+  NETWORK_ERROR: {
+    icon: WifiOff,
+    iconCls: 'text-app-text-2',
+    bgCls: 'bg-app-elevated',
+    title: 'No internet connection',
+    body: "We couldn't reach the server.",
+    footer: 'Check your internet connection and try again.\n\nYour work has not been changed.',
+  },
+  TIMEOUT: {
+    icon: Clock,
+    iconCls: 'text-app-text-2',
+    bgCls: 'bg-app-elevated',
+    title: 'Request timed out',
+    body: 'The server took too long to respond.',
+    footer: 'Please try again. If this continues, check your connection or contact your administrator.',
+  },
+  SERVER_ERROR: {
+    icon: ServerCrash,
+    iconCls: 'text-app-danger',
+    bgCls: 'bg-app-danger-bg',
+    title: 'Server error',
+    body: 'Something went wrong while loading this Job.',
+    footer: 'Your work has not been changed.\n\nPlease try again in a moment. If the problem continues, contact your administrator.',
+  },
+  INVALID_RESPONSE: {
+    icon: AlertTriangle,
+    iconCls: 'text-app-warning',
+    bgCls: 'bg-app-warning-bg',
+    title: "Job data couldn't be loaded",
+    body: 'We received an unexpected response while loading this Job.',
+    footer: 'Your work has not been changed.\n\nPlease try again. If the problem continues, contact your administrator.',
+  },
+  UNKNOWN_ERROR: {
+    icon: AlertTriangle,
+    iconCls: 'text-app-danger',
+    bgCls: 'bg-app-danger-bg',
+    title: 'Unable to load this Job',
+    body: "We couldn't load this Job right now. This may be a temporary problem or the Job may no longer be available.",
+    footer: null,
+  },
+};
+
+function getCopy(errorCode) {
+  if (!errorCode) return ERROR_COPY.UNKNOWN_ERROR;
+  if (errorCode === 'JOB_NOT_FOUND' || errorCode === 'HTTP_404') return ERROR_COPY.NOT_FOUND;
+  if (errorCode === 'HTTP_403' || errorCode === 'FORBIDDEN') return ERROR_COPY.FORBIDDEN;
+  if (errorCode === 'PERMISSION_CHANGED') return ERROR_COPY.PERMISSION_CHANGED;
+  if (errorCode === 'NETWORK_ERROR') return ERROR_COPY.NETWORK_ERROR;
+  if (errorCode === 'TIMEOUT') return ERROR_COPY.TIMEOUT;
+  if (errorCode?.startsWith('HTTP_5') || errorCode === 'SERVER_ERROR') return ERROR_COPY.SERVER_ERROR;
+  if (errorCode === 'INVALID_RESPONSE') return ERROR_COPY.INVALID_RESPONSE;
+  return ERROR_COPY.UNKNOWN_ERROR;
+}
 
 /**
  * JobLoadError — Dedicated error state for Job Detail load failures.
  *
- * Always renders — never blank, never silent redirect.
- *
  * Props:
- *   jobId       — string  — the jobId from the route param
- *   error       — object  — structured error from parseJobLoadError()
- *   onRetry     — fn      — re-runs loadData without leaving the page
+ *   jobId    — string  — jobId from route param
+ *   error    — object  — structured error from parseJobLoadError()
+ *   onRetry  — fn      — re-runs loadData without leaving the page
+ *   navigate — fn      — React Router navigate fn (passed in from JobDetail)
  */
-export default function JobLoadError({ jobId, error, onRetry }) {
-  const navigate = useNavigate();
+export default function JobLoadError({ jobId, error, onRetry, navigate }) {
   const [stackOpen, setStackOpen] = useState(false);
+  const { navigateBackToJobs } = useJobsListState();
 
-  const { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId } = error || {};
+  const { errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId } = error || {};
+  const copy = getCopy(errorCode);
+  const Icon = copy.icon;
+
+  const handleBack = () => navigateBackToJobs(navigate);
 
   return (
     <div className="min-h-screen bg-app-bg flex flex-col">
-      {/* Minimal header — keeps the user oriented */}
+      {/* Header — same structure as JobDetail header */}
       <div
         className="bg-app-surface border-b border-app-border sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <button
-          onClick={() => navigate('/')}
+          onClick={handleBack}
           className="icon-btn no-select touch-active"
           aria-label="Back to Jobs"
         >
           <ArrowLeft size={22} className="text-app-text-2" />
         </button>
-        <span className="font-semibold text-app-text-muted flex-1 truncate text-sm">Job Detail</span>
+        <span className="font-semibold text-app-text flex-1 truncate">Job Detail</span>
       </div>
 
       {/* Error body */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Icon */}
-        <div className="w-14 h-14 rounded-2xl bg-app-danger-bg flex items-center justify-center mb-5">
-          <AlertTriangle size={26} className="text-app-danger" />
+        <div className={`w-14 h-14 rounded-2xl ${copy.bgCls} flex items-center justify-center mb-5`}>
+          <Icon size={26} className={copy.iconCls} />
         </div>
 
         {/* Title & body */}
-        <h1 className="text-lg font-bold text-app-text text-center mb-2">
-          {title || 'Unable to load this Job'}
-        </h1>
-        <p className="text-sm text-app-text-2 text-center leading-relaxed max-w-xs mb-6">
-          {body || "We couldn't load this Job right now. This may be a temporary problem or the Job may no longer be available."}
-        </p>
+        <h1 className="text-lg font-bold text-app-text text-center mb-2">{copy.title}</h1>
+        <p className="text-sm text-app-text-2 text-center leading-relaxed max-w-xs mb-3">{copy.body}</p>
+
+        {/* Footer copy (may contain newlines for paragraph breaks) */}
+        {copy.footer && (
+          <div className="text-xs text-app-text-muted text-center leading-relaxed max-w-xs mb-6 space-y-1.5">
+            {copy.footer.split('\n\n').map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
+        )}
+        {!copy.footer && <div className="mb-6" />}
 
         {/* Always-visible meta — Job ID + error code */}
         {(jobId || errorCode) && (
@@ -86,7 +176,7 @@ export default function JobLoadError({ jobId, error, onRetry }) {
             Try Again
           </button>
           <button
-            onClick={() => navigate('/')}
+            onClick={handleBack}
             className="w-full py-3 px-4 rounded-xl border border-app-border text-app-text-2 font-medium text-sm no-select touch-active"
           >
             Back to Jobs
@@ -96,7 +186,7 @@ export default function JobLoadError({ jobId, error, onRetry }) {
         {/* Dev-only panel */}
         {IS_DEV && (httpStatus || backendMessage || stackTrace || requestId) && (
           <div className="w-full max-w-xs mt-8 rounded-xl border border-app-warning/40 bg-app-warning-bg overflow-hidden text-xs">
-            <div className="px-4 py-2.5 flex items-center gap-2 border-b border-app-warning/20">
+            <div className="px-4 py-2.5 border-b border-app-warning/20">
               <span className="font-bold text-app-warning uppercase tracking-wide">Dev Info</span>
             </div>
             <div className="px-4 py-3 space-y-2">
@@ -144,20 +234,12 @@ export default function JobLoadError({ jobId, error, onRetry }) {
   );
 }
 
+// ── parseJobLoadError ─────────────────────────────────────────────────────────
 /**
- * parseJobLoadError — Normalises any thrown value into a structured error object
- * suitable for JobLoadError props. Call this inside the loadData catch block.
- *
- * Handles:
- *   - Base44 SDK function errors (res.status, res.data.error, res.data.code)
- *   - Network / timeout errors (TypeError, DOMException)
- *   - JSON schema / unexpected-shape errors
- *   - Plain JS Error objects
- *   - Unknown throws
+ * Normalises any thrown value into a structured error object for JobLoadError.
+ * Logs every failure to the console unconditionally.
  */
 export function parseJobLoadError(err, jobId) {
-  const IS_DEV = import.meta.env.DEV;
-
   // Log every failure unconditionally
   console.error('[JobDetail] Load failure', {
     jobId,
@@ -166,79 +248,53 @@ export function parseJobLoadError(err, jobId) {
     timestamp: new Date().toISOString(),
   });
 
-  // Base defaults
-  let title = 'Unable to load this Job';
-  let body = "We couldn't load this Job right now. This may be a temporary problem or the Job may no longer be available.";
-  let errorCode = null;
-  let httpStatus = null;
-  let technicalReason = null;
-  let backendMessage = null;
-  let stackTrace = IS_DEV ? (err?.stack || null) : null;
-  let requestId = null;
+  const base = {
+    errorCode: null,
+    httpStatus: null,
+    technicalReason: null,
+    backendMessage: null,
+    stackTrace: IS_DEV ? (err?.stack || null) : null,
+    requestId: null,
+  };
 
-  if (!err) {
-    errorCode = 'UNKNOWN_ERROR';
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
+  if (!err) return { ...base, errorCode: 'UNKNOWN_ERROR' };
+
+  // Base44 SDK error shape: { status, data: { error, code, detail } }
+  if (err?.status && err?.data !== undefined) {
+    const code = err.data?.code || `HTTP_${err.status}`;
+    return {
+      ...base,
+      errorCode: code,
+      httpStatus: err.status,
+      backendMessage: IS_DEV ? (err.data?.error || err.data?.detail || null) : null,
+      technicalReason: IS_DEV ? `HTTP ${err.status} — ${err.data?.error || ''}` : null,
+      requestId: err.data?.requestId || null,
+    };
   }
 
-  // Base44 SDK / fetch response error shape: { status, data: { error, code, detail } }
-  if (err?.status && err?.data) {
-    httpStatus = err.status;
-    backendMessage = IS_DEV ? (err.data?.error || err.data?.detail || null) : null;
-    errorCode = err.data?.code || `HTTP_${err.status}`;
-    requestId = err.data?.requestId || null;
-
-    if (err.status === 401 || err.status === 403) {
-      title = 'Access denied';
-      body = "You don't have permission to view this Job.";
-      technicalReason = IS_DEV ? `HTTP ${err.status} — ${err.data?.error || 'Forbidden'}` : null;
-    } else if (err.status === 404) {
-      title = 'Job not found';
-      body = 'This Job may have been deleted or the link may be incorrect.';
-      technicalReason = IS_DEV ? 'HTTP 404 — Job not found' : null;
-    } else if (err.status === 409) {
-      technicalReason = IS_DEV ? `HTTP 409 — ${err.data?.error || 'Conflict'}` : null;
-    } else if (err.status >= 500) {
-      technicalReason = IS_DEV ? `HTTP ${err.status} — server error` : null;
-    }
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
-  }
-
-  // Network / timeout
-  if (err instanceof TypeError && err.message?.includes('fetch')) {
-    errorCode = 'NETWORK_ERROR';
-    technicalReason = IS_DEV ? err.message : null;
-    body = "A network error occurred. Please check your connection and try again.";
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
-  }
-  if (err?.name === 'AbortError' || err?.name === 'TimeoutError' || err?.message?.toLowerCase().includes('timeout')) {
-    errorCode = 'TIMEOUT';
-    technicalReason = IS_DEV ? err.message : null;
-    body = "The request timed out. Please try again.";
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
-  }
-
-  // Invalid response shape (missing job/sections/contentBySection)
+  // Invalid response shape
   if (err?.code === 'INVALID_RESPONSE') {
-    errorCode = 'INVALID_RESPONSE';
-    technicalReason = IS_DEV ? err.message : null;
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
+    return { ...base, errorCode: 'INVALID_RESPONSE', technicalReason: IS_DEV ? err.message : null };
+  }
+
+  // Network error
+  if (err instanceof TypeError && err.message?.toLowerCase().includes('fetch')) {
+    return { ...base, errorCode: 'NETWORK_ERROR', technicalReason: IS_DEV ? err.message : null };
+  }
+
+  // Timeout / abort
+  if (err?.name === 'AbortError' || err?.name === 'TimeoutError' || err?.message?.toLowerCase().includes('timeout')) {
+    return { ...base, errorCode: 'TIMEOUT', technicalReason: IS_DEV ? err.message : null };
   }
 
   // Plain Error
   if (err instanceof Error) {
-    errorCode = err.code || 'RESOLVER_ERROR';
-    technicalReason = IS_DEV ? err.message : null;
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
+    return { ...base, errorCode: err.code || 'RESOLVER_ERROR', technicalReason: IS_DEV ? err.message : null };
   }
 
-  // String throw
   if (typeof err === 'string') {
-    errorCode = 'UNKNOWN_ERROR';
-    technicalReason = IS_DEV ? err : null;
-    return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
+    return { ...base, errorCode: 'UNKNOWN_ERROR', technicalReason: IS_DEV ? err : null };
   }
 
-  errorCode = 'UNKNOWN_ERROR';
-  return { title, body, errorCode, httpStatus, technicalReason, backendMessage, stackTrace, requestId };
+  return { ...base, errorCode: 'UNKNOWN_ERROR' };
 }

@@ -11,6 +11,7 @@ import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
 import NotificationBell from '@/components/NotificationBell';
 import JobLoadError, { parseJobLoadError } from '@/components/jobs/JobLoadError';
+import { useJobsListState } from '@/lib/useJobsListState';
 
 const DISPLAY_ORDER = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
 
@@ -19,6 +20,7 @@ export default function JobDetail() {
   const navigate = useNavigate();
   const { isFavorite, toggleFavorite, addRecentlyViewed, isCompanyAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
+  const { navigateBackToJobs } = useJobsListState();
   const isProjectLead = activeMembership?.role === 'project_lead';
   const [job, setJob] = useState(null);
   const [sections, setSections] = useState([]);
@@ -135,8 +137,8 @@ export default function JobDetail() {
 
   // Any load failure — structured error page, never blank, never silent redirect.
   if (loadError || !job) {
-    const err = loadError || { title: 'Job not found', body: 'This Job may have been deleted or the link may be incorrect.', errorCode: 'JOB_NOT_FOUND' };
-    return <JobLoadError jobId={jobId} error={err} onRetry={loadData} />;
+    const err = loadError || { errorCode: 'JOB_NOT_FOUND' };
+    return <JobLoadError jobId={jobId} error={err} onRetry={loadData} navigate={navigate} />;
   }
 
   return (
@@ -144,7 +146,7 @@ export default function JobDetail() {
       {/* Sticky header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
+          <button onClick={() => navigateBackToJobs(navigate)} className="icon-btn no-select touch-active" aria-label="Back to Jobs">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1 truncate">{job.title}</h1>

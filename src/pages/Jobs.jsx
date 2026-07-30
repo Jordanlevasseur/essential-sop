@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
@@ -6,6 +6,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import { Search, SlidersHorizontal, Plus, Star, X } from 'lucide-react';
 import JobCard from '@/components/jobs/JobCard';
 import FilterSheet from '@/components/jobs/FilterSheet';
+import { useJobsListState } from '@/lib/useJobsListState';
 
 export default function Jobs() {
   const navigate = useNavigate();
@@ -18,6 +19,17 @@ export default function Jobs() {
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ trade: '', skillLevel: '', category: '' });
+  const { saveListState, restoreListState } = useJobsListState();
+  const scrollRestoredRef = useRef(false);
+
+  // Restore saved list state (search + filters) on mount when returning from Job Detail
+  useEffect(() => {
+    const saved = restoreListState();
+    if (saved) {
+      if (saved.search) setSearch(saved.search);
+      if (saved.filters) setFilters(saved.filters);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!companyId) return;
@@ -32,6 +44,19 @@ export default function Jobs() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [companyId]);
+
+  // Restore scroll position after list has rendered (only once per mount)
+  useEffect(() => {
+    if (loading || scrollRestoredRef.current) return;
+    const saved = restoreListState();
+    if (saved?.scrollY) {
+      // rAF ensures DOM has painted before scrolling
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: saved.scrollY, behavior: 'instant' });
+        scrollRestoredRef.current = true;
+      });
+    }
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const publishedJobs = useMemo(() => jobs.filter(j => !j.isArchived && j.status === 'Published'), [jobs]);
   const favoriteJobs = useMemo(() => publishedJobs.filter(j => isFavorite(j.id)), [publishedJobs, isFavorite]);
@@ -152,7 +177,7 @@ export default function Jobs() {
           </h2>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
             {favoriteJobs.map(job => (
-              <div key={job.id} className="flex-shrink-0 w-56 bg-app-card border border-app-border rounded-xl p-3 cursor-pointer no-select touch-active" onClick={() => navigate(`/jobs/${job.id}`)}>
+              <div key={job.id} className="flex-shrink-0 w-56 bg-app-card border border-app-border rounded-xl p-3 cursor-pointer no-select touch-active" onClick={() => { saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); }}>
                 <div className="flex items-start justify-between mb-1">
                   <h3 className="font-semibold text-sm text-app-text line-clamp-2 flex-1 pr-2">{job.title}</h3>
                   <button onClick={(e) => { e.stopPropagation(); toggleFavorite(job.id); }} className="icon-btn touch-active" aria-label="Remove from favorites">
@@ -187,7 +212,7 @@ export default function Jobs() {
                 job={job}
                 isFav={isFavorite(job.id)}
                 onFavToggle={() => toggleFavorite(job.id)}
-                onClick={() => navigate(`/jobs/${job.id}`)}
+                onClick={() => { saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); }}
                 match={match}
               />
             );
