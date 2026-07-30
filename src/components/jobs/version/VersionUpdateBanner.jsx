@@ -30,11 +30,16 @@ export default function VersionUpdateBanner({ job, overrideMeta, onAdopted }) {
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
+  // Gate on canAdoptVersion — technicians must not see this banner
   if (loadingStatus || !versionStatus || !versionStatus.updateAvailable) return null;
+  if (!versionStatus.capabilities?.canAdoptVersion) return null;
 
   const { pinnedVersion, newestVersion, predictedConflicts } = versionStatus;
   const hasConflicts = predictedConflicts && predictedConflicts.length > 0;
-  const canAutoAdopt = versionStatus.canAutoAdopt === true;
+  // NOTE: canAutoAdopt is NOT available from getVersionStatus — it only exists on
+  // the analyzeVersionUpdate result. The flow computes it after analysis runs.
+  // The banner always shows "Review Changes" or "Review and Update"; the flow
+  // itself surfaces "Apply Safe Update" on the summary screen when canAutoAdopt===true.
 
   return (
     <>
@@ -59,67 +64,42 @@ export default function VersionUpdateBanner({ job, overrideMeta, onAdopted }) {
 
         {/* Action buttons */}
         <div className="flex gap-2 mt-3">
-          {canAutoAdopt && !hasConflicts ? (
-            <>
-              <button
-                onClick={() => setShowFlow(true)}
-                className="flex-1 py-2 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold no-select touch-active text-center"
-              >
-                Apply Safe Update
-              </button>
-              <button
-                onClick={() => setShowFlow(true)}
-                className="px-3 py-2 border border-app-border rounded-lg text-xs font-medium text-app-text-2 no-select touch-active"
-              >
-                Review
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setShowFlow(true)}
-                className="flex-1 py-2 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold no-select touch-active text-center"
-              >
-                {hasConflicts ? 'Review and Update' : 'Review Changes'}
-              </button>
-              <button
-                onClick={async () => {
-                  // Inline defer without opening the full flow
-                  try {
-                    const { base44 } = await import('@/api/base44Client');
-                    const user = await base44.auth.me().catch(() => null);
-                    await base44.entities.ActivityLog.create({
-                      companyId: job.companyId,
-                      actingUserId: user?.id,
-                      actionType: 'job_edited',
-                      targetType: 'Job',
-                      targetId: job.id,
-                      summary: `Update deferred: staying on v${pinnedVersion?.versionNumber}`,
-                      metadata: { event: 'update_deferred', targetVersionId: newestVersion?.id },
-                      timestamp: new Date().toISOString(),
-                    });
-                  } catch (_) {}
-                  setVersionStatus(null); // hide banner
-                }}
-                className="px-3 py-2 border border-app-border rounded-lg text-xs font-medium text-app-text-muted no-select touch-active"
-              >
-                Not Now
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => setShowFlow(true)}
+            className="flex-1 py-2 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold no-select touch-active text-center"
+          >
+            {hasConflicts ? 'Review and Update' : 'Review Changes'}
+          </button>
+          <button
+            onClick={async () => {
+              // Defer: log the action then hide the banner for this session.
+              // NOTE: No backend entity supports persisted deferral per version.
+              // The banner will reappear after page refresh. This is a known limitation.
+              try {
+                const user = await base44.auth.me().catch(() => null);
+                await base44.entities.ActivityLog.create({
+                  companyId: job.companyId,
+                  actingUserId: user?.id,
+                  actionType: 'job_edited',
+                  targetType: 'Job',
+                  targetId: job.id,
+                  summary: `Update deferred: staying on v${pinnedVersion?.versionNumber}`,
+                  metadata: { event: 'update_deferred', targetVersionId: newestVersion?.id },
+                  timestamp: new Date().toISOString(),
+                });
+              } catch (_) {}
+              setVersionStatus(null); // hide for this session only
+            }}
+            className="px-3 py-2 border border-app-border rounded-lg text-xs font-medium text-app-text-muted no-select touch-active"
+          >
+            Not Now
+          </button>
         </div>
 
         {hasConflicts && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-app-warning">
             <AlertTriangle size={11} className="flex-shrink-0" />
             <span>Your company has customizations that overlap with this update</span>
-          </div>
-        )}
-
-        {canAutoAdopt && !hasConflicts && (
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-app-success">
-            <CheckCircle2 size={11} className="flex-shrink-0" />
-            <span>All your customizations are compatible — safe to apply automatically</span>
           </div>
         )}
       </div>

@@ -3,9 +3,9 @@ import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { useAdoptionDraftState } from '@/lib/useAdoptionDraftState';
 import {
-  ArrowLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
+  ArrowLeft, CheckCircle2, AlertTriangle, XCircle,
   ChevronDown, ChevronUp, Check, Pencil, Plus, Minus, Shield,
-  Clock, X, Zap, BookOpen,
+  Clock, Zap, BookOpen,
 } from 'lucide-react';
 
 /**
@@ -105,7 +105,6 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
     persistAdoptionStart, clearDraft,
   } = useAdoptionDraftState(job.companyId, job.id, targetVersionId, userId);
 
-  const [mergeEdits, setMergeEdits] = useState({}); // logicalItemId → merged string
   const [adopting, setAdopting] = useState(false);
   const [adoptError, setAdoptError] = useState(null);
   const mutationKeyRef = useRef(null);
@@ -186,7 +185,8 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
       const data = res?.data;
       if (data?.success) {
         clearDraft();
-        // Audit
+        // Audit — use previousVersionId from the adoption response, not from the resolved job
+        // (resolved job has sourceVersionId stripped for public consumption)
         try {
           await base44.entities.ActivityLog.create({
             companyId: job.companyId,
@@ -197,8 +197,8 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
             summary: `Version adopted: v${currentVersion?.versionNumber} → v${newVersion?.versionNumber}. ${Object.keys(reviewDecisions).length} conflict resolution(s) selected.`,
             metadata: {
               event: 'version_adopted',
-              previousVersionId: job.sourceVersionId,
-              newVersionId: targetVersionId,
+              previousVersionId: data.previousVersionId,
+              newVersionId: data.newVersionId,
               resolutionCount: Object.keys(reviewDecisions).length,
               autoAdopted: canAutoAdopt && Object.keys(reviewDecisions).length === 0,
             },
@@ -252,7 +252,7 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
             targetType: 'Job',
             targetId: job.id,
             summary: `Safe update applied automatically: v${currentVersion?.versionNumber} → v${newVersion?.versionNumber}. All customizations preserved.`,
-            metadata: { event: 'safe_update_applied', previousVersionId: job.sourceVersionId, newVersionId: targetVersionId, autoAdopted: true },
+            metadata: { event: 'safe_update_applied', previousVersionId: data.previousVersionId, newVersionId: data.newVersionId, autoAdopted: true },
             timestamp: new Date().toISOString(),
           });
         } catch (_) {}
@@ -532,8 +532,6 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
         setReviewDecisions={setReviewDecisions}
         orphanDispositions={orphanDispositions}
         setOrphanDispositions={setOrphanDispositions}
-        mergeEdits={mergeEdits}
-        setMergeEdits={setMergeEdits}
         canAdopt={canAdopt}
         pendingCount={pendingCount}
         hasInvalid={hasInvalid}
@@ -554,7 +552,6 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
         newVersion={newVersion}
         reviewDecisions={reviewDecisions}
         orphanDispositions={orphanDispositions}
-        mergeEdits={mergeEdits}
         adopting={adopting}
         adoptError={adoptError}
         onBack={() => setStep('review')}
@@ -608,7 +605,6 @@ function SummaryCard({ icon: Icon, color, bg, border, count, label, description 
 function ReviewScreen({
   job, analysis, classified, currentVersion, newVersion,
   reviewDecisions, setReviewDecisions, orphanDispositions, setOrphanDispositions,
-  mergeEdits, setMergeEdits,
   canAdopt, pendingCount, hasInvalid,
   onBack, onContinue,
 }) {
@@ -654,8 +650,6 @@ function ReviewScreen({
             setReviewDecisions={setReviewDecisions}
             orphanDispositions={orphanDispositions}
             setOrphanDispositions={setOrphanDispositions}
-            mergeEdits={mergeEdits}
-            setMergeEdits={setMergeEdits}
           />
         ))}
         <div style={{ height: 'calc(96px + env(safe-area-inset-bottom))' }} />
@@ -682,7 +676,7 @@ function ReviewScreen({
 
 // ── Change group ──────────────────────────────────────────────────────────────
 
-function ChangeGroup({ group, expanded, onToggle, reviewDecisions, setReviewDecisions, orphanDispositions, setOrphanDispositions, mergeEdits, setMergeEdits }) {
+function ChangeGroup({ group, expanded, onToggle, reviewDecisions, setReviewDecisions, orphanDispositions, setOrphanDispositions }) {
   const variantColors = {
     warning: 'text-app-warning',
     danger: 'text-app-danger',
@@ -712,10 +706,8 @@ function ChangeGroup({ group, expanded, onToggle, reviewDecisions, setReviewDeci
               item={item}
               reviewDecision={reviewDecisions[item.logicalItemId]}
               orphanDisposition={orphanDispositions[item.logicalItemId]}
-              mergeEdit={mergeEdits[item.logicalItemId]}
               onDecide={(val) => setReviewDecisions(prev => ({ ...prev, [item.logicalItemId]: val }))}
               onDispose={(val) => setOrphanDispositions(prev => ({ ...prev, [item.logicalItemId]: val }))}
-              onMergeEdit={(val) => setMergeEdits(prev => ({ ...prev, [item.logicalItemId]: val }))}
             />
           ))}
         </div>
@@ -726,9 +718,8 @@ function ChangeGroup({ group, expanded, onToggle, reviewDecisions, setReviewDeci
 
 // ── Change item ───────────────────────────────────────────────────────────────
 
-function ChangeItem({ item, reviewDecision, orphanDisposition, mergeEdit, onDecide, onDispose, onMergeEdit }) {
+function ChangeItem({ item, reviewDecision, orphanDisposition, onDecide, onDispose }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [mergeOpen, setMergeOpen] = useState(false);
   const bucket = item._bucket;
   const needsDecision = bucket === 'conflict' || bucket === 'orphaned';
   const decided = bucket === 'conflict' ? !!reviewDecision : bucket === 'orphaned' ? !!orphanDisposition : false;
@@ -811,50 +802,23 @@ function ChangeItem({ item, reviewDecision, orphanDisposition, mergeEdit, onDeci
         </div>
       )}
 
-      {/* Conflict resolution controls */}
+      {/* Conflict resolution controls
+          NOTE: backend only accepts 'KEEP_COMPANY' | 'USE_NEW_MASTER'.
+          MERGE is not a valid value and will cause INVALID_DECISION_VALUE on adoption. */}
       {bucket === 'conflict' && (
-        <div className="mt-3 space-y-2">
+        <div className="mt-3">
           <div className="flex gap-2">
             <ResolutionBtn
               active={reviewDecision === 'USE_NEW_MASTER'}
-              onClick={() => { onDecide('USE_NEW_MASTER'); setMergeOpen(false); }}
+              onClick={() => onDecide('USE_NEW_MASTER')}
               label="Use new standard"
             />
             <ResolutionBtn
               active={reviewDecision === 'KEEP_COMPANY'}
-              onClick={() => { onDecide('KEEP_COMPANY'); setMergeOpen(false); }}
+              onClick={() => onDecide('KEEP_COMPANY')}
               label="Keep company version"
             />
           </div>
-          {hasBeforeAfter && (
-            <button
-              onClick={() => {
-                const baseText = companyVersion || newMaster || '';
-                if (!mergeOpen) onMergeEdit(mergeEdit ?? baseText);
-                setMergeOpen(o => !o);
-                if (!mergeOpen) onDecide('MERGE');
-              }}
-              className={`w-full py-2 rounded-lg border text-xs font-medium no-select touch-active ${
-                reviewDecision === 'MERGE'
-                  ? 'border-app-accent bg-app-info-bg text-app-accent'
-                  : 'border-app-border bg-app-surface text-app-text-2'
-              }`}
-            >
-              {mergeOpen ? '▲ Hide merge editor' : 'Combine and edit'}
-            </button>
-          )}
-          {mergeOpen && (
-            <div className="mt-1">
-              <p className="text-xs text-app-text-muted mb-1">Edit the merged result below:</p>
-              <textarea
-                className="w-full p-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text resize-none"
-                rows={4}
-                value={mergeEdit ?? (companyVersion || newMaster || '')}
-                onChange={e => onMergeEdit(e.target.value)}
-              />
-              <p className="text-xs text-app-text-muted mt-1">This custom version will be saved as your company's content for this item.</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -911,10 +875,9 @@ function OrphanBtn({ active, onClick, label, sub, danger }) {
 
 // ── Confirm Screen ────────────────────────────────────────────────────────────
 
-function ConfirmScreen({ job, analysis, classified, currentVersion, newVersion, reviewDecisions, orphanDispositions, mergeEdits, adopting, adoptError, onBack, onAdopt }) {
+function ConfirmScreen({ job, analysis, classified, currentVersion, newVersion, reviewDecisions, orphanDispositions, adopting, adoptError, onBack, onAdopt }) {
   const keptCount = Object.values(reviewDecisions).filter(v => v === 'KEEP_COMPANY').length;
   const usedNewCount = Object.values(reviewDecisions).filter(v => v === 'USE_NEW_MASTER').length;
-  const mergedCount = Object.values(reviewDecisions).filter(v => v === 'MERGE').length;
   const orphanKeptCount = Object.values(orphanDispositions).filter(v => v === 'KEEP').length;
   const orphanRemovedCount = Object.values(orphanDispositions).filter(v => v === 'REMOVE').length;
 
@@ -942,11 +905,10 @@ function ConfirmScreen({ job, analysis, classified, currentVersion, newVersion, 
           </Section>
         )}
 
-        {(keptCount + usedNewCount + mergedCount + orphanKeptCount + orphanRemovedCount) > 0 && (
+        {(keptCount + usedNewCount + orphanKeptCount + orphanRemovedCount) > 0 && (
           <Section title="Conflict resolutions">
             {keptCount > 0 && <ConfirmRow icon={Check} color="text-app-success" label={`${keptCount} item${keptCount !== 1 ? 's' : ''}: keeping your company version`} />}
             {usedNewCount > 0 && <ConfirmRow icon={Check} color="text-app-accent" label={`${usedNewCount} item${usedNewCount !== 1 ? 's' : ''}: using new standard`} />}
-            {mergedCount > 0 && <ConfirmRow icon={Pencil} color="text-app-accent" label={`${mergedCount} custom merge${mergedCount !== 1 ? 's' : ''} created`} />}
             {orphanKeptCount > 0 && <ConfirmRow icon={Check} color="text-app-warning" label={`${orphanKeptCount} removed standard item${orphanKeptCount !== 1 ? 's' : ''} kept in your library`} />}
             {orphanRemovedCount > 0 && <ConfirmRow icon={Minus} color="text-app-text-muted" label={`${orphanRemovedCount} item${orphanRemovedCount !== 1 ? 's' : ''} removed as per standard`} />}
           </Section>
