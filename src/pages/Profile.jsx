@@ -11,6 +11,7 @@ import {
   Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2,
   AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
+  RefreshCw,
 } from 'lucide-react';
 import { getPlan, formatPrice } from '@/lib/plans';
 import { getRoleLabel } from '@/lib/roleLabels';
@@ -32,6 +33,7 @@ export default function Profile() {
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const { syncRecord, librarySyncing } = useApp();
 
   const rl = (code) => getRoleLabel(code, activeCompany);
 
@@ -107,6 +109,13 @@ export default function Profile() {
           <Row icon={ShieldAlert} label="Ownership &amp; Account" onClick={() => navigate('/ownership')} />
           <Divider />
           <Row icon={Bell} label="Notifications" onClick={() => navigate('/notifications')} />
+          <Divider />
+          <Row
+            icon={RefreshCw}
+            label={librarySyncing ? 'Synchronization — Syncing…' : 'Synchronization'}
+            value={syncRecord?.lastSyncAt ? new Date(syncRecord.lastSyncAt).toLocaleDateString() : undefined}
+            onClick={() => navigate('/sync-settings')}
+          />
         </Section>
       ) : isProjectManager ? (
         /* Project Manager: limited company section */

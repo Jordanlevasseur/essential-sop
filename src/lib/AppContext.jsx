@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { ensureSeeded } from './seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import { usePlatform } from '@/lib/PlatformContext';
+import { useCompanySync } from '@/lib/useCompanySync';
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
@@ -144,6 +145,9 @@ export function AppProvider({ children }) {
   // Never combines with platform authority.
   const isCompanyAdmin = isGeneralManager || activeMembership?.role === 'project_manager';
 
+  // ── Automatic Company Library Sync ────────────────────────────────────────
+  const { syncing: librarySyncing, syncRecord, syncError: librarySyncError, triggerSync } = useCompanySync(companyId, hasCompany, isCompanyAdmin);
+
   // technicianViewMode: presentation-only toggle for prototype UI testing.
   // Does NOT grant any backend permissions. Renamed to clarify it is not a role switch.
   const technicianViewMode = userMode === 'technician';
@@ -167,6 +171,8 @@ export function AppProvider({ children }) {
       user,
       companyId,
       hasCompany,
+      // Library sync
+      librarySyncing, syncRecord, librarySyncError, triggerSync,
     }}>
       {children}
     </AppContext.Provider>

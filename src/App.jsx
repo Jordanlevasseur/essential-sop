@@ -32,6 +32,7 @@ import AcceptInvitation from '@/pages/AcceptInvitation';
 import CompanyProfile from '@/pages/CompanyProfile';
 import RoleLabels from '@/pages/RoleLabels';
 import OwnershipAndAccount from '@/pages/OwnershipAndAccount';
+import SyncSettings from '@/pages/SyncSettings';
 import MasterLibrary from '@/pages/admin/MasterLibrary';
 import MasterSOPEditor from '@/pages/admin/MasterSOPEditor';
 import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard';
@@ -136,6 +137,7 @@ const SeededApp = () => {
       <Route path="/company-profile" element={<CompanyProfile />} />
       <Route path="/role-labels" element={<RoleLabels />} />
       <Route path="/ownership" element={<OwnershipAndAccount />} />
+      <Route path="/sync-settings" element={<SyncSettings />} />
       {/* Essential SOP Platform Admin — requires active PlatformMembership(SUPER_ADMIN) */}
       <Route path="/admin/master-library" element={<PlatformSuperAdminGuard><MasterLibrary /></PlatformSuperAdminGuard>} />
       <Route path="/admin/master-library/:masterId" element={<PlatformSuperAdminGuard><MasterSOPEditor /></PlatformSuperAdminGuard>} />
