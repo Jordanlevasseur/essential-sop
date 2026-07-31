@@ -182,7 +182,7 @@ function SopItemRow({ item, index, total, isDraft, onEdit, onDelete, onReorder, 
         </div>
 
         {isDraft && (
-          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-100">
             <button onClick={() => onReorder(index, -1)} disabled={index === 0 || saving} className="icon-btn text-app-text-muted hover:text-app-text disabled:opacity-25" style={{minWidth:28,minHeight:28}}>
               <ArrowUp size={12} />
             </button>

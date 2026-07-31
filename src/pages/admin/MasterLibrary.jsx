@@ -201,12 +201,13 @@ export default function MasterLibrary() {
         <CreateMasterJobSheet
           onClose={() => setShowCreate(false)}
           onCreated={(master) => {
-            setShowCreate(false);
-            // New masters open directly in the editor
+            // Navigate BEFORE closing — closing unmounts this component and can
+            // interrupt the navigate() call if React flushes the state update first.
             const editPath = window.location.pathname.startsWith('/platform')
               ? `/platform/master-library/${master.id}/edit`
               : `/admin/master-library/${master.id}`;
             navigate(editPath);
+            setShowCreate(false);
           }}
         />
       )}
