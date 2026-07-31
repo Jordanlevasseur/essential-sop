@@ -4,7 +4,6 @@ import { base44 } from '@/api/base44Client';
 import { Search, SlidersHorizontal, Plus, X, AlertTriangle } from 'lucide-react';
 import MasterJobCard from '@/components/platform/MasterJobCard';
 import MasterJobFilterSheet from '@/components/platform/MasterJobFilterSheet';
-import CreateMasterJobSheet from '@/components/platform/CreateMasterJobSheet';
 
 export default function MasterLibrary() {
   const navigate = useNavigate();
@@ -14,7 +13,6 @@ export default function MasterLibrary() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState({ status: '', trade: '', category: '' });
   const [showFilters, setShowFilters] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const searchRef = useRef(null);
 
   const basePath = window.location.pathname.startsWith('/platform')
@@ -128,7 +126,7 @@ export default function MasterLibrary() {
           <SlidersHorizontal size={18} />
         </button>
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={() => navigate(`${basePath}/new`)}
           className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium"
         >
           <Plus size={18} />
@@ -162,7 +160,7 @@ export default function MasterLibrary() {
               </p>
             </div>
             <button
-              onClick={() => setShowCreate(true)}
+              onClick={() => navigate(`${basePath}/new`)}
               className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold inline-flex items-center gap-1.5"
             >
               <Plus size={15} /> Create Master Job
@@ -196,21 +194,7 @@ export default function MasterLibrary() {
         categories={categories}
       />
 
-      {/* Create sheet */}
-      {showCreate && (
-        <CreateMasterJobSheet
-          onClose={() => setShowCreate(false)}
-          onCreated={(master) => {
-            // Navigate BEFORE closing — closing unmounts this component and can
-            // interrupt the navigate() call if React flushes the state update first.
-            const editPath = window.location.pathname.startsWith('/platform')
-              ? `/platform/master-library/${master.id}/edit`
-              : `/admin/master-library/${master.id}`;
-            navigate(editPath);
-            setShowCreate(false);
-          }}
-        />
-      )}
+
     </div>
   );
 }

@@ -44,6 +44,7 @@ import PlatformAuditLog from '@/pages/platform/PlatformAuditLog';
 import PlatformCompanies from '@/pages/platform/PlatformCompanies';
 import PlatformBootstrap from '@/pages/platform/PlatformBootstrap';
 import MasterJobDetail from '@/pages/platform/MasterJobDetail';
+import CreateMasterJob from '@/pages/platform/CreateMasterJob';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -144,6 +145,7 @@ const SeededApp = () => {
         {/* /platform lands on Master Jobs — the God Mode front door */}
         <Route path="/platform" element={<Navigate to="/platform/master-library" replace />} />
         <Route path="/platform/master-library" element={<MasterLibrary />} />
+        <Route path="/platform/master-library/new" element={<CreateMasterJob />} />
         <Route path="/platform/master-library/:masterId" element={<MasterJobDetail />} />
         <Route path="/platform/master-library/:masterId/edit" element={<MasterSOPEditor />} />
         <Route path="/platform/companies" element={<PlatformCompanies />} />
