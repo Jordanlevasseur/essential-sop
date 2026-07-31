@@ -759,19 +759,28 @@ export default async function(req) {
         if (rec.companyId) provByCompany[rec.companyId] = rec;
       }
 
-      // Count provisioned companies
-      const provisionedCount = provRecords.filter((r: any) => r.status === 'COMPLETED' || r.status === 'SKIPPED').length;
-      const failedCount = provRecords.filter((r: any) => r.status === 'FAILED').length;
+      // Count provisioned companies (use new provisioningStatus field, fallback to status)
+      const provisionedCount = provRecords.filter((r: any) =>
+        (r.provisioningStatus || r.status) === 'COMPLETED' || (r.provisioningStatus || r.status) === 'SKIPPED'
+      ).length;
+      const failedCount = provRecords.filter((r: any) => (r.provisioningStatus || r.status) === 'FAILED').length;
+      const removedCount = provRecords.filter((r: any) => r.assignmentStatus === 'REMOVED').length;
 
       // Build per-company list (only companies that have a record)
       const companyRows = provRecords.map((rec: any) => ({
         companyId: rec.companyId,
         companyName: companyMap[rec.companyId]?.name || 'Unknown Company',
         companyStatus: companyMap[rec.companyId]?.status || 'unknown',
-        status: rec.status,
+        assignmentStatus: rec.assignmentStatus || 'ACTIVE',
+        provisioningStatus: rec.provisioningStatus || rec.status,
         companyJobId: rec.companyJobId,
-        versionId: rec.versionId,
-        provisionedAt: rec.completedAt || rec.updatedAt,
+        lastProvisionedVersionId: rec.lastProvisionedVersionId || rec.versionId,
+        provisionedAt: rec.lastProvisionedAt || rec.completedAt || rec.updatedAt,
+        assignedAt: rec.assignedAt,
+        assignedBy: rec.assignedBy,
+        assignmentSource: rec.assignmentSource,
+        unassignedAt: rec.unassignedAt,
+        unassignedBy: rec.unassignedBy,
         errorCode: rec.errorCode,
         errorMessage: rec.errorMessage,
         attemptCount: rec.attemptCount || 1,
@@ -783,6 +792,7 @@ export default async function(req) {
         totalActiveCompanies: allCompanies.length,
         provisionedCount,
         failedCount,
+        removedCount,
         companyRows,
       });
     }
@@ -878,6 +888,8 @@ export default async function(req) {
         const provisioningKey = buildProvisioningKey(companyId, masterId);
         const existingJob = existingJobByCompanyId.get(companyId) || null;
         const existingRecord = existingRecordByKey.get(provisioningKey) || null;
+        // For REMOVED assignments, skip — they were deliberately unassigned
+        if (existingRecord?.assignmentStatus === 'REMOVED') { skipped++; continue; }
         try {
           const result = await provisionMasterToOneCompany({
             SR,
@@ -886,6 +898,8 @@ export default async function(req) {
             publishedVersion,
             source: 'FUTURE_DISTRIBUTION_EVENT',
             distributionEventId,
+            assignedBy: user.id,
+            effectivePolicy: distributionPolicy,
             existingJob,
             existingRecord,
             now,
@@ -961,14 +975,66 @@ export default async function(req) {
       }
 
       return Response.json({
-        companies: companies.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          status: c.status,
-          provisioned: !!provByCompany[c.id] && (provByCompany[c.id].status === 'COMPLETED' || provByCompany[c.id].status === 'SKIPPED'),
-          provisionedAt: provByCompany[c.id]?.completedAt || null,
-        })),
+        companies: companies.map((c: any) => {
+          const rec = provByCompany[c.id];
+          const ps = rec?.provisioningStatus || rec?.status;
+          return {
+            id: c.id,
+            name: c.name,
+            status: c.status,
+            assignmentStatus: rec?.assignmentStatus || null,
+            provisioned: !!rec && (ps === 'COMPLETED' || ps === 'SKIPPED') && rec?.assignmentStatus !== 'REMOVED',
+            provisionedAt: rec?.lastProvisionedAt || rec?.completedAt || null,
+          };
+        }),
       });
+    }
+
+    // ── UNASSIGN COMPANY FROM MASTER SOP ────────────────────────────────────
+    // Sets assignmentStatus=REMOVED on the ProvisioningRecord.
+    // Sync will no longer maintain this SOP for the company.
+    // The Company Job is preserved (product policy: no data deletion).
+    if (action === 'unassign_company') {
+      const { masterId, companyId, reason } = body;
+      if (!masterId || !companyId) return Response.json({ error: 'masterId and companyId are required' }, { status: 400 });
+
+      const { unassignCompanyFromMaster } = await import('../../shared/companyLibraryProvisioning.ts');
+      const result = await unassignCompanyFromMaster(SR, {
+        companyId, masterId, unassignedBy: user.id, reason,
+      });
+
+      if (!result.success) {
+        return Response.json({ error: result.error }, { status: 400 });
+      }
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id, actingUserRole: 'SUPER_ADMIN',
+        action: 'distribution_policy_changed',
+        extra: {
+          masterId,
+          metadata: { action: 'unassign_company', companyId, reason: reason || null },
+        },
+      });
+
+      return Response.json({ success: true, record: result.record });
+    }
+
+    // ── REACTIVATE COMPANY ASSIGNMENT ────────────────────────────────────────
+    // Re-activates a REMOVED assignment. Does not provision a Job — trigger sync or distribute.
+    if (action === 'reactivate_company') {
+      const { masterId, companyId } = body;
+      if (!masterId || !companyId) return Response.json({ error: 'masterId and companyId are required' }, { status: 400 });
+
+      const { reactivateCompanyAssignment } = await import('../../shared/companyLibraryProvisioning.ts');
+      const result = await reactivateCompanyAssignment(SR, {
+        companyId, masterId, reactivatedBy: user.id,
+      });
+
+      if (!result.success) {
+        return Response.json({ error: result.error }, { status: 400 });
+      }
+
+      return Response.json({ success: true, record: result.record });
     }
 
     // ── GET VERSION HISTORY ──────────────────────────────────────────────────

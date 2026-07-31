@@ -1,33 +1,35 @@
 /**
  * syncCompanyLibrary — Company Library Sync
  *
- * SOURCE OF TRUTH: ProvisioningRecord entities with status=COMPLETED for this
+ * SOURCE OF TRUTH: ProvisioningRecord entities with assignmentStatus=ACTIVE for this
  * company define the canonical set of Master SOPs assigned to the company.
- * A COMPLETED ProvisioningRecord means the company has been explicitly assigned
- * that Master SOP — regardless of the Master's defaultDistributionPolicy.
+ *
+ * ASSIGNMENT vs PROVISIONING:
+ *   assignmentStatus (ACTIVE/REMOVED/SUSPENDED) = IS the company currently assigned?
+ *   provisioningStatus (COMPLETED/FAILED/etc.)  = WAS the Job successfully created?
+ *   A COMPLETED provisioningStatus alone is NOT sufficient — assignmentStatus must be ACTIVE.
  *
  * This means:
- *   - ALL_EXISTING_AND_FUTURE_COMPANIES → assignment created at publish time.
- *   - SELECTED_COMPANIES → assignment created only if this company was selected.
- *   - MANUAL → assignment created only if explicitly distributed to this company.
- *   - FUTURE_COMPANIES_ONLY → assignment created only for companies created after cutoff.
+ *   - ALL_EXISTING_AND_FUTURE_COMPANIES → ACTIVE assignment created at publish time.
+ *   - SELECTED_COMPANIES → ACTIVE assignment only if this company was selected.
+ *   - MANUAL → ACTIVE assignment only if explicitly distributed to this company.
+ *   - REMOVED assignments → excluded from sync; Company Job is preserved but not recreated.
  *
- * The sync loop DOES NOT re-evaluate defaultDistributionPolicy. It trusts the
- * ProvisioningRecord as the durable, authoritative assignment record.
+ * The sync loop DOES NOT re-evaluate defaultDistributionPolicy and CANNOT create assignments.
+ * Only Publish & Distribution workflows create assignments.
  *
  * Sync responsibilities:
- *  1. Load all COMPLETED ProvisioningRecords for this company → assigned masters.
+ *  1. Load all ACTIVE ProvisioningRecords for this company → assigned masters.
  *  2. Load company's existing essential_sop Jobs.
- *  3. For each assigned master:
+ *  3. For each ACTIVE assigned master:
  *     a. If Company Job is missing → provision it via provisionMasterToOneCompany().
  *     b. If Company Job exists but is on an older version → create CompanyVersionDecision.
  *     c. If Company Job exists and is current → skip (no write).
  *  4. Persist sync result in CompanyLibraryProvisioningRun (server-side history).
  *  5. Return lightweight summary.
  *
- * Unassignment: if a ProvisioningRecord is later marked UNASSIGNED (future
- * status), the sync simply won't include it. The Company Job is NOT deleted —
- * product policy is to preserve company data.
+ * Unassignment: ProvisioningRecord.assignmentStatus is set to REMOVED by platform admin.
+ * Sync excludes REMOVED records. The Company Job is NOT deleted — product policy preserves data.
  *
  * Auth: any active CompanyMembership member may sync their own company.
  */
@@ -76,37 +78,49 @@ export default async function(req: Request): Promise<Response> {
     const startedAt = new Date().toISOString();
 
     // ── Step 1: Load canonical assignment records (ProvisioningRecord) ────────
-    // A COMPLETED ProvisioningRecord = this company is assigned this Master SOP.
-    // This is THE source of truth for assignment — policy is irrelevant here.
+    // ACTIVE assignmentStatus = this company is currently assigned this Master SOP.
+    // REMOVED assignmentStatus = assignment was revoked; sync must NOT maintain these.
+    // provisioningStatus=COMPLETED alone is NOT sufficient — must also be ACTIVE.
     let assignmentRecords: any[] = [];
     try {
       assignmentRecords = await SR.entities.ProvisioningRecord.filter(
-        { companyId, status: 'COMPLETED' },
+        { companyId, assignmentStatus: 'ACTIVE' },
         '-createdAt',
         500
       ) || [];
     } catch (_) {
-      return Response.json({ error: 'Failed to load company assignments' }, { status: 500 });
+      // Fallback: legacy records may not have assignmentStatus set yet — treat null as ACTIVE
+      try {
+        const allRecs = await SR.entities.ProvisioningRecord.filter(
+          { companyId },
+          '-createdAt',
+          500
+        ) || [];
+        assignmentRecords = allRecs.filter((r: any) =>
+          r.assignmentStatus === 'ACTIVE' || r.assignmentStatus == null
+        );
+      } catch (_) {
+        return Response.json({ error: 'Failed to load company assignments' }, { status: 500 });
+      }
     }
 
-    // Also include FAILED records that have a companyJobId — partial recoveries
-    let failedRecords: any[] = [];
-    try {
-      failedRecords = await SR.entities.ProvisioningRecord.filter(
-        { companyId, status: 'FAILED' },
-        '-createdAt',
-        200
-      ) || [];
-    } catch (_) {}
+    // Exclude REMOVED and SUSPENDED assignments explicitly (belt-and-suspenders)
+    assignmentRecords = assignmentRecords.filter((r: any) =>
+      r.assignmentStatus !== 'REMOVED' && r.assignmentStatus !== 'SUSPENDED'
+    );
 
-    // De-duplicate: one canonical record per masterId (COMPLETED takes precedence)
+    // Also include ACTIVE+FAILED records for retry (Job was never successfully provisioned)
+    // De-duplicate: one canonical record per masterId (prefer ACTIVE records)
     const recordByMasterId = new Map<string, any>();
-    for (const rec of failedRecords) {
-      if (rec.masterId) recordByMasterId.set(rec.masterId, rec);
-    }
-    // COMPLETED overwrites FAILED for the same masterId
     for (const rec of assignmentRecords) {
-      if (rec.masterId) recordByMasterId.set(rec.masterId, rec);
+      if (rec.masterId) {
+        const existing = recordByMasterId.get(rec.masterId);
+        // Prefer records with successful provisioningStatus
+        if (!existing ||
+            (existing.provisioningStatus === 'FAILED' && rec.provisioningStatus !== 'FAILED')) {
+          recordByMasterId.set(rec.masterId, rec);
+        }
+      }
     }
 
     const assignedMasterIds = [...recordByMasterId.keys()];
@@ -241,8 +255,10 @@ export default async function(req: Request): Promise<Response> {
             publishedVersion,
             source: 'COMPANY_CREATION',
             distributionEventId: assignmentRecord?.distributionEventId || null,
+            assignedBy: assignmentRecord?.assignedBy || 'system',
             existingJob: null,
-            existingRecord: assignmentRecord?.status === 'COMPLETED' ? assignmentRecord : null,
+            // Pass existing ACTIVE record so _upsertProvisioningRecord updates it, not creates a duplicate
+            existingRecord: assignmentRecord || null,
             now,
           });
 

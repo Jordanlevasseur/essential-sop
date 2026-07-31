@@ -101,12 +101,22 @@
  * One logical ProvisioningRecord per (companyId, masterId) pair.
  * operationType: INITIAL_COMPANY_LIBRARY.
  * Key: `ESOP_PROVISION:${companyId}:${masterId}`.
- * On success:  status=COMPLETED, companyJobId=job.id, completedAt set.
- * On skip:     status=SKIPPED, companyJobId=existing job.id, completedAt set.
- * On failure:  status=FAILED, errorCode + errorMessage set.
- * On retry with existing COMPLETED record: idempotent skip.
- * On retry with existing FAILED record: attempt again, update the record.
- * Partial-state recovery: if a Job exists but record is missing or FAILED, repair.
+ *
+ * TWO INDEPENDENT STATUS FIELDS:
+ *   assignmentStatus: ACTIVE | REMOVED | SUSPENDED
+ *     → Whether the assignment is currently active. Sync reads ONLY ACTIVE records.
+ *     → Set at creation (ACTIVE). Changed to REMOVED by unassignment. Never set by sync.
+ *   provisioningStatus: COMPLETED | SKIPPED | FAILED | PENDING
+ *     → Whether the Job was successfully provisioned. Does NOT imply active assignment.
+ *
+ * On success:  provisioningStatus=COMPLETED, assignmentStatus=ACTIVE, companyJobId=job.id.
+ * On skip:     provisioningStatus=SKIPPED, assignmentStatus=ACTIVE, companyJobId=existing.
+ * On failure:  provisioningStatus=FAILED, assignmentStatus=ACTIVE.
+ * On retry with existing ACTIVE+COMPLETED record: idempotent skip.
+ * On retry with existing ACTIVE+FAILED record: attempt again, update record.
+ * Partial-state recovery: if Job exists but record missing or FAILED → repair.
+ * Unassignment: sets assignmentStatus=REMOVED, writes unassignedAt+unassignedBy.
+ *   Sync excludes REMOVED records. Historical data preserved.
  *
  * ── FAILURE ISOLATION ─────────────────────────────────────────────────────────
  * Individual Master/company failures are caught without aborting other iterations.
@@ -220,6 +230,8 @@ export interface ProvisionMasterToOneCompanyParams {
   publishedVersion: any;              // full EssentialSOPVersion record (must have status='published')
   source: ProvisioningSource;
   distributionEventId: string | null; // linked DistributionEvent.id, or null
+  assignedBy: string;                 // userId who triggered the assignment, or 'system'
+  effectivePolicy?: string;           // distribution policy, used to set assignmentSource accurately
   // In-memory state passed by the caller to avoid per-company DB round-trips:
   existingJob: any | null;            // pre-loaded Job for (companyId, masterId), or null
   existingRecord: any | null;         // pre-loaded ProvisioningRecord for this key, or null
@@ -247,14 +259,29 @@ export interface ProvisionMasterToOneCompanyParams {
  *
  * Returns a structured ProvisioningItemResult: COMPLETED, SKIPPED, or FAILED.
  */
+// Map ProvisioningSource → assignmentSource field value
+// effectivePolicy is passed from the caller to handle SELECTED_COMPANIES correctly.
+export function sourceToAssignmentSource(source: ProvisioningSource, effectivePolicy?: string): string {
+  switch (source) {
+    case 'COMPANY_CREATION': return 'COMPANY_CREATION';
+    case 'MANUAL_PLATFORM_ADMIN': return 'MANUAL';
+    case 'FUTURE_DISTRIBUTION_EVENT':
+      if (effectivePolicy === 'SELECTED_COMPANIES') return 'SELECTED_COMPANIES';
+      return 'ALL_COMPANIES';
+    default: return 'MANUAL';
+  }
+}
+
 export async function provisionMasterToOneCompany(
   params: ProvisionMasterToOneCompanyParams
 ): Promise<ProvisioningItemResult> {
-  const { SR, company, master, publishedVersion, source, distributionEventId, existingJob, existingRecord, now } = params;
+  const { SR, company, master, publishedVersion, source, distributionEventId, assignedBy, effectivePolicy, existingJob, existingRecord, now } = params;
   const companyId = company.id;
   const masterId = master.id;
   const versionId = publishedVersion?.id || null;
   const provisioningKey = buildProvisioningKey(companyId, masterId);
+
+  const assignmentSource = sourceToAssignmentSource(source, effectivePolicy);
 
   // ── Defensive: validate version ──────────────────────────────────────────
   if (!publishedVersion || publishedVersion.status !== 'published') {
@@ -267,8 +294,8 @@ export async function provisionMasterToOneCompany(
       existingRecord,
       provisioningKey, companyId, masterId, versionId,
       distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-      status: 'FAILED', companyJobId: null,
-      errorCode, errorMessage, now,
+      provisioningStatus: 'FAILED', assignmentSource, assignedBy,
+      companyJobId: null, errorCode, errorMessage, now,
     });
 
     return {
@@ -279,14 +306,15 @@ export async function provisionMasterToOneCompany(
     };
   }
 
-  // ── Idempotency: existing completed record ────────────────────────────────
-  if (existingRecord?.status === 'COMPLETED' && existingRecord?.companyJobId) {
+  // ── Idempotency: existing ACTIVE+COMPLETED record with existing job ────────
+  const isActiveRecord = !existingRecord || existingRecord.assignmentStatus === 'ACTIVE' || existingRecord.assignmentStatus == null;
+  if (isActiveRecord && (existingRecord?.provisioningStatus === 'COMPLETED' || existingRecord?.status === 'COMPLETED') && existingRecord?.companyJobId) {
     if (existingJob) {
       return {
         masterId, masterTitle: master.title,
         result: 'SKIPPED', skipReason: 'ALREADY_PROVISIONED',
         companyJobId: existingJob.id,
-        versionId: existingRecord.versionId || versionId,
+        versionId: existingRecord.lastProvisionedVersionId || existingRecord.versionId || versionId,
         provisioningRecordId: existingRecord.id, provisioningKey,
       };
     }
@@ -301,8 +329,8 @@ export async function provisionMasterToOneCompany(
       provisioningKey, companyId, masterId,
       versionId: existingJob.sourceVersionId || versionId,
       distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-      status: 'SKIPPED', companyJobId: existingJob.id,
-      errorCode: null, errorMessage: null, now,
+      provisioningStatus: 'SKIPPED', assignmentSource, assignedBy,
+      companyJobId: existingJob.id, errorCode: null, errorMessage: null, now,
     });
 
     return {
@@ -340,7 +368,8 @@ export async function provisionMasterToOneCompany(
       existingRecord,
       provisioningKey, companyId, masterId, versionId,
       distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-      status: 'FAILED', companyJobId: null,
+      provisioningStatus: 'FAILED', assignmentSource, assignedBy,
+      companyJobId: null,
       errorCode: 'JOB_CREATE_FAILED',
       errorMessage: 'Failed to create company job record.',
       now,
@@ -360,8 +389,8 @@ export async function provisionMasterToOneCompany(
     existingRecord,
     provisioningKey, companyId, masterId, versionId: publishedVersion.id,
     distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-    status: 'COMPLETED', companyJobId: createdJob.id,
-    errorCode: null, errorMessage: null, now,
+    provisioningStatus: 'COMPLETED', assignmentSource, assignedBy,
+    companyJobId: createdJob.id, errorCode: null, errorMessage: null, now,
   });
 
   return {
@@ -591,6 +620,7 @@ export async function provisionCompanyLibraryCore(
         publishedVersion,
         source,
         distributionEventId,
+        assignedBy: initiatedByUserId || 'system',
         existingJob,
         existingRecord,
         now,
@@ -658,6 +688,9 @@ export async function provisionCompanyLibraryCore(
 
 // ── Internal: upsert a ProvisioningRecord ────────────────────────────────────
 // Single implementation — called exclusively by provisionMasterToOneCompany().
+// Writes both the assignment fields (assignmentStatus, assignedAt, assignmentSource)
+// and the provisioning-attempt fields (provisioningStatus, lastProvisionedVersionId, etc.)
+// separately so they can evolve independently.
 
 async function _upsertProvisioningRecord(SR: any, params: {
   existingRecord: any;
@@ -667,7 +700,9 @@ async function _upsertProvisioningRecord(SR: any, params: {
   versionId: string | null;
   distributionEventId: string | null;
   operationType: string;
-  status: string;
+  provisioningStatus: string;
+  assignmentSource: string;
+  assignedBy: string;
   companyJobId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
@@ -675,43 +710,59 @@ async function _upsertProvisioningRecord(SR: any, params: {
 }): Promise<any> {
   const {
     existingRecord, provisioningKey, companyId, masterId, versionId,
-    distributionEventId, operationType, status, companyJobId,
-    errorCode, errorMessage, now,
+    distributionEventId, operationType, provisioningStatus, assignmentSource,
+    assignedBy, companyJobId, errorCode, errorMessage, now,
   } = params;
 
-  const isCompleted = status === 'COMPLETED' || status === 'SKIPPED';
+  const isSuccessful = provisioningStatus === 'COMPLETED' || provisioningStatus === 'SKIPPED';
+
+  // Provisioning-attempt fields (always updated)
   const payload: any = {
-    status,
+    provisioningStatus,
+    // Legacy field kept for backward-compat reads; mirrors provisioningStatus
+    status: provisioningStatus,
     companyJobId: companyJobId || null,
-    versionId,
-    distributionEventId,
+    lastProvisionedVersionId: isSuccessful ? (versionId || null) : (existingRecord?.lastProvisionedVersionId || null),
+    lastProvisionedAt: isSuccessful ? now : (existingRecord?.lastProvisionedAt || null),
     lastAttemptAt: now,
     updatedAt: now,
   };
 
-  if (isCompleted) {
+  if (isSuccessful) {
     payload.completedAt = now;
     payload.errorCode = null;
     payload.errorMessage = null;
   } else {
-    payload.completedAt = null;
     payload.errorCode = errorCode || 'UNKNOWN';
     payload.errorMessage = errorMessage || 'Unknown error.';
   }
 
   try {
     if (existingRecord) {
+      // Never overwrite assignment lifecycle fields on an existing record
+      // (assignmentStatus, assignedAt, assignedBy, assignmentSource are set at creation only).
       return await SR.entities.ProvisioningRecord.update(existingRecord.id, {
         ...payload,
         attemptCount: (existingRecord.attemptCount || 0) + 1,
       });
     } else {
+      // New record — set assignment lifecycle fields
       return await SR.entities.ProvisioningRecord.create({
         ...payload,
         provisioningKey,
         companyId,
         masterId,
         operationType,
+        distributionEventId: distributionEventId || null,
+        // Assignment lifecycle fields — set once at creation
+        assignmentStatus: 'ACTIVE',
+        assignedAt: now,
+        assignedBy,
+        assignmentSource,
+        // Removal fields — null until unassigned
+        unassignedAt: null,
+        unassignedBy: null,
+        unassignmentReason: null,
         attemptCount: 1,
         createdAt: now,
       });
@@ -788,6 +839,99 @@ async function _writeCompletionAudit(
       },
     });
   } catch (_) {}
+}
+
+// ── Public: unassign a company from a Master SOP ─────────────────────────────
+//
+// Sets assignmentStatus=REMOVED on the canonical ProvisioningRecord.
+// The Company Job is preserved — product policy is to never delete company data.
+// Sync will exclude REMOVED records going forward — no new Jobs provisioned,
+// no new version decisions created, no updates pushed.
+//
+// Called by: manageMasterSOP (action='unassign_company') — SUPER_ADMIN only.
+
+export async function unassignCompanyFromMaster(SR: any, params: {
+  companyId: string;
+  masterId: string;
+  unassignedBy: string;
+  reason?: string;
+}): Promise<{ success: boolean; error?: string; record?: any }> {
+  const { companyId, masterId, unassignedBy, reason } = params;
+  const provisioningKey = buildProvisioningKey(companyId, masterId);
+
+  // Find the canonical record
+  let records: any[] = [];
+  try {
+    records = await SR.entities.ProvisioningRecord.filter({ provisioningKey }, '-createdAt', 1) || [];
+  } catch (_) {}
+
+  const record = records[0] || null;
+
+  if (!record) {
+    return { success: false, error: 'No assignment record found for this company-master pair.' };
+  }
+
+  if (record.assignmentStatus === 'REMOVED') {
+    // Already removed — idempotent
+    return { success: true, record };
+  }
+
+  const now = new Date().toISOString();
+  try {
+    const updated = await SR.entities.ProvisioningRecord.update(record.id, {
+      assignmentStatus: 'REMOVED',
+      unassignedAt: now,
+      unassignedBy,
+      unassignmentReason: reason || null,
+      updatedAt: now,
+    });
+    return { success: true, record: updated };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to update assignment record.' };
+  }
+}
+
+// ── Public: reactivate a previously removed assignment ───────────────────────
+//
+// Re-activates a REMOVED assignment (e.g. company was re-added to a distribution).
+// Does NOT provision a new Job — caller must trigger a sync or distribution event for that.
+
+export async function reactivateCompanyAssignment(SR: any, params: {
+  companyId: string;
+  masterId: string;
+  reactivatedBy: string;
+}): Promise<{ success: boolean; error?: string; record?: any }> {
+  const { companyId, masterId, reactivatedBy } = params;
+  const provisioningKey = buildProvisioningKey(companyId, masterId);
+
+  let records: any[] = [];
+  try {
+    records = await SR.entities.ProvisioningRecord.filter({ provisioningKey }, '-createdAt', 1) || [];
+  } catch (_) {}
+
+  const record = records[0] || null;
+  if (!record) {
+    return { success: false, error: 'No assignment record found.' };
+  }
+  if (record.assignmentStatus === 'ACTIVE') {
+    return { success: true, record }; // Already active
+  }
+
+  const now = new Date().toISOString();
+  try {
+    const updated = await SR.entities.ProvisioningRecord.update(record.id, {
+      assignmentStatus: 'ACTIVE',
+      unassignedAt: null,
+      unassignedBy: null,
+      unassignmentReason: null,
+      // Re-record who reactivated (use assignedBy field; preserve original assignedAt)
+      assignedBy: reactivatedBy,
+      updatedAt: now,
+    });
+    return { success: true, record: updated };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'Failed to reactivate assignment.' };
+  }
 }
 
 // ── Internal: build a full-failure result ─────────────────────────────────────

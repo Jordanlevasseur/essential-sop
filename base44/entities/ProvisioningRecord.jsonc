@@ -1,7 +1,7 @@
 {
   "name": "ProvisioningRecord",
   "type": "object",
-  "description": "Canonical company-master assignment record. ONE record per (companyId, masterId) pair, keyed by provisioningKey = 'ESOP_PROVISION:{companyId}:{masterId}'. A COMPLETED record is the authoritative signal that this company has been assigned this Master SOP, regardless of how the assignment originated (distribution event, manual admin action, or company sync). The sync reads COMPLETED records as the source of truth for what to maintain \u2014 it does NOT re-evaluate distribution policy. distributionEventId is optional: MANUAL and sync-driven assignments have no associated DistributionEvent. Created and controlled exclusively by platform backend services. Direct client writes are blocked.",
+  "description": "Canonical company-master assignment record. ONE record per (companyId, masterId) pair, keyed by provisioningKey = 'ESOP_PROVISION:{companyId}:{masterId}'. This entity serves TWO distinct responsibilities: (1) CURRENT ASSIGNMENT STATE \u2014 assignmentStatus (ACTIVE/REMOVED/SUSPENDED) is the authoritative signal for whether the company is currently assigned this Master SOP; (2) PROVISIONING HISTORY \u2014 provisioningStatus tracks the last Job provisioning attempt. A COMPLETED provisioningStatus alone does NOT prove an active assignment; assignmentStatus=ACTIVE is required. Assignment creation is exclusively triggered by Publish & Distribution workflows. Sync reads ACTIVE records to decide what to maintain; it cannot create or reactivate assignments. Unassignment sets assignmentStatus=REMOVED without deleting the record. Created and controlled exclusively by platform backend services. Direct client writes are blocked.",
   "rls": {
     "read": false,
     "create": false,
@@ -9,40 +9,69 @@
     "delete": false
   },
   "properties": {
-    "distributionEventId": {
+    "provisioningKey": {
       "type": "string",
-      "description": "DistributionEvent.id this record belongs to. Optional \u2014 null for MANUAL assignments and sync-driven provisions that have no associated distribution event."
+      "description": "Deterministic deduplication key: 'ESOP_PROVISION:{companyId}:{masterId}'. One record per (companyId, masterId) pair. Source-independent. Used for canonical lookup before any insert."
     },
     "companyId": {
       "type": "string",
-      "description": "Company targeted by this provisioning action."
+      "description": "Company targeted by this assignment."
     },
     "masterId": {
       "type": "string",
-      "description": "EssentialSOPMaster.id being provisioned."
-    },
-    "versionId": {
-      "type": "string",
-      "description": "EssentialSOPVersion.id being provisioned."
+      "description": "EssentialSOPMaster.id that has been assigned to this company."
     },
     "companyJobId": {
       "type": "string",
-      "description": "The Job.id created for this company, if operation succeeded."
+      "description": "The Job.id provisioned for this company-master pair. Set when provisioningStatus=COMPLETED. Preserved even after unassignment \u2014 historical reference to the Company Job."
     },
-    "provisioningKey": {
-      "type": "string",
-      "description": "Deterministic deduplication key: 'ESOP_PROVISION:{companyId}:{masterId}'. One key per (companyId, masterId) pair. Source-independent."
-    },
-    "operationType": {
+    "assignmentStatus": {
       "type": "string",
       "enum": [
-        "CREATE_NEW_COMPANY_JOB",
-        "INITIAL_COMPANY_LIBRARY",
-        "SKIP_ALREADY_PROVISIONED"
+        "ACTIVE",
+        "REMOVED",
+        "SUSPENDED"
       ],
-      "description": "The type of provisioning operation performed."
+      "default": "ACTIVE",
+      "description": "THE authoritative active-assignment signal. ACTIVE = company is currently assigned and sync should maintain this SOP. REMOVED = assignment was explicitly revoked; sync must not maintain this SOP. SUSPENDED = temporarily paused; sync skips but does not delete. Sync reads ONLY ACTIVE records."
     },
-    "status": {
+    "assignedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when this assignment was first created."
+    },
+    "assignedBy": {
+      "type": "string",
+      "description": "userId of the platform admin who created this assignment, or 'system' for automatic ALL_EXISTING distribution."
+    },
+    "assignmentSource": {
+      "type": "string",
+      "enum": [
+        "ALL_COMPANIES",
+        "SELECTED_COMPANIES",
+        "MANUAL",
+        "COMPANY_CREATION"
+      ],
+      "description": "How this assignment was created. ALL_COMPANIES = ALL_EXISTING_AND_FUTURE_COMPANIES policy. SELECTED_COMPANIES = specific company was targeted. MANUAL = explicitly distributed to this company via MANUAL policy. COMPANY_CREATION = assigned at company creation time via provisionCompanyLibraryCore."
+    },
+    "distributionEventId": {
+      "type": "string",
+      "description": "DistributionEvent.id that created this assignment. Optional \u2014 null for MANUAL assignments via platform admin action, COMPANY_CREATION assignments, and sync-repair records. Where absent, assignmentSource and assignedBy provide traceability."
+    },
+    "unassignedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when this assignment was removed. Null while assignmentStatus=ACTIVE."
+    },
+    "unassignedBy": {
+      "type": "string",
+      "description": "userId of the platform admin who removed this assignment, or 'system' for automated removal. Null while assignmentStatus=ACTIVE."
+    },
+    "unassignmentReason": {
+      "type": "string",
+      "description": "Optional human-readable reason for removal (e.g. 'Removed from selected company list', 'Company closed')."
+    },
+    "provisioningStatus": {
       "type": "string",
       "enum": [
         "PENDING",
@@ -51,21 +80,44 @@
         "SKIPPED",
         "FAILED"
       ],
-      "default": "PENDING"
+      "default": "PENDING",
+      "description": "Status of the most recent Job provisioning attempt. Independent of assignmentStatus. COMPLETED = Company Job was successfully created. SKIPPED = Job already existed. FAILED = provisioning attempt failed. Does NOT indicate whether the assignment is currently active \u2014 check assignmentStatus for that."
+    },
+    "lastProvisionedVersionId": {
+      "type": "string",
+      "description": "EssentialSOPVersion.id that was last successfully provisioned into the Company Job. Updated when provisioningStatus transitions to COMPLETED or SKIPPED."
+    },
+    "lastProvisionedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the last successful provisioning attempt."
+    },
+    "operationType": {
+      "type": "string",
+      "enum": [
+        "CREATE_NEW_COMPANY_JOB",
+        "INITIAL_COMPANY_LIBRARY",
+        "SKIP_ALREADY_PROVISIONED"
+      ],
+      "description": "The type of provisioning operation performed on the last attempt."
     },
     "attemptCount": {
       "type": "number",
-      "default": 0
+      "default": 0,
+      "description": "Number of provisioning attempts made for this assignment."
     },
     "lastAttemptAt": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Timestamp of the most recent provisioning attempt."
     },
     "errorCode": {
-      "type": "string"
+      "type": "string",
+      "description": "Machine-readable error code from the last failed attempt. Null when provisioningStatus=COMPLETED or SKIPPED."
     },
     "errorMessage": {
-      "type": "string"
+      "type": "string",
+      "description": "Human-readable error from the last failed attempt. Null when provisioningStatus=COMPLETED or SKIPPED."
     },
     "createdAt": {
       "type": "string",
@@ -77,16 +129,19 @@
     },
     "completedAt": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Timestamp when provisioningStatus last reached COMPLETED or SKIPPED."
     }
   },
   "required": [
+    "provisioningKey",
     "companyId",
     "masterId",
-    "versionId",
-    "provisioningKey",
+    "assignmentStatus",
+    "assignedAt",
+    "assignmentSource",
+    "provisioningStatus",
     "operationType",
-    "status",
     "createdAt"
   ]
 }

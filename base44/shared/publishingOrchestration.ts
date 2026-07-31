@@ -680,6 +680,8 @@ async function _distributeNewSOPToExistingCompanies(SR: any, params: {
         publishedVersion: version,
         source: 'FUTURE_DISTRIBUTION_EVENT',
         distributionEventId,
+        assignedBy: actingUserId,
+        effectivePolicy,
         existingJob,
         existingRecord,
         now,
