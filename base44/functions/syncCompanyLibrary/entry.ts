@@ -89,25 +89,8 @@ export default async function(req: Request): Promise<Response> {
         500
       ) || [];
     } catch (_) {
-      // Fallback: legacy records may not have assignmentStatus set yet — treat null as ACTIVE
-      try {
-        const allRecs = await SR.entities.ProvisioningRecord.filter(
-          { companyId },
-          '-createdAt',
-          500
-        ) || [];
-        assignmentRecords = allRecs.filter((r: any) =>
-          r.assignmentStatus === 'ACTIVE' || r.assignmentStatus == null
-        );
-      } catch (_) {
-        return Response.json({ error: 'Failed to load company assignments' }, { status: 500 });
-      }
+      return Response.json({ error: 'Failed to load company assignments' }, { status: 500 });
     }
-
-    // Exclude REMOVED and SUSPENDED assignments explicitly (belt-and-suspenders)
-    assignmentRecords = assignmentRecords.filter((r: any) =>
-      r.assignmentStatus !== 'REMOVED' && r.assignmentStatus !== 'SUSPENDED'
-    );
 
     // Also include ACTIVE+FAILED records for retry (Job was never successfully provisioned)
     // De-duplicate: one canonical record per masterId (prefer ACTIVE records)
