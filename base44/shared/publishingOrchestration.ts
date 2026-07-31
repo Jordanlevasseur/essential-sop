@@ -187,6 +187,17 @@ export async function publishMasterSOPVersion(
     return { error: Response.json({ error: `Invalid distribution policy: ${effectivePolicy}` }, { status: 400 }) };
   }
 
+  // Non-MANUAL policies distribute to companies and therefore require the SOP
+  // to be marked customer_available. MANUAL publications are always permitted
+  // regardless of distributionStatus (used for internal/staged testing).
+  // This guard fires before any write (no version, no event, no provisioning record).
+  if (effectivePolicy !== 'MANUAL' && master.distributionStatus !== 'customer_available') {
+    return { error: Response.json({
+      code: 'DISTRIBUTION_STATUS_REQUIRED',
+      error: `Distribution policy "${effectivePolicy}" requires distributionStatus to be "customer_available". Current status: "${master.distributionStatus || 'internal'}". Set distributionStatus to "customer_available" before publishing with a non-MANUAL policy.`,
+    }, { status: 422 }) };
+  }
+
   // For SELECTED_COMPANIES: caller may pass selectedCompanyIds in the payload as an override,
   // or rely on master.defaultSelectedCompanyIds. Fall back to the master's stored list.
   const normalizedSelectedCompanyIds: string[] =
