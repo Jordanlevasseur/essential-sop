@@ -60,6 +60,8 @@ export default function JobWorkspacePresentation({
   renderItemActions,
   // navigation
   onBack,
+  // optional footer slot (e.g. distribution panel on Platform detail)
+  footerSlot,
 }) {
   const { label, editMode } = workspace;
 
@@ -155,6 +157,9 @@ export default function JobWorkspacePresentation({
           );
         })}
       </div>
+
+      {/* Footer slot */}
+      {footerSlot && <div className="max-w-2xl mx-auto w-full pb-4">{footerSlot}</div>}
 
       {/* Bottom safe-area spacer */}
       <div style={{ height: 'calc(32px + env(safe-area-inset-bottom))' }} />

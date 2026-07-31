@@ -731,6 +731,246 @@ export default async function(req) {
       return Response.json({ error: 'Unexpected rollback state', status: mutation?.status }, { status: 500 });
     }
 
+    // ── GET DISTRIBUTION STATUS ──────────────────────────────────────────────
+    // Returns the latest DistributionEvent and per-company provisioning records
+    // for an already-published Master SOP. Used by the detail page distribution panel.
+    if (action === 'get_distribution_status') {
+      const { masterId } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+      const master = await SR.entities.EssentialSOPMaster.get(masterId);
+      if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
+
+      // Load all active companies for eligibility context
+      const allCompanies = await SR.entities.Company.filter({ status: 'active' }, '-created_date', 500) || [];
+
+      // Load latest DistributionEvent for this master
+      const distEvents = await SR.entities.DistributionEvent.filter({ masterId }, '-createdAt', 10) || [];
+
+      // Load all ProvisioningRecords for this master (across all companies)
+      const provRecords = await SR.entities.ProvisioningRecord.filter({ masterId, operationType: 'INITIAL_COMPANY_LIBRARY' }, '-createdAt', 500) || [];
+
+      // Build company map
+      const companyMap: Record<string, any> = {};
+      for (const c of allCompanies) companyMap[c.id] = c;
+
+      // Build provisioning status per company
+      const provByCompany: Record<string, any> = {};
+      for (const rec of provRecords) {
+        if (rec.companyId) provByCompany[rec.companyId] = rec;
+      }
+
+      // Count provisioned companies
+      const provisionedCount = provRecords.filter((r: any) => r.status === 'COMPLETED' || r.status === 'SKIPPED').length;
+      const failedCount = provRecords.filter((r: any) => r.status === 'FAILED').length;
+
+      // Build per-company list (only companies that have a record)
+      const companyRows = provRecords.map((rec: any) => ({
+        companyId: rec.companyId,
+        companyName: companyMap[rec.companyId]?.name || 'Unknown Company',
+        companyStatus: companyMap[rec.companyId]?.status || 'unknown',
+        status: rec.status,
+        companyJobId: rec.companyJobId,
+        versionId: rec.versionId,
+        provisionedAt: rec.completedAt || rec.updatedAt,
+        errorCode: rec.errorCode,
+        errorMessage: rec.errorMessage,
+        attemptCount: rec.attemptCount || 1,
+      }));
+
+      return Response.json({
+        master,
+        distEvents,
+        totalActiveCompanies: allCompanies.length,
+        provisionedCount,
+        failedCount,
+        companyRows,
+      });
+    }
+
+    // ── DISTRIBUTE (post-publish distribution to companies) ──────────────────
+    // Provisions the current published version of an active Master SOP
+    // to the specified companies. Idempotent: already-provisioned companies are skipped.
+    if (action === 'distribute') {
+      const { masterId, distributionPolicy, selectedCompanyIds } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+      if (!distributionPolicy) return Response.json({ error: 'distributionPolicy is required' }, { status: 400 });
+
+      const master = await SR.entities.EssentialSOPMaster.get(masterId);
+      if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
+      if (master.status !== 'active') return Response.json({ error: 'Master SOP must be published (active) before distributing' }, { status: 409 });
+      if (!master.currentPublishedVersionId) return Response.json({ error: 'No published version found on this Master SOP' }, { status: 409 });
+
+      const publishedVersion = await SR.entities.EssentialSOPVersion.get(master.currentPublishedVersionId);
+      if (!publishedVersion || publishedVersion.status !== 'published') {
+        return Response.json({ error: 'Current published version is not in published status' }, { status: 409 });
+      }
+
+      // Resolve target companies
+      let targetCompanies: any[] = [];
+      const allCompanies = await SR.entities.Company.filter({ status: 'active' }, '-created_date', 500) || [];
+
+      if (distributionPolicy === 'ALL_EXISTING_AND_FUTURE_COMPANIES') {
+        targetCompanies = allCompanies;
+      } else if (distributionPolicy === 'SELECTED_COMPANIES') {
+        if (!Array.isArray(selectedCompanyIds) || selectedCompanyIds.length === 0) {
+          return Response.json({ error: 'selectedCompanyIds is required for SELECTED_COMPANIES policy' }, { status: 400 });
+        }
+        const idSet = new Set(selectedCompanyIds);
+        targetCompanies = allCompanies.filter((c: any) => idSet.has(c.id));
+        if (targetCompanies.length === 0) {
+          return Response.json({ error: 'None of the selected company IDs were found among active companies' }, { status: 400 });
+        }
+      } else {
+        return Response.json({ error: `distributionPolicy "${distributionPolicy}" is not supported for distribute action. Use ALL_EXISTING_AND_FUTURE_COMPANIES or SELECTED_COMPANIES.` }, { status: 400 });
+      }
+
+      // Create a DistributionEvent for this post-publish distribution
+      const distKey = `dist_${masterId}_${Date.now().toString(36)}`;
+      let distributionEvent: any = null;
+      try {
+        distributionEvent = await SR.entities.DistributionEvent.create({
+          masterId,
+          versionId: publishedVersion.id,
+          eventType: 'NEW_SOP',
+          distributionPolicy,
+          selectedCompanyIds: distributionPolicy === 'SELECTED_COMPANIES' ? selectedCompanyIds : [],
+          status: 'PROCESSING',
+          idempotencyKey: distKey,
+          publicationMutationKey: distKey,
+          totalEligibleCompanies: targetCompanies.length,
+          processedCompanies: 0,
+          successfulCompanies: 0,
+          skippedCompanies: 0,
+          failedCompanies: 0,
+          createdByUserId: user.id,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } catch (_) {}
+
+      // Bulk-load existing jobs for this master
+      const existingJobByCompanyId = new Map<string, any>();
+      try {
+        const existingJobs = await SR.entities.Job.filter({ sourceType: 'essential_sop', sourceMasterId: masterId }, '-created_date', 500) || [];
+        for (const j of existingJobs) existingJobByCompanyId.set(j.companyId, j);
+      } catch (_) {}
+
+      // Bulk-load existing ProvisioningRecords
+      const existingRecordByKey = new Map<string, any>();
+      try {
+        const existingRecords = await SR.entities.ProvisioningRecord.filter({ masterId, operationType: 'INITIAL_COMPANY_LIBRARY' }, '-createdAt', 500) || [];
+        for (const rec of existingRecords) {
+          if (rec.provisioningKey) existingRecordByKey.set(rec.provisioningKey, rec);
+        }
+      } catch (_) {}
+
+      // Import canonical functions
+      const { provisionMasterToOneCompany, buildProvisioningKey } = await import('../../shared/companyLibraryProvisioning.ts');
+
+      let successful = 0;
+      let skipped = 0;
+      let failed = 0;
+      const distributionEventId = distributionEvent?.id || null;
+
+      for (const company of targetCompanies) {
+        const companyId = company.id;
+        const provisioningKey = buildProvisioningKey(companyId, masterId);
+        const existingJob = existingJobByCompanyId.get(companyId) || null;
+        const existingRecord = existingRecordByKey.get(provisioningKey) || null;
+        try {
+          const result = await provisionMasterToOneCompany({
+            SR,
+            company,
+            master,
+            publishedVersion,
+            source: 'FUTURE_DISTRIBUTION_EVENT',
+            distributionEventId,
+            existingJob,
+            existingRecord,
+            now,
+          });
+          if (result.result === 'COMPLETED') {
+            successful++;
+            if (result.companyJobId) existingJobByCompanyId.set(companyId, { id: result.companyJobId, companyId, sourceMasterId: masterId });
+          } else if (result.result === 'SKIPPED') {
+            skipped++;
+          } else {
+            failed++;
+          }
+        } catch (_) {
+          failed++;
+        }
+      }
+
+      // Finalize DistributionEvent
+      const overallStatus = failed === 0 ? 'COMPLETED' : successful > 0 || skipped > 0 ? 'COMPLETED_WITH_ERRORS' : 'FAILED';
+      const completedAt = new Date().toISOString();
+      if (distributionEvent) {
+        try {
+          await SR.entities.DistributionEvent.update(distributionEvent.id, {
+            status: overallStatus,
+            processedCompanies: targetCompanies.length,
+            successfulCompanies: successful,
+            skippedCompanies: skipped,
+            failedCompanies: failed,
+            completedAt,
+            updatedAt: completedAt,
+            errorSummary: failed > 0 ? `${failed} company(ies) failed.` : null,
+          });
+        } catch (_) {}
+      }
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id, actingUserRole: 'SUPER_ADMIN',
+        action: 'distribution_event_created',
+        extra: {
+          masterId, masterTitle: master.title,
+          versionId: publishedVersion.id,
+          distributionEventId,
+          eventType: 'NEW_SOP',
+          distributionPolicy,
+          selectedCompanyIds: distributionPolicy === 'SELECTED_COMPANIES' ? selectedCompanyIds : [],
+          metadata: { successful, skipped, failed, overallStatus },
+        },
+      });
+
+      return Response.json({
+        success: true,
+        distributed: successful,
+        skipped,
+        failed,
+        total: targetCompanies.length,
+        overallStatus,
+        distributionEventId,
+      });
+    }
+
+    // ── LIST ACTIVE COMPANIES (for distribution company picker) ──────────────
+    if (action === 'list_companies') {
+      const { masterId } = body;
+      const companies = await SR.entities.Company.filter({ status: 'active' }, 'name', 200) || [];
+
+      // If masterId provided, load provisioning records to show already-provisioned
+      let provByCompany: Record<string, any> = {};
+      if (masterId) {
+        const provRecords = await SR.entities.ProvisioningRecord.filter({ masterId, operationType: 'INITIAL_COMPANY_LIBRARY' }, '-createdAt', 500) || [];
+        for (const rec of provRecords) {
+          if (rec.companyId) provByCompany[rec.companyId] = rec;
+        }
+      }
+
+      return Response.json({
+        companies: companies.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          provisioned: !!provByCompany[c.id] && (provByCompany[c.id].status === 'COMPLETED' || provByCompany[c.id].status === 'SKIPPED'),
+          provisionedAt: provByCompany[c.id]?.completedAt || null,
+        })),
+      });
+    }
+
     // ── GET VERSION HISTORY ──────────────────────────────────────────────────
     if (action === 'get_history') {
       const { masterId } = body;

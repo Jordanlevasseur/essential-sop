@@ -387,17 +387,22 @@ export default function MasterSOPEditor() {
     setShowPublishDialog(true);
   };
 
-  const handlePublish = async ({ mutationKey, changeSummary }) => {
+  const handlePublish = async ({ mutationKey, changeSummary, distributionPolicyOverride, selectedCompanyIds, distributionStatus }) => {
     setPublishing(true);
     setPublishError(null);
     setServerValidationErrors([]);
     try {
-      const res = await base44.functions.invoke('manageMasterSOP', {
+      const payload = {
         action: 'publish',
         masterId,
         publicationMutationKey: mutationKey,
         changeSummary,
-      });
+      };
+      if (distributionPolicyOverride) payload.distributionPolicyOverride = distributionPolicyOverride;
+      if (selectedCompanyIds) payload.selectedCompanyIds = selectedCompanyIds;
+      // If distributing to companies, ensure distributionStatus is customer_available
+      if (distributionStatus) payload.distributionStatus = distributionStatus;
+      const res = await base44.functions.invoke('manageMasterSOP', payload);
       if (res.data?.code === 'VALIDATION_FAILED') {
         setServerValidationErrors(res.data.validationErrors || []);
         setPublishError('Server validation blocked publication. See errors below.');
@@ -821,7 +826,6 @@ export default function MasterSOPEditor() {
       {showPublishDialog && (
         <SopPublishDialog
           master={master}
-          draftSections={sections}
           validation={validation}
           publishing={publishing}
           publishError={publishError}
