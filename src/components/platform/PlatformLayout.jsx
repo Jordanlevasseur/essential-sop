@@ -55,7 +55,7 @@ export default function PlatformLayout() {
       <OfflineBanner />
 
       <main
-        className="flex-1 max-w-2xl w-full mx-auto"
+        className={`flex-1 w-full ${isSubPage ? '' : 'max-w-2xl mx-auto'}`}
         style={{
           paddingBottom: isSubPage
             ? 0

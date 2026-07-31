@@ -522,14 +522,14 @@ export default function MasterSOPEditor() {
     <div className="min-h-screen bg-app-bg">
       {/* Sticky header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
-          <button onClick={handleBack} className="icon-btn text-app-text-2 hover:text-app-text">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-2">
+          <button onClick={handleBack} className="icon-btn text-app-text-2 flex-shrink-0" aria-label="Back">
             <ArrowLeft size={20} />
           </button>
 
           <div className="flex-1 min-w-0">
-            <h1 className="font-semibold text-app-text truncate">{master?.title}</h1>
-            <div className="flex items-center gap-2 text-xs">
+            <h1 className="font-semibold text-app-text truncate text-sm">{master?.title}</h1>
+            <div className="flex items-center gap-1.5 text-xs">
               <span className={`capitalize font-medium ${
                 master?.status === 'active' ? 'text-app-success' :
                 master?.status === 'draft' ? 'text-app-warning' : 'text-app-text-muted'
@@ -540,51 +540,50 @@ export default function MasterSOPEditor() {
             </div>
           </div>
 
-          {/* Header actions */}
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* Save Now — only shown when there's something to save */}
+          {/* Primary actions — always visible */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Save Now */}
             {isDraft && (saveStatus === STATUS.DIRTY || saveStatus === STATUS.FAILED || saveStatus === STATUS.OFFLINE) && (
               <button
                 onClick={handleSaveNow}
                 disabled={saveStatus === STATUS.SAVING}
-                className="px-3 py-1.5 border border-app-accent rounded-lg text-xs text-app-accent font-medium flex items-center gap-1.5 hover:bg-app-info-bg transition-colors disabled:opacity-50"
+                title="Save Now"
+                className="icon-btn border border-app-accent text-app-accent hover:bg-app-info-bg disabled:opacity-50"
               >
-                <Save size={13} /> Save Now
+                <Save size={16} />
               </button>
             )}
+            {/* Timeline — icon only on mobile */}
             <button
               onClick={openTimeline}
-              className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent transition-colors"
+              title="Version Timeline"
+              className="icon-btn border border-app-border text-app-text-2 hover:border-app-accent"
             >
-              <History size={13} /> Timeline
+              <History size={16} />
             </button>
-            <button
-              onClick={handleDuplicate}
-              className="px-3 py-1.5 border border-app-border rounded-lg text-xs text-app-text-2 flex items-center gap-1.5 hover:border-app-accent transition-colors"
-            >
-              <Copy size={13} /> Duplicate
-            </button>
+            {/* More actions menu */}
+            <MoreActionsMenu
+              isDraft={isDraft}
+              isActive={isActive}
+              isArchived={master?.status === 'archived'}
+              onDuplicate={handleDuplicate}
+              onDelete={handleDelete}
+              onArchive={handleArchive}
+            />
+            {/* Publish — primary CTA */}
             {isDraft && (
-              <>
-                <button
-                  onClick={handleDelete}
-                  className="px-3 py-1.5 border border-app-danger/40 rounded-lg text-xs text-app-danger flex items-center gap-1.5 hover:bg-app-danger-bg transition-colors"
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-                <button
-                  onClick={openPublishDialog}
-                  disabled={saveStatus === STATUS.SAVING}
-                  className="px-4 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50 relative"
-                >
-                  <Send size={13} /> Publish
-                  {publishError && validation.errors.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-app-danger text-white rounded-full text-[10px] flex items-center justify-center font-bold">
-                      {validation.errors.length}
-                    </span>
-                  )}
-                </button>
-              </>
+              <button
+                onClick={openPublishDialog}
+                disabled={saveStatus === STATUS.SAVING}
+                className="px-3 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 relative no-select touch-active"
+              >
+                <Send size={13} /> Publish
+                {publishError && validation.errors.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-app-danger text-white rounded-full text-[10px] flex items-center justify-center font-bold">
+                    {validation.errors.length}
+                  </span>
+                )}
+              </button>
             )}
             {(isActive || master?.status === 'archived') && (
               <button
@@ -855,6 +854,52 @@ export default function MasterSOPEditor() {
           versionB={compareVersions.b}
           onClose={() => setCompareVersions(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ── More actions menu ─────────────────────────────────────────────────────────
+function MoreActionsMenu({ isDraft, isActive, isArchived, onDuplicate, onDelete, onArchive }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        title="More actions"
+        className="icon-btn border border-app-border text-app-text-2 hover:border-app-accent"
+      >
+        <Copy size={16} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 bg-app-surface border border-app-border rounded-xl shadow-lg min-w-[160px] py-1 overflow-hidden">
+            <button
+              onClick={() => { setOpen(false); onDuplicate(); }}
+              className="w-full px-4 py-2.5 text-left text-sm text-app-text flex items-center gap-2.5 hover:bg-app-elevated"
+            >
+              <Copy size={14} className="text-app-text-muted" /> Duplicate
+            </button>
+            {isDraft && (
+              <button
+                onClick={() => { setOpen(false); onDelete(); }}
+                className="w-full px-4 py-2.5 text-left text-sm text-app-danger flex items-center gap-2.5 hover:bg-app-danger-bg"
+              >
+                <Trash2 size={14} /> Delete Draft
+              </button>
+            )}
+            {(isActive || isArchived) && (
+              <button
+                onClick={() => { setOpen(false); onArchive(); }}
+                disabled={isArchived}
+                className="w-full px-4 py-2.5 text-left text-sm text-app-text-2 flex items-center gap-2.5 hover:bg-app-elevated disabled:opacity-40"
+              >
+                <Archive size={14} className="text-app-text-muted" /> Archive
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
