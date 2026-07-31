@@ -1,7 +1,7 @@
 {
   "name": "ProvisioningRecord",
   "type": "object",
-  "description": "Tracks a single company-level provisioning action within a DistributionEvent. Created and controlled exclusively by platform backend services. Direct client writes are blocked. provisioningKey is deterministic: sha256-like concat of distributionEventId+companyId+masterId is not available in Base44 \u2014 use string key 'pr_${distributionEventId}_${companyId}_${masterId}' stored at creation for safe deduplication lookup.",
+  "description": "Canonical company-master assignment record. ONE record per (companyId, masterId) pair, keyed by provisioningKey = 'ESOP_PROVISION:{companyId}:{masterId}'. A COMPLETED record is the authoritative signal that this company has been assigned this Master SOP, regardless of how the assignment originated (distribution event, manual admin action, or company sync). The sync reads COMPLETED records as the source of truth for what to maintain \u2014 it does NOT re-evaluate distribution policy. distributionEventId is optional: MANUAL and sync-driven assignments have no associated DistributionEvent. Created and controlled exclusively by platform backend services. Direct client writes are blocked.",
   "rls": {
     "read": false,
     "create": false,
@@ -11,7 +11,7 @@
   "properties": {
     "distributionEventId": {
       "type": "string",
-      "description": "DistributionEvent.id this record belongs to."
+      "description": "DistributionEvent.id this record belongs to. Optional \u2014 null for MANUAL assignments and sync-driven provisions that have no associated distribution event."
     },
     "companyId": {
       "type": "string",
@@ -31,7 +31,7 @@
     },
     "provisioningKey": {
       "type": "string",
-      "description": "Deterministic deduplication key: 'pr_${distributionEventId}_${companyId}_${masterId}'. Stored at creation; checked before any new record creation to prevent duplicates."
+      "description": "Deterministic deduplication key: 'ESOP_PROVISION:{companyId}:{masterId}'. One key per (companyId, masterId) pair. Source-independent."
     },
     "operationType": {
       "type": "string",
@@ -81,7 +81,6 @@
     }
   },
   "required": [
-    "distributionEventId",
     "companyId",
     "masterId",
     "versionId",
