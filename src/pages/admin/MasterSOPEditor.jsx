@@ -405,32 +405,56 @@ export default function MasterSOPEditor() {
       };
       if (distributionPolicyOverride) payload.distributionPolicyOverride = distributionPolicyOverride;
       if (selectedCompanyIds) payload.selectedCompanyIds = selectedCompanyIds;
-      // If distributing to companies, ensure distributionStatus is customer_available
+      // Note: distributionStatus is NOT trusted server-side. The backend publish
+      // action ignores it; publishMasterSOPVersion independently verifies the
+      // persisted EssentialSOPMaster.distributionStatus at Step 4. A client field
+      // cannot bypass that guard.
       if (distributionStatus) payload.distributionStatus = distributionStatus;
+
       const res = await base44.functions.invoke('manageMasterSOP', payload);
-      if (res.data?.code === 'VALIDATION_FAILED') {
-        setServerValidationErrors(res.data.validationErrors || []);
+      const data = res?.data || {};
+
+      // Backend content/structure validation errors → show in the detail list.
+      if (data.code === 'VALIDATION_FAILED' && Array.isArray(data.validationErrors)) {
+        setServerValidationErrors(data.validationErrors);
         setPublishError('Server validation blocked publication. See errors below.');
-        setPublishing(false);
-        return;
+        return; // FAILURE: dialog stays open, selections preserved
       }
+
+      // SUCCESS requires a real published version object from the orchestrator.
+      // Any other response (error code such as DISTRIBUTION_STATUS_REQUIRED,
+      // a thrown error, or a missing version) is a FAILURE: keep the dialog open,
+      // preserve the user's company selections, and surface the backend error.
+      if (!data.version) {
+        if (Array.isArray(data.validationErrors) && data.validationErrors.length > 0) {
+          setServerValidationErrors(data.validationErrors);
+        }
+        setPublishError(
+          data.error || data.message ||
+          (data.code ? `Publication rejected (${data.code}).` : 'Publication did not return a published version.')
+        );
+        return; // FAILURE: dialog stays open, selections preserved
+      }
+
+      // ── Confirmed success: a real published version was returned ───────────
       clearDraft(masterId, currentUserId);
       pendingSaveRef.current = null;
       setShowPublishDialog(false);
       setPublishSuccess(true);
-      // Navigate to detail view after 1.5s so user can review the published SOP
-      setTimeout(() => {
-        if (isPlatform) {
-          navigate(`${libraryPath}/${masterId}`);
-        } else {
-          navigate(libraryPath);
-        }
-      }, 1500);
-      await load();
+      // Navigate immediately to the completed, published Master SOP.
+      // (Removed the prior 1.5s delay — no functional purpose; it only delayed
+      //  the user landing on the published SOP.)
+      if (isPlatform) {
+        navigate(`${libraryPath}/${masterId}`);
+      } else {
+        navigate(libraryPath);
+      }
     } catch (e) {
-      setPublishError('Publish failed: ' + (e.message || 'Unknown error'));
+      setPublishError('Publish failed: ' + (e?.message || 'Unknown error'));
+      // FAILURE: dialog stays open, selections preserved
+    } finally {
+      setPublishing(false);
     }
-    setPublishing(false);
   };
 
   // ── Archive / Delete ──────────────────────────────────────────────────────
