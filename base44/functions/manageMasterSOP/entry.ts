@@ -1,6 +1,12 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { requirePlatformSuperAdmin, writePlatformAudit } from '../../shared/platformAuth.ts';
 import { publishMasterSOPVersion, updateDistributionPolicy } from '../../shared/publishingOrchestration.ts';
+import {
+  slugify,
+  generateLogicalItemId,
+  ensureLogicalItemIds,
+  createMasterSopDraft,
+} from '../../shared/masterSopDraftFactory.ts';
 
 /**
  * manageMasterSOP — All Essential SOP Master Library and platform role operations.
@@ -74,33 +80,9 @@ function validateDraftForPublish(master: any, sections: any[]): string[] {
   return errors;
 }
 
-function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-/**
- * generateLogicalItemId — assigns a stable cross-version identity to a new master content item.
- * Called ONCE at item creation time. Never regenerated on edit, move, or snapshot.
- * Format: lid_<6-char masterId prefix>_<random base36>
- */
-function generateLogicalItemId(masterId: string): string {
-  const prefix = (masterId || 'xx').slice(-6);
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `lid_${prefix}_${rand}`;
-}
-
-/**
- * ensureLogicalItemIds — assigns logicalItemId to any content items that lack one.
- * Used when saving draft sections and when duplicating. Idempotent: existing IDs preserved.
- */
-function ensureLogicalItemIds(items: any[], masterId: string): any[] {
-  return (items || []).map(item => {
-    if (item && typeof item === 'object' && !item.logicalItemId) {
-      return { ...item, logicalItemId: generateLogicalItemId(masterId) };
-    }
-    return item;
-  });
-}
+// slugify, generateLogicalItemId, ensureLogicalItemIds, and createMasterSopDraft
+// are imported from ../../shared/masterSopDraftFactory.ts (canonical, shared with
+// generateMasterSopDraft).
 
 /**
  * deriveLegacyLogicalItemId — deterministic ID for historical items that lacked logicalItemId.
@@ -252,24 +234,13 @@ export default async function(req) {
     if (action === 'create') {
       const { title, category, trade, description, tags } = body;
       if (!title) return Response.json({ error: 'title is required' }, { status: 400 });
-      const slug = slugify(title) + '-' + Date.now().toString(36);
-      const master = await SR.entities.EssentialSOPMaster.create({
-        title, slug,
-        category: category || '', trade: trade || '', description: description || '',
-        tags: Array.isArray(tags) ? tags : [],
-        status: 'draft', currentPublishedVersionId: null,
-        draftRevision: 0, draftLastSavedByUserId: user.id,
-        createdAt: now, updatedAt: now,
+      // Canonical draft creation (master + six empty sections) — shared with
+      // generateMasterSopDraft. Behavior identical to the previous inline impl.
+      const master = await createMasterSopDraft(SR, {
+        title, category: category || '', trade: trade || '',
+        description: description || '', tags,
+        userId: user.id, now,
       });
-      const SECTION_TYPES = ['tools', 'materials', 'scope', 'procedure', 'safety', 'quality'];
-      const SECTION_TITLES = { tools: 'Tools', materials: 'Materials', scope: 'Scope', procedure: 'Procedure', safety: 'Safety', quality: 'Quality Standards' };
-      for (let i = 0; i < SECTION_TYPES.length; i++) {
-        const st = SECTION_TYPES[i];
-        await SR.entities.EssentialSOPSection.create({
-          masterId: master.id, versionId: 'draft', sectionType: st,
-          title: SECTION_TITLES[st], sortOrder: i, contentItems: [],
-        });
-      }
       await writePlatformAudit(SR, { actingUserId: user.id, actingUserRole: 'SUPER_ADMIN', action: 'master_sop_created', extra: { masterId: master.id, masterTitle: master.title } });
       return Response.json({ master });
     }
