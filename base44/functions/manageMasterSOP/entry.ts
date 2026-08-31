@@ -391,6 +391,59 @@ export default async function(req) {
       return Response.json({ master: result!.master, version: result!.version, distributionEvent: result!.distributionEvent, eventType: result!.eventType, idempotent: result!.idempotent });
     }
 
+    // ── MARK CUSTOMER AVAILABLE ──────────────────────────────────────────────
+    // Narrow, authorized state transition: distributionStatus "internal" →
+    // "customer_available" ONLY. This action is the legitimate way to satisfy
+    // publishMasterSOPVersion's Step 4 guard before a non-MANUAL publish.
+    //
+    // It is an availability flag ONLY — it does NOT publish, create a version,
+    // create a DistributionEvent, provision, or trigger sync. The publish
+    // orchestrator independently re-reads the PERSISTED distributionStatus, so
+    // this action does not bypass that guard; it changes persisted state that
+    // the guard then verifies.
+    //
+    // Idempotent: a Master already "customer_available" returns success with no
+    // state change and no duplicate audit. "retired" lifecycle is intentionally
+    // not handled here.
+    if (action === 'mark_customer_available') {
+      const { masterId } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+
+      const master = await SR.entities.EssentialSOPMaster.get(masterId);
+      if (!master) return Response.json({ error: 'Not found' }, { status: 404 });
+
+      // Only "internal" → "customer_available" is permitted by this action.
+      if (master.distributionStatus === 'customer_available') {
+        return Response.json({ success: true, master, alreadyCustomerAvailable: true });
+      }
+      if (master.distributionStatus && master.distributionStatus !== 'internal') {
+        return Response.json({
+          code: 'INVALID_CURRENT_STATUS',
+          error: `Cannot mark customer_available: current distributionStatus is "${master.distributionStatus}". Only "internal" may transition via this action.`,
+        }, { status: 409 });
+      }
+
+      const previousDistributionStatus = master.distributionStatus || 'internal';
+      await SR.entities.EssentialSOPMaster.update(masterId, {
+        distributionStatus: 'customer_available',
+        updatedAt: now,
+      });
+
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: 'SUPER_ADMIN',
+        action: 'distribution_status_changed',
+        extra: {
+          masterId,
+          masterTitle: master.title,
+          metadata: { previousDistributionStatus, newDistributionStatus: 'customer_available' },
+        },
+      });
+
+      const updated = await SR.entities.EssentialSOPMaster.get(masterId);
+      return Response.json({ success: true, master: updated, alreadyCustomerAvailable: false });
+    }
+
     // ── UPDATE DISTRIBUTION POLICY ───────────────────────────────────────────
     if (action === 'update_distribution_policy') {
       const { masterId, defaultDistributionPolicy, defaultSelectedCompanyIds } = body;

@@ -30,6 +30,7 @@
         "company_library_provisioned",
         "distribution_event_created",
         "distribution_policy_changed",
+        "distribution_status_changed",
         "publication_requested",
         "publication_completed",
         "publication_failed",

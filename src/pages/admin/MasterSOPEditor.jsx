@@ -405,12 +405,44 @@ export default function MasterSOPEditor() {
       };
       if (distributionPolicyOverride) payload.distributionPolicyOverride = distributionPolicyOverride;
       if (selectedCompanyIds) payload.selectedCompanyIds = selectedCompanyIds;
-      // Note: distributionStatus is NOT trusted server-side. The backend publish
-      // action ignores it; publishMasterSOPVersion independently verifies the
-      // persisted EssentialSOPMaster.distributionStatus at Step 4. A client field
-      // cannot bypass that guard.
+      // distributionStatus is NOT trusted server-side: the backend publish action
+      // ignores it and publishMasterSOPVersion independently verifies the
+      // PERSISTED EssentialSOPMaster.distributionStatus at Step 4. A client field
+      // cannot bypass that guard — the authorized mark_customer_available action
+      // (called below) is the legitimate way to satisfy it for non-MANUAL policy.
       if (distributionStatus) payload.distributionStatus = distributionStatus;
 
+      // ── Step 1: establish customer_available for non-MANUAL distribution ──
+      // For SELECTED_COMPANIES / ALL_EXISTING_AND_FUTURE_COMPANIES we first call
+      // the authorized mark_customer_available action and require it to succeed
+      // BEFORE publishing. MANUAL / Publish Only skips this and stays as-is.
+      const isDistributedPublish =
+        distributionPolicyOverride === 'SELECTED_COMPANIES' ||
+        distributionPolicyOverride === 'ALL_EXISTING_AND_FUTURE_COMPANIES';
+
+      if (isDistributedPublish) {
+        let mkRes;
+        try {
+          mkRes = await base44.functions.invoke('manageMasterSOP', {
+            action: 'mark_customer_available',
+            masterId,
+          });
+        } catch (mkErr) {
+          // Availability transition failed — do NOT publish.
+          setPublishError('Failed to mark this SOP as customer-available: ' + (mkErr?.message || 'Unknown error'));
+          return;
+        }
+        const mkData = mkRes?.data || {};
+        if (!mkData.master) {
+          setPublishError(
+            mkData.error || mkData.message ||
+            (mkData.code ? `Availability transition failed (${mkData.code}).` : 'Failed to mark this SOP as customer-available.')
+          );
+          return;
+        }
+      }
+
+      // ── Step 2: existing publish ──────────────────────────────────────────
       const res = await base44.functions.invoke('manageMasterSOP', payload);
       const data = res?.data || {};
 
