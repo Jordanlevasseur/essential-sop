@@ -207,6 +207,26 @@ function validateAndCleanAiSop(raw: any): { ok: boolean; sop?: any; errors?: str
   return { ok: true, sop: clean };
 }
 
+/**
+ * cleanupAiDraft — best-effort cleanup of a draft Master SOP created by THIS
+ * AI generation request only. Deletes the master's six draft sections, then
+ * the master record itself. NEVER touches any other master. Returns true if
+ * the master record was deleted, false if deletion failed (orphan remains).
+ */
+async function cleanupAiDraft(SR: any, masterId: string): Promise<boolean> {
+  try {
+    await SR.entities.EssentialSOPSection.deleteMany({ masterId, versionId: 'draft' });
+  } catch (_) {
+    // best-effort; continue to attempt master deletion
+  }
+  try {
+    await SR.entities.EssentialSOPMaster.delete(masterId);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 export default async function (req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
@@ -279,6 +299,10 @@ export default async function (req: Request): Promise<Response> {
 
     // ── Create the draft master + six empty sections (canonical factory) ────
     // This is the SAME early-draft architecture as manual manageMasterSOP/create.
+    // The factory creates the master first, then six sections. If it throws
+    // during section scaffolding the master.id is not returned to us, so cleanup
+    // is not possible here — we report the scaffolding failure explicitly. (This
+    // matches manual creation's failure mode and is not introduced by the AI flow.)
     let master: any;
     try {
       master = await createMasterSopDraft(SR, {
@@ -292,15 +316,21 @@ export default async function (req: Request): Promise<Response> {
       });
     } catch (e: any) {
       return Response.json(
-        { code: 'CREATE_FAILED', error: 'Failed to create the draft Master SOP.', detail: e?.message || '' },
+        {
+          code: 'CREATE_FAILED',
+          error: 'Failed to create the draft Master SOP scaffolding (master + sections). No AI content was written.',
+          detail: e?.message || '',
+        },
         { status: 500 }
       );
     }
 
-    // ── Write AI content onto the six draft sections ────────────────────────
-    // Direct section writes at creation time, mirroring manual create behavior.
-    // draftRevision stays 0 — the editor loads revision 0 and the first user edit
-    // sends expected 0, matching the server. No revision bump needed here.
+    // ── Prepare ALL six section content payloads BEFORE any content write ──
+    // All AI content is already validated. We map every section that has AI items
+    // into a single bulk-update payload, so content persistence is ONE batch write
+    // rather than six independent writes. This eliminates the silent partial-
+    // population failure mode: either ALL validated AI content is stored, or the
+    // failure is reported and the draft created by THIS request is cleaned up.
     let draftSections: any[] = [];
     try {
       draftSections = await SR.entities.EssentialSOPSection.filter(
@@ -308,10 +338,22 @@ export default async function (req: Request): Promise<Response> {
         'sortOrder',
         10
       ) || [];
-    } catch (_) {
-      draftSections = [];
+    } catch (e: any) {
+      const cleaned = await cleanupAiDraft(SR, master.id);
+      return Response.json(
+        {
+          code: 'SECTION_READ_FAILED',
+          error: cleaned
+            ? 'Draft was created but its sections could not be read back for content persistence. The partial draft was cleaned up. Please try again.'
+            : 'Draft was created but its sections could not be read back, AND automatic cleanup failed. A partial draft remains and must be deleted manually from the Master Library.',
+          masterId: master.id,
+          cleanedUp: cleaned,
+        },
+        { status: 500 }
+      );
     }
 
+    const bulkPayload: any[] = [];
     for (const sec of draftSections) {
       const rawItems = sop.sections[sec.sectionType] || [];
       if (!Array.isArray(rawItems) || rawItems.length === 0) continue;
@@ -325,28 +367,68 @@ export default async function (req: Request): Promise<Response> {
         metadata: it.metadata || {},
       }));
       const withIds = ensureLogicalItemIds(mapped, master.id);
+      bulkPayload.push({ id: sec.id, contentItems: withIds });
+    }
+
+    // ── Persist all section content in ONE supported batch operation ────────
+    // bulkUpdate is the platform's existing batch write for multiple records — a
+    // single call that either completes for all entries or throws, with no silent
+    // per-section swallowing. draftRevision stays 0 (the editor loads revision 0
+    // and the first user edit sends expected 0, matching the server).
+    if (bulkPayload.length > 0) {
       try {
-        await SR.entities.EssentialSOPSection.update(sec.id, { contentItems: withIds });
-      } catch (_) {
-        // Non-fatal per-section failure — master is still created; user can edit.
+        await SR.entities.EssentialSOPSection.bulkUpdate(bulkPayload);
+      } catch (e: any) {
+        // Content persistence failed AFTER the master draft was created. Clean up
+        // the EXACT draft created by this request (its six draft sections + the
+        // master record). We never touch any pre-existing master.
+        const cleaned = await cleanupAiDraft(SR, master.id);
+        if (cleaned) {
+          return Response.json(
+            {
+              code: 'SECTION_CONTENT_PERSIST_FAILED',
+              error: 'AI content could not be saved to the draft sections. The partial draft created by this request was cleaned up. Please try again.',
+              masterId: master.id,
+              cleanedUp: true,
+              detail: e?.message || '',
+            },
+            { status: 500 }
+          );
+        }
+        // Cleanup itself failed — surface the orphaned draft id explicitly so the
+        // admin can delete it manually. Do NOT report a generic generation failure.
+        return Response.json(
+          {
+            code: 'SECTION_CONTENT_PERSIST_FAILED_CLEANUP_FAILED',
+            error: 'AI content could not be saved AND automatic cleanup failed. A partial draft remains and must be deleted manually from the Master Library.',
+            masterId: master.id,
+            cleanedUp: false,
+            detail: e?.message || '',
+          },
+          { status: 500 }
+        );
       }
     }
 
-    // ── Audit (reuses the existing master_sop_created action) ───────────────
-    await writePlatformAudit(SR, {
-      actingUserId: user.id,
-      actingUserRole: 'SUPER_ADMIN',
-      action: 'master_sop_created',
-      extra: {
-        masterId: master.id,
-        masterTitle: master.title,
-        metadata: {
-          source: 'AI_BUILDER',
-          promptLength: prompt.length,
-          promptSnippet: prompt.slice(0, 200),
+    // ── Audit (best-effort; a failed audit must NOT mask the successful draft) ─
+    try {
+      await writePlatformAudit(SR, {
+        actingUserId: user.id,
+        actingUserRole: 'SUPER_ADMIN',
+        action: 'master_sop_created',
+        extra: {
+          masterId: master.id,
+          masterTitle: master.title,
+          metadata: {
+            source: 'AI_BUILDER',
+            promptLength: prompt.length,
+            promptSnippet: prompt.slice(0, 200),
+          },
         },
-      },
-    });
+      });
+    } catch (_) {
+      // Draft is complete and usable. Audit failure is non-fatal.
+    }
 
     return Response.json({
       masterId: master.id,
