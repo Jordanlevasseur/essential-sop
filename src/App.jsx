@@ -14,6 +14,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import { lazy, Suspense } from 'react';
 import Layout from '@/components/Layout';
 import RouteFallback from '@/components/RouteFallback';
+import PageTransition from '@/components/PageTransition';
 import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard';
 import { PlatformProvider } from '@/lib/PlatformContext';
 import PlatformLayout from '@/components/platform/PlatformLayout';
@@ -134,26 +135,30 @@ const SeededApp = () => {
         <Route path="/jobs/:jobId/:sectionType" element={<SectionDetail />} />
         <Route path="/create-job" element={<CreateJob />} />
       </Route>
-      {/* Legal pages — accessible without the bottom nav wrapper */}
-      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-      <Route path="/terms-of-service" element={<TermsOfService />} />
-      <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
-      <Route path="/subscription" element={<Subscription />} />
-      <Route path="/plans" element={<Plans />} />
-      <Route path="/team" element={<TeamMembers />} />
-      <Route path="/requests" element={<EditRequests />} />
-      <Route path="/activity" element={<ActivityHistory />} />
-      <Route path="/notifications" element={<Notifications />} />
-      <Route path="/accept-invitation" element={<AcceptInvitation />} />
-      <Route path="/company-profile" element={<CompanyProfile />} />
-      <Route path="/role-labels" element={<RoleLabels />} />
-      <Route path="/ownership" element={<OwnershipAndAccount />} />
-      <Route path="/sync-settings" element={<SyncSettings />} />
+      {/* Legal pages — accessible without the bottom nav wrapper.
+          These standalone routes render outside Layout/PlatformLayout, so they
+          are wrapped in the EXISTING PageTransition (opacity-only fade) to keep
+          transitions consistent with the layout-managed routes. No second
+          animation system is introduced. */}
+      <Route path="/privacy-policy" element={<PageTransition><PrivacyPolicy /></PageTransition>} />
+      <Route path="/terms-of-service" element={<PageTransition><TermsOfService /></PageTransition>} />
+      <Route path="/admin/deletion-requests" element={<PageTransition><DeletionRequests /></PageTransition>} />
+      <Route path="/subscription" element={<PageTransition><Subscription /></PageTransition>} />
+      <Route path="/plans" element={<PageTransition><Plans /></PageTransition>} />
+      <Route path="/team" element={<PageTransition><TeamMembers /></PageTransition>} />
+      <Route path="/requests" element={<PageTransition><EditRequests /></PageTransition>} />
+      <Route path="/activity" element={<PageTransition><ActivityHistory /></PageTransition>} />
+      <Route path="/notifications" element={<PageTransition><Notifications /></PageTransition>} />
+      <Route path="/accept-invitation" element={<PageTransition><AcceptInvitation /></PageTransition>} />
+      <Route path="/company-profile" element={<PageTransition><CompanyProfile /></PageTransition>} />
+      <Route path="/role-labels" element={<PageTransition><RoleLabels /></PageTransition>} />
+      <Route path="/ownership" element={<PageTransition><OwnershipAndAccount /></PageTransition>} />
+      <Route path="/sync-settings" element={<PageTransition><SyncSettings /></PageTransition>} />
       {/* Essential SOP Platform Admin — requires active PlatformMembership(SUPER_ADMIN) */}
-      <Route path="/admin/master-library" element={<PlatformSuperAdminGuard><MasterLibrary /></PlatformSuperAdminGuard>} />
-      <Route path="/admin/master-library/:masterId" element={<PlatformSuperAdminGuard><MasterSOPEditor /></PlatformSuperAdminGuard>} />
+      <Route path="/admin/master-library" element={<PlatformSuperAdminGuard><PageTransition><MasterLibrary /></PageTransition></PlatformSuperAdminGuard>} />
+      <Route path="/admin/master-library/:masterId" element={<PlatformSuperAdminGuard><PageTransition><MasterSOPEditor /></PageTransition></PlatformSuperAdminGuard>} />
       {/* Platform Admin environment — /platform/* */}
-      <Route path="/platform/bootstrap" element={<PlatformBootstrap />} />
+      <Route path="/platform/bootstrap" element={<PageTransition><PlatformBootstrap /></PageTransition>} />
       <Route element={<PlatformGuard><PlatformLayout /></PlatformGuard>}>
         {/* /platform lands on Master Jobs — the God Mode front door */}
         <Route path="/platform" element={<Navigate to="/platform/master-library" replace />} />
@@ -168,7 +173,7 @@ const SeededApp = () => {
         <Route path="/platform/audit" element={<PlatformAuditLog />} />
         <Route path="/platform/profile" element={<PlatformDashboard />} />
       </Route>
-      <Route path="*" element={<PageNotFound />} />
+      <Route path="*" element={<PageTransition><PageNotFound /></PageTransition>} />
     </Routes>
     </Suspense>
   );
