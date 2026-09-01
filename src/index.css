@@ -182,6 +182,19 @@ html, body, #root {
   max-width: 100vw;
 }
 
+/* Contain iOS overscroll/bounce so the app reads as a native container rather
+   than a page floating in Mobile Safari. The document itself does NOT
+   rubber-band; inner scroll regions are contained so their overscroll never
+   chains to the body. */
+html, body {
+  overscroll-behavior-y: none;
+}
+/* Inner vertical scroll regions (bottom sheets, dialogs, long lists) contain
+   their own overscroll instead of bouncing the whole page. */
+.overflow-y-auto {
+  overscroll-behavior-y: contain;
+}
+
 /* ─── Native-feel touch & selection rules ─────────────────────────────────── */
 
 /*

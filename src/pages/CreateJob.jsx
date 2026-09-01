@@ -4,8 +4,9 @@ import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
 import { createJobWithSections } from '@/lib/seedData';
-import { ArrowLeft, Check, Eye, Save, Send } from 'lucide-react';
+import { ArrowLeft, Check, Eye, Save, Send, ChevronDown } from 'lucide-react';
 import { SECTION_DEFINITIONS, TRADES, CATEGORIES, SKILL_LEVELS } from '@/lib/constants';
+import SelectSheet from '@/components/ui/SelectSheet';
 
 const fieldCls = 'w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent';
 
@@ -26,6 +27,7 @@ export default function CreateJob() {
   const [saving, setSaving] = useState(false);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [jobId, setJobId] = useState(null);
+  const [openSheet, setOpenSheet] = useState(null); // 'trade' | 'category' | 'skillLevel' | null
 
   useEffect(() => {
     if (editId) {
@@ -127,25 +129,29 @@ export default function CreateJob() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Trade</label>
-                <select value={form.trade} onChange={e => set('trade', e.target.value)} className={fieldCls}>
-                  <option value="">Select...</option>
-                  {TRADES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <button type="button" onClick={() => setOpenSheet('trade')}
+                  className={`${fieldCls} flex items-center justify-between text-left no-select touch-active`}>
+                  <span className={!form.trade ? 'text-app-text-muted' : ''}>{form.trade || 'Select...'}</span>
+                  <ChevronDown size={16} className="text-app-text-muted" />
+                </button>
               </div>
               <div>
                 <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Category</label>
-                <select value={form.category} onChange={e => set('category', e.target.value)} className={fieldCls}>
-                  <option value="">Select...</option>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <button type="button" onClick={() => setOpenSheet('category')}
+                  className={`${fieldCls} flex items-center justify-between text-left no-select touch-active`}>
+                  <span className={!form.category ? 'text-app-text-muted' : ''}>{form.category || 'Select...'}</span>
+                  <ChevronDown size={16} className="text-app-text-muted" />
+                </button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Skill Level</label>
-                <select value={form.skillLevel} onChange={e => set('skillLevel', e.target.value)} className={fieldCls}>
-                  {SKILL_LEVELS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <button type="button" onClick={() => setOpenSheet('skillLevel')}
+                  className={`${fieldCls} flex items-center justify-between text-left no-select touch-active`}>
+                  <span>{form.skillLevel}</span>
+                  <ChevronDown size={16} className="text-app-text-muted" />
+                </button>
               </div>
               <div>
                 <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Estimated Duration</label>
@@ -238,6 +244,31 @@ export default function CreateJob() {
           </div>
         )}
       </div>
+
+      <SelectSheet
+        open={openSheet === 'trade'}
+        title="Trade"
+        value={form.trade}
+        options={[{ value: '', label: 'None' }, ...TRADES]}
+        onSelect={(v) => set('trade', v)}
+        onClose={() => setOpenSheet(null)}
+      />
+      <SelectSheet
+        open={openSheet === 'category'}
+        title="Category"
+        value={form.category}
+        options={[{ value: '', label: 'None' }, ...CATEGORIES]}
+        onSelect={(v) => set('category', v)}
+        onClose={() => setOpenSheet(null)}
+      />
+      <SelectSheet
+        open={openSheet === 'skillLevel'}
+        title="Skill Level"
+        value={form.skillLevel}
+        options={SKILL_LEVELS}
+        onSelect={(v) => set('skillLevel', v)}
+        onClose={() => setOpenSheet(null)}
+      />
 
       {showPublishConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowPublishConfirm(false)}>

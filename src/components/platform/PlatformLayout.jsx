@@ -5,6 +5,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import { base44 } from '@/api/base44Client';
 import { Briefcase, Building2, Settings, User } from 'lucide-react';
 import OfflineBanner from '@/components/OfflineBanner';
+import PageTransition from '@/components/PageTransition';
 
 const TABS = [
   { to: '/platform/master-library', label: 'Master Jobs', icon: Briefcase },
@@ -62,7 +63,9 @@ export default function PlatformLayout() {
             : `calc(${NAV_CONTENT_HEIGHT}px + env(safe-area-inset-bottom))`,
         }}
       >
-        <Outlet />
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </main>
 
       {/* Bottom navigation — identical structure to Company Layout */}

@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
 import { Briefcase, MessageSquare, User } from 'lucide-react';
 import OfflineBanner from '@/components/OfflineBanner';
+import PageTransition from '@/components/PageTransition';
 
 const TABS = [
   { to: '/', label: 'Jobs', icon: Briefcase, end: true },
@@ -33,7 +34,9 @@ export default function Layout() {
             : `calc(${NAV_CONTENT_HEIGHT}px + env(safe-area-inset-bottom))`,
         }}
       >
-        <Outlet />
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </main>
 
       {!isSubPage && (

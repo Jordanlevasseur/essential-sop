@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
@@ -6,6 +6,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import { Search, SlidersHorizontal, Plus, Star, X } from 'lucide-react';
 import JobCard from '@/components/jobs/JobCard';
 import FilterSheet from '@/components/jobs/FilterSheet';
+import PullToRefresh from '@/components/PullToRefresh';
 import { useJobsListState } from '@/lib/useJobsListState';
 
 export default function Jobs() {
@@ -31,19 +32,26 @@ export default function Jobs() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Read-only re-fetch used both on mount and by PullToRefresh.
+  // Never mutates; safe to call repeatedly (no duplicate Jobs, no provisioning).
+  const fetchJobs = useCallback(async () => {
+    if (!companyId) return;
+    try {
+      const res = await base44.functions.invoke('resolveJobsForCompany', { companyId });
+      setJobs(res?.data?.jobs || []);
+      setContentIndex(res?.data?.contentIndex || []);
+    } catch (_) {
+      // best-effort refresh; existing list is preserved on failure
+    } finally {
+      setLoading(false);
+    }
+  }, [companyId]);
+
   useEffect(() => {
     if (!companyId) return;
     setLoading(true);
-    // Use resolver-backed service so provisioned SOP Jobs show company-overridden titles.
-    // No merge logic lives here — all resolution happens server-side.
-    base44.functions.invoke('resolveJobsForCompany', { companyId })
-      .then(res => {
-        setJobs(res?.data?.jobs || []);
-        setContentIndex(res?.data?.contentIndex || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [companyId]);
+    fetchJobs();
+  }, [fetchJobs]);
 
   // Restore scroll position after list has rendered (only once per mount)
   useEffect(() => {
@@ -126,6 +134,7 @@ export default function Jobs() {
 
   return (
     <div className="px-4 pt-6 pb-4">
+      <PullToRefresh onRefresh={fetchJobs} disabled={showFilters} />
       <h1 className="text-2xl font-bold text-app-text mb-1">Jobs</h1>
       {activeCompany && <p className="text-xs text-app-text-muted mb-4">{activeCompany.name}</p>}
 

@@ -12,6 +12,7 @@ import {
   AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
   RefreshCw,
+  ChevronDown,
 } from 'lucide-react';
 import { getPlan, formatPrice } from '@/lib/plans';
 import { getRoleLabel } from '@/lib/roleLabels';
@@ -22,6 +23,7 @@ import {
   APP_VERSION_DISPLAY,
   APP_RELEASE_NOTES,
 } from '@/lib/appVersion';
+import SelectSheet from '@/components/ui/SelectSheet';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -37,6 +39,7 @@ export default function Profile() {
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showSortSheet, setShowSortSheet] = useState(false);
   const { syncRecord, librarySyncing } = useApp();
 
   const rl = (code) => getRoleLabel(code, activeCompany);
@@ -206,10 +209,14 @@ export default function Profile() {
             <ArrowUpDown size={16} className="text-app-text-muted" />
             <span className="text-sm text-app-text">Default Job Sort</span>
           </div>
-          <select value={preferences.defaultSort} onChange={e => updatePreferences({ defaultSort: e.target.value })}
-            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text">
-            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          <button
+            onClick={() => setShowSortSheet(true)}
+            className="w-full flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text text-left no-select touch-active"
+            aria-label="Default job sort"
+          >
+            <span>{SORT_OPTIONS.find(o => o.value === preferences.defaultSort)?.label || 'Last Updated'}</span>
+            <ChevronDown size={16} className="text-app-text-muted" />
+          </button>
         </div>
       </Section>
 
@@ -272,6 +279,15 @@ export default function Profile() {
       </div>
 
       {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
+
+      <SelectSheet
+        open={showSortSheet}
+        title="Default Job Sort"
+        value={preferences.defaultSort}
+        options={SORT_OPTIONS}
+        onSelect={(v) => updatePreferences({ defaultSort: v })}
+        onClose={() => setShowSortSheet(false)}
+      />
 
       <ProductVersionFooter />
     </div>
