@@ -34,13 +34,16 @@ export default function SopPublishDialog({
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Publish Version"
         className="bg-app-surface rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg sm:my-4 max-h-[92vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-5 py-4 border-b border-app-border flex items-center justify-between flex-shrink-0">
           <h3 className="font-bold text-app-text">Publish Version</h3>
-          <button onClick={onClose} className="icon-btn text-app-text-muted"><X size={18} /></button>
+          <button onClick={onClose} className="icon-btn text-app-text-muted" aria-label="Close"><X size={18} /></button>
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">

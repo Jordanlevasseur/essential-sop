@@ -13,6 +13,9 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
     <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Filters"
         className="relative bg-app-surface rounded-t-2xl overflow-y-auto"
         style={{ maxHeight: 'calc(80vh - env(safe-area-inset-top))' }}
         onClick={e => e.stopPropagation()}

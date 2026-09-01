@@ -12,6 +12,10 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
   return (
     <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={job.title}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
       <div className="flex items-start gap-3">

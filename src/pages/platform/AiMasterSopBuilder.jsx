@@ -106,10 +106,11 @@ export default function AiMasterSopBuilder() {
           </p>
         </div>
 
-        <label className="text-xs font-semibold text-app-text-muted uppercase tracking-wide mb-1.5 block">
+        <label htmlFor="ai-sop-prompt" className="text-xs font-semibold text-app-text-muted uppercase tracking-wide mb-1.5 block">
           Describe the SOP
         </label>
         <textarea
+          id="ai-sop-prompt"
           value={prompt}
           onChange={e => setPrompt(e.target.value.slice(0, MAX_PROMPT))}
           rows={7}

@@ -109,7 +109,7 @@ export default function Notifications() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="icon-btn touch-active"><ArrowLeft size={22} className="text-app-text-2" /></button>
+          <button onClick={() => navigate(-1)} className="icon-btn touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Notifications</h1>
           {unreadCount > 0 && (
             <button onClick={markAllRead} className="flex items-center gap-1 text-xs text-app-accent touch-active no-select">
@@ -152,10 +152,14 @@ export default function Notifications() {
               const dest = resolveDestination(n);
               return (
                 <div key={n.id}
+                  role={dest ? 'button' : undefined}
+                  tabIndex={dest ? 0 : undefined}
+                  aria-label={dest ? n.title : undefined}
                   onClick={() => {
                     if (!n.isRead) markRead(n.id);
                     if (dest) navigate(dest);
                   }}
+                  onKeyDown={dest ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!n.isRead) markRead(n.id); navigate(dest); } } : undefined}
                   className={`flex items-start gap-3 px-4 py-3 rounded-xl transition-colors ${dest ? 'cursor-pointer touch-active' : ''} ${n.isRead ? 'bg-app-card border border-app-border' : 'bg-app-info-bg border border-app-info/20'}`}>
                   {/* Unread dot */}
                   <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.isRead ? 'bg-transparent' : 'bg-app-accent'}`} />

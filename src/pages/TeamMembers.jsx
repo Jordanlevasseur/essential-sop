@@ -79,8 +79,16 @@ export default function TeamMembers() {
   };
 
   const handleCancelInvite = async (inviteId) => {
-    await base44.entities.CompanyInvitation.update(inviteId, { status: 'cancelled', cancelledAt: new Date().toISOString() });
-    loadData();
+    // Optimistic: remove the invitation from the pending list immediately, then
+    // persist. Low-risk and reversible (the GM can re-invite); on failure, reload
+    // the authoritative state to reconcile. Backend semantics unchanged.
+    const nowIso = new Date().toISOString();
+    setInvitations(prev => prev.map(i => i.id === inviteId ? { ...i, status: 'cancelled', cancelledAt: nowIso } : i));
+    try {
+      await base44.entities.CompanyInvitation.update(inviteId, { status: 'cancelled', cancelledAt: nowIso });
+    } catch (_) {
+      loadData();
+    }
   };
 
   const changeRole = async (m, u) => {
@@ -133,8 +141,8 @@ export default function TeamMembers() {
         {showInviteForm && !inviteResult && (
           <div className="mb-5 bg-app-card border border-app-border rounded-xl p-4">
             <h2 className="font-semibold text-app-text mb-3">Invite a Member</h2>
-            <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Email Address</label>
-            <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+            <label htmlFor="invite-email" className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Email Address</label>
+            <input id="invite-email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
               type="email" placeholder="team@example.com" enterKeyHint="next"
               className="w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-3 focus:outline-none focus:border-app-accent" />
             <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Role</label>

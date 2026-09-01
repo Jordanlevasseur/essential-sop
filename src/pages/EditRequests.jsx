@@ -164,7 +164,7 @@ export default function EditRequests() {
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="icon-btn touch-active"><ArrowLeft size={22} className="text-app-text-2" /></button>
+          <button onClick={() => navigate(-1)} className="icon-btn touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Edit Requests</h1>
         </div>
         {/* Scrollable tabs */}
@@ -312,7 +312,7 @@ export default function EditRequests() {
       {selected && isReviewer && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={() => setSelected(null)}>
           <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-app-surface rounded-t-2xl p-5 max-h-[85dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label="Review Edit Request" className="relative bg-app-surface rounded-t-2xl p-5 max-h-[85dvh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="font-semibold text-app-text mb-1">Review Edit Request</h2>
             <p className="text-sm text-app-text-2 mb-1">{getJob(selected.jobId)?.title}</p>
             <p className="text-xs text-app-text-muted mb-1">
@@ -412,7 +412,13 @@ function RequestCard({ request, job, requester, company, grant, onClick, onRevok
   const urgency = request.urgency;
 
   return (
-    <div onClick={onClick} className={`bg-app-card border border-app-border rounded-xl p-4 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? (job?.title || 'Edit request') : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      className={`bg-app-card border border-app-border rounded-xl p-4 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
       {urgency === 'urgent_safety_correction' && (
         <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-app-danger">
           <span>⚠</span> Urgent Safety Correction

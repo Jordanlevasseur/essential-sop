@@ -579,6 +579,7 @@ export default function MasterSOPEditor() {
                 onClick={handleSaveNow}
                 disabled={saveStatus === STATUS.SAVING}
                 title="Save Now"
+                aria-label="Save Now"
                 className="icon-btn border border-app-accent text-app-accent hover:bg-app-info-bg disabled:opacity-50"
               >
                 <Save size={16} />
@@ -588,6 +589,7 @@ export default function MasterSOPEditor() {
             <button
               onClick={openTimeline}
               title="Version Timeline"
+              aria-label="Version Timeline"
               className="icon-btn border border-app-border text-app-text-2 hover:border-app-accent"
             >
               <History size={16} />
@@ -917,6 +919,7 @@ function MoreActionsMenu({ isDraft, isActive, isArchived, onDuplicate, onDelete,
       <button
         onClick={() => setOpen(o => !o)}
         title="More actions"
+        aria-label="More actions"
         className="icon-btn border border-app-border text-app-text-2 hover:border-app-accent"
       >
         <Copy size={16} />
