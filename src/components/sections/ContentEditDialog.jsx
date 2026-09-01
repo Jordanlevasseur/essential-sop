@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
 import { SEVERITY_LEVELS } from '@/lib/constants';
 
 const fieldCls = 'w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent';
@@ -10,14 +10,24 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
   const [isRequired, setIsRequired] = useState(item?.isRequired || false);
   const [isCritical, setIsCritical] = useState(item?.isCritical || false);
   const [metadata, setMetadata] = useState(item?.metadata || {});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const setMeta = (key, value) => setMetadata(prev =>
     value === undefined ? (() => { const c = { ...prev }; delete c[key]; return c; })() : { ...prev, [key]: value }
   );
 
-  const handleSave = () => {
-    if (!title.trim()) return;
-    onSave({ title, body, isRequired, isCritical, metadata });
+  const handleSave = async () => {
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({ title, body, isRequired, isCritical, metadata });
+      // On success the parent closes the dialog; no state reset needed here.
+    } catch (e) {
+      setSaving(false);
+      setSaveError(e?.message || 'Save failed. Please try again.');
+    }
   };
 
   const isTool = sectionType === 'tools';
@@ -109,12 +119,26 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
             </label>
           </div>
         </div>
+        {saveError && (
+          <div className="flex-shrink-0 px-4 pb-2 flex items-start gap-2">
+            <AlertTriangle size={14} className="text-app-danger flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-app-danger">{saveError}</p>
+          </div>
+        )}
         <div
           className="flex-shrink-0 bg-app-surface border-t border-app-border p-4 flex gap-3"
           style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
-          <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2 no-select touch-active">Cancel</button>
-          <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled no-select touch-active">Save</button>
+          <button onClick={onClose} disabled={saving} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2 disabled:opacity-50 no-select touch-active">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={!title.trim() || saving}
+            className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled no-select touch-active flex items-center justify-center gap-2"
+          >
+            {saving ? (
+              <><div className="w-4 h-4 border-2 border-app-accent-text/40 border-t-app-accent-text rounded-full animate-spin" /> Saving…</>
+            ) : 'Save'}
+          </button>
         </div>
       </div>
     </div>

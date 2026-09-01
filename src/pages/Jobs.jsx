@@ -32,6 +32,14 @@ export default function Jobs() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Persist search/filters across tab switches so returning to Jobs restores the
+  // user's last list view rather than a full reset. Uses the existing
+  // sessionStorage slot; the explicit save on job-open (onClick below) still
+  // captures the precise pre-detail scroll position.
+  useEffect(() => {
+    saveListState({ search, filters, scrollY: window.scrollY });
+  }, [search, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Read-only re-fetch used both on mount and by PullToRefresh.
   // Never mutates; safe to call repeatedly (no duplicate Jobs, no provisioning).
   const fetchJobs = useCallback(async () => {

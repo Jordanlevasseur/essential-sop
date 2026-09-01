@@ -72,7 +72,7 @@ export default function PlatformLayout() {
       {!isSubPage && (
         <nav
           aria-label="Platform navigation"
-          className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-50"
+          className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-40"
           style={{
             paddingBottom: 'env(safe-area-inset-bottom)',
             paddingLeft: 'env(safe-area-inset-left)',
@@ -102,6 +102,7 @@ export default function PlatformLayout() {
                 <NavLink
                   key={to}
                   to={to}
+                  replace
                   aria-label={label}
                   className={({ isActive }) =>
                     `flex-1 flex flex-col items-center gap-1 py-3 transition-colors no-select touch-active ${

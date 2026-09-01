@@ -42,7 +42,7 @@ export default function Layout() {
       {!isSubPage && (
         <nav
           aria-label="Main navigation"
-          className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-50"
+          className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-40"
           style={{
             paddingBottom: 'env(safe-area-inset-bottom)',
             paddingLeft: 'env(safe-area-inset-left)',
@@ -55,6 +55,7 @@ export default function Layout() {
                 key={to}
                 to={to}
                 end={end}
+                replace
                 aria-label={label}
                 className={({ isActive }) =>
                   `flex-1 flex flex-col items-center gap-1 py-3 transition-colors no-select touch-active ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
