@@ -5,7 +5,8 @@ import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
 import { getPlan } from '@/lib/plans';
 import { getRoleLabel, ROLE_CODES } from '@/lib/roleLabels';
-import { ArrowLeft, UserPlus, MoreVertical, Mail, X } from 'lucide-react';
+import SelectSheet from '@/components/ui/SelectSheet';
+import { ArrowLeft, UserPlus, MoreVertical, Mail, X, ChevronDown } from 'lucide-react';
 
 export default function TeamMembers() {
   const navigate = useNavigate();
@@ -23,6 +24,7 @@ export default function TeamMembers() {
   const [inviteRole, setInviteRole] = useState('technician');
   const [inviteResult, setInviteResult] = useState(null);
   const [inviting, setInviting] = useState(false);
+  const [roleSheetOpen, setRoleSheetOpen] = useState(false);
 
   const plan = getPlan(activeCompany?.subscriptionPlanCode);
   const PLAN_LIMITS = { homeowner: 1, handyman: 2, contractor: 15, contractor_plus: 40 };
@@ -136,10 +138,11 @@ export default function TeamMembers() {
               type="email" placeholder="team@example.com" enterKeyHint="next"
               className="w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-3 focus:outline-none focus:border-app-accent" />
             <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Role</label>
-            <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
-              className="w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-4">
-              {ROLE_CODES.map(r => <option key={r} value={r}>{rl(r)}</option>)}
-            </select>
+            <button type="button" onClick={() => setRoleSheetOpen(true)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-4 text-left no-select touch-active">
+              <span>{rl(inviteRole)}</span>
+              <ChevronDown size={16} className="text-app-text-muted" />
+            </button>
             <div className="flex gap-2">
               <button onClick={() => setShowInviteForm(false)} className="flex-1 py-2.5 border border-app-border rounded-lg text-sm text-app-text-2 no-select touch-active">Cancel</button>
               <button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}
@@ -228,6 +231,15 @@ export default function TeamMembers() {
           </GroupSection>
         )}
       </div>
+
+      <SelectSheet
+        open={roleSheetOpen}
+        title="Role"
+        value={inviteRole}
+        options={ROLE_CODES.map(r => ({ value: r, label: rl(r) }))}
+        onSelect={(v) => setInviteRole(v)}
+        onClose={() => setRoleSheetOpen(false)}
+      />
 
       <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>

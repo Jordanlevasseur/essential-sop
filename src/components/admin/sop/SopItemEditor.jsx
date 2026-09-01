@@ -3,7 +3,8 @@
  * Supports: text, tool, material, numberedStep, checklist, warning, note, hyperlink
  */
 import React, { useState, useEffect } from 'react';
-import { X, AlertTriangle, CheckSquare, List, Hash, Link, Wrench, Package, FileText, Info } from 'lucide-react';
+import { X, AlertTriangle, CheckSquare, List, Hash, Link, Wrench, Package, FileText, Info, ChevronDown } from 'lucide-react';
+import SelectSheet from '@/components/ui/SelectSheet';
 
 export const CONTENT_TYPES = [
   { value: 'text',         label: 'Text / Note',     icon: FileText,      description: 'General text block or note' },
@@ -42,6 +43,7 @@ export default function SopItemEditor({ item, onSave, onCancel, onDelete, sectio
   const set = (key, val) => setDraft(p => ({ ...p, [key]: val }));
   const setMeta = (key, val) => setDraft(p => ({ ...p, metadata: { ...p.metadata, [key]: val } }));
 
+  const [sevSheetOpen, setSevSheetOpen] = useState(false);
   const canSave = draft.title.trim().length > 0;
 
   const handleSave = () => {
@@ -114,13 +116,22 @@ export default function SopItemEditor({ item, onSave, onCancel, onDelete, sectio
       {draft.contentType === 'warning' && (
         <div>
           <label className="text-xs font-semibold text-app-text-muted uppercase tracking-wide mb-1 block">Severity</label>
-          <select
-            value={draft.metadata.severity || 'Warning'}
-            onChange={e => setMeta('severity', e.target.value)}
-            className="px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text focus:outline-none focus:border-app-accent"
+          <button
+            type="button"
+            onClick={() => setSevSheetOpen(true)}
+            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text text-left flex items-center justify-between no-select touch-active"
           >
-            {SEVERITY_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+            <span>{draft.metadata.severity || 'Warning'}</span>
+            <ChevronDown size={16} className="text-app-text-muted" />
+          </button>
+          <SelectSheet
+            open={sevSheetOpen}
+            title="Severity"
+            value={draft.metadata.severity || 'Warning'}
+            options={SEVERITY_OPTIONS.map(s => ({ value: s, label: s }))}
+            onSelect={(v) => setMeta('severity', v)}
+            onClose={() => setSevSheetOpen(false)}
+          />
         </div>
       )}
 

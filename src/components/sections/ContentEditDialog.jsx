@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, ChevronDown } from 'lucide-react';
 import { SEVERITY_LEVELS } from '@/lib/constants';
+import SelectSheet from '@/components/ui/SelectSheet';
 
 const fieldCls = 'w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent';
 
@@ -12,6 +13,7 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
   const [metadata, setMetadata] = useState(item?.metadata || {});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [sevSheetOpen, setSevSheetOpen] = useState(false);
 
   const setMeta = (key, value) => setMetadata(prev =>
     value === undefined ? (() => { const c = { ...prev }; delete c[key]; return c; })() : { ...prev, [key]: value }
@@ -98,10 +100,23 @@ export default function ContentEditDialog({ sectionType, item, onSave, onClose }
           {isSafety && (
             <>
               <Field label="Severity">
-                <select value={metadata.severity || 'Caution'} onChange={e => setMeta('severity', e.target.value)} className={fieldCls}>
-                  {SEVERITY_LEVELS.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
-                </select>
+                <button
+                  type="button"
+                  onClick={() => setSevSheetOpen(true)}
+                  className={`${fieldCls} flex items-center justify-between text-left no-select touch-active`}
+                >
+                  <span>{metadata.severity || 'Caution'}</span>
+                  <ChevronDown size={16} className="text-app-text-muted" />
+                </button>
               </Field>
+              <SelectSheet
+                open={sevSheetOpen}
+                title="Severity"
+                value={metadata.severity || 'Caution'}
+                options={SEVERITY_LEVELS.map(s => ({ value: s.value, label: s.value }))}
+                onSelect={(v) => setMeta('severity', v)}
+                onClose={() => setSevSheetOpen(false)}
+              />
               <Field label="Required Action">
                 <textarea value={metadata.requiredAction || ''} onChange={e => setMeta('requiredAction', e.target.value)} rows={2} className={fieldCls} />
               </Field>

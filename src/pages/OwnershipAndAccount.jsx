@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
-import { ArrowLeft, ShieldCheck, AlertTriangle } from 'lucide-react';
+import SelectSheet from '@/components/ui/SelectSheet';
+import { ArrowLeft, ShieldCheck, AlertTriangle, ChevronDown } from 'lucide-react';
 
 export default function OwnershipAndAccount() {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export default function OwnershipAndAccount() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [transferTarget, setTransferTarget] = useState('');
+  const [targetSheetOpen, setTargetSheetOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [closeRequesting, setCloseRequesting] = useState(false);
@@ -97,6 +99,14 @@ export default function OwnershipAndAccount() {
 
   const otherGMs = gms.filter(g => getUser(g.userId)?.id !== activeCompany?.ownerUserId);
 
+  const transferLabel = !transferTarget
+    ? 'Select a General Manager…'
+    : (() => {
+        const g = otherGMs.find(x => x.id === transferTarget);
+        const u = g && getUser(g.userId);
+        return u?.full_name || u?.email || 'Select a General Manager…';
+      })();
+
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -152,18 +162,29 @@ export default function OwnershipAndAccount() {
               <p className="text-xs text-app-text-muted mb-3">
                 The new owner will receive full account control. This action cannot be undone without their agreement.
               </p>
-              <select value={transferTarget} onChange={e => setTransferTarget(e.target.value)}
-                className="w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-3">
-                <option value="">Select a General Manager…</option>
-                {otherGMs.map(g => {
-                  const u = getUser(g.userId);
-                  return <option key={g.id} value={g.id}>{u?.full_name || u?.email}</option>;
-                })}
-              </select>
+              <button type="button" onClick={() => setTargetSheetOpen(true)}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text mb-3 text-left no-select touch-active">
+                <span className={!transferTarget ? 'text-app-text-muted' : ''}>{transferLabel}</span>
+                <ChevronDown size={16} className="text-app-text-muted" />
+              </button>
               <button onClick={handleTransfer} disabled={!transferTarget || transferring}
                 className="w-full py-2.5 bg-app-warning text-white rounded-lg text-sm font-semibold disabled:opacity-50 touch-active no-select">
                 {transferring ? 'Transferring…' : 'Transfer Ownership'}
               </button>
+              <SelectSheet
+                open={targetSheetOpen}
+                title="Select a General Manager"
+                value={transferTarget}
+                options={[
+                  { value: '', label: 'Select a General Manager…' },
+                  ...otherGMs.map(g => {
+                    const u = getUser(g.userId);
+                    return { value: g.id, label: u?.full_name || u?.email || 'Unknown' };
+                  }),
+                ]}
+                onSelect={(v) => setTransferTarget(v)}
+                onClose={() => setTargetSheetOpen(false)}
+              />
             </div>
           )}
         </Section>
