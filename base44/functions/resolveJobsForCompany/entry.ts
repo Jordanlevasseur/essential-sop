@@ -61,8 +61,22 @@ export default async function(req: Request): Promise<Response> {
     const allJobs = await SR.entities.Job.filter({ companyId }, '-updated_date', 200);
     const publishedJobs = (allJobs || []).filter((j: any) => !j.isArchived && j.status === 'Published');
 
-    const sopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
+    const _rawSopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
     const companyJobs = publishedJobs.filter((j: any) => j.sourceType !== 'essential_sop');
+
+    // ── Defense-in-depth: drop SOP jobs whose source Master is gone or not active ──
+    // The deletion cascade hard-deletes the master + archives derived jobs; this
+    // resolver check is a second gate so an orphaned/derived job never reaches the
+    // company. Requires an existing, active (published) source Master.
+    const _sopMasterIds = Array.from(new Set(_rawSopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
+    const _masterCache: Record<string, any> = {};
+    await Promise.all(_sopMasterIds.map(async (mid: string) => {
+      try { _masterCache[mid] = await SR.entities.EssentialSOPMaster.get(mid); } catch { _masterCache[mid] = null; }
+    }));
+    const sopJobs = _rawSopJobs.filter((j: any) => {
+      const m = j.sourceMasterId ? _masterCache[j.sourceMasterId] : null;
+      return !!m && m.status === 'active';
+    });
 
     // ── Batch load all overrides for this company ────────────────────────────
     const allOverrides = await SR.entities.JobOverride.filter({ companyId }, '-updatedAt', 500);

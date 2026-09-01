@@ -108,6 +108,17 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
     return Response.json({ error: 'Source version is not available.' }, { status: 409 });
   }
 
+  // ── Defense-in-depth: require an existing, active source Master ─────────────
+  // Deletion cascade hard-deletes the master; this gate blocks any orphaned
+  // derived job (and any job whose master was archived) from being opened.
+  let sourceMaster: any = null;
+  if (job.sourceMasterId) {
+    try { sourceMaster = await SR.entities.EssentialSOPMaster.get(job.sourceMasterId); } catch (_) {}
+  }
+  if (!sourceMaster || sourceMaster.status !== 'active') {
+    return Response.json({ error: 'This job is no longer available.', code: 'SOURCE_MASTER_UNAVAILABLE' }, { status: 410 });
+  }
+
   const masterSections = await SR.entities.EssentialSOPSection.filter(
     { masterId: job.sourceMasterId, versionId }, 'sortOrder', 10
   );

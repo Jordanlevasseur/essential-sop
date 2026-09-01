@@ -411,6 +411,117 @@ export default async function(req) {
       return Response.json({ success: true });
     }
 
+    // ── DELETE MASTER (true delete — revokes all company operational access) ──
+    // Hard-deletes the EssentialSOPMaster and revokes every company-facing
+    // operational copy derived from it. Idempotent: a missing master returns
+    // success. Defense-in-depth: resolver hardening also blocks jobs whose
+    // source master is gone/archived, but this cascade is the authoritative
+    // revocation — it never relies on resolver filtering alone.
+    //
+    // Cascade (dependency-safe order):
+    //   1. EssentialSOPVersion → archived (blocks resolveJob single-open path)
+    //   2. per derived Company Job:
+    //        - JobOverride, CompanyVersionDeferral, CompanyVersionAnalysis,
+    //          CompanyVersionDecision → deleted
+    //        - Job → archived (isArchived=true, status='Draft') — blocks list/search
+    //   3. ProvisioningRecord → assignmentStatus=REMOVED (sync excludes REMOVED)
+    //   4. DistributionEvent → CANCELLED (pending/processing only; history retained)
+    //   5. EssentialSOPSection (versionId='draft') → deleted (draft content gone)
+    //   6. EssentialSOPMaster → hard-deleted
+    //   7. PlatformAuditLog → master_sop_deleted entry (audit retained)
+    if (action === 'delete_master') {
+      const { masterId } = body;
+      if (!masterId) return Response.json({ error: 'masterId required' }, { status: 400 });
+
+      const master = await SR.entities.EssentialSOPMaster.get(masterId).catch(() => null);
+      if (!master) {
+        // Idempotent — already deleted
+        return Response.json({ success: true, alreadyDeleted: true });
+      }
+
+      // 1. Archive all published versions (tombstone; blocks resolveJob)
+      const versions = await SR.entities.EssentialSOPVersion.filter({ masterId }, '-versionNumber', 200).catch(() => []) || [];
+      for (const v of versions) {
+        if (v.status === 'published') {
+          await SR.entities.EssentialSOPVersion.update(v.id, { status: 'archived' }).catch(() => {});
+        }
+      }
+
+      // 2. Per derived Company Job — revoke overrides/decisions/analyses + archive job
+      const derivedJobs = await SR.entities.Job.filter(
+        { sourceType: 'essential_sop', sourceMasterId: masterId }, '-created_date', 500
+      ).catch(() => []) || [];
+
+      for (const j of derivedJobs) {
+        const ov = await SR.entities.JobOverride.filter({ companyId: j.companyId, jobId: j.id }, '-updatedAt', 50).catch(() => []) || [];
+        for (const o of ov) await SR.entities.JobOverride.delete(o.id).catch(() => {});
+        const df = await SR.entities.CompanyVersionDeferral.filter({ jobId: j.id }, '-createdAt', 50).catch(() => []) || [];
+        for (const d of df) await SR.entities.CompanyVersionDeferral.delete(d.id).catch(() => {});
+        const an = await SR.entities.CompanyVersionAnalysis.filter({ companyJobId: j.id }, '-createdAt', 50).catch(() => []) || [];
+        for (const a of an) await SR.entities.CompanyVersionAnalysis.delete(a.id).catch(() => {});
+        const dc = await SR.entities.CompanyVersionDecision.filter({ companyJobId: j.id }, '-createdAt', 50).catch(() => []) || [];
+        for (const d of dc) await SR.entities.CompanyVersionDecision.delete(d.id).catch(() => {});
+      }
+      for (const j of derivedJobs) {
+        await SR.entities.Job.update(j.id, { isArchived: true, status: 'Draft' }).catch(() => {});
+      }
+
+      // 3. ProvisioningRecords — REMOVED (sync excludes REMOVED)
+      const provRecords = await SR.entities.ProvisioningRecord.filter(
+        { masterId, operationType: 'INITIAL_COMPANY_LIBRARY' }, '-createdAt', 500
+      ).catch(() => []) || [];
+      for (const r of provRecords) {
+        if (r.assignmentStatus !== 'REMOVED') {
+          await SR.entities.ProvisioningRecord.update(r.id, {
+            assignmentStatus: 'REMOVED', unassignedAt: now, unassignedBy: user.id,
+            unassignmentReason: 'Master SOP deleted', updatedAt: now,
+          }).catch(() => {});
+        }
+      }
+
+      // 4. DistributionEvents — CANCELLED (pending/processing only; history retained)
+      const distEvents = await SR.entities.DistributionEvent.filter({ masterId }, '-createdAt', 200).catch(() => []) || [];
+      for (const e of distEvents) {
+        if (e.status === 'PENDING' || e.status === 'PROCESSING') {
+          await SR.entities.DistributionEvent.update(e.id, {
+            status: 'CANCELLED', updatedAt: now,
+          }).catch(() => {});
+        }
+      }
+
+      // 5. Delete draft sections (draft content is gone with the master)
+      const draftSections = await SR.entities.EssentialSOPSection.filter(
+        { masterId, versionId: 'draft' }, 'sortOrder', 20
+      ).catch(() => []) || [];
+      for (const s of draftSections) await SR.entities.EssentialSOPSection.delete(s.id).catch(() => {});
+
+      // 6. Hard-delete the master record
+      await SR.entities.EssentialSOPMaster.delete(masterId).catch(() => {});
+
+      // 7. Audit (retained)
+      await writePlatformAudit(SR, {
+        actingUserId: user.id, actingUserRole: 'SUPER_ADMIN',
+        action: 'master_sop_deleted',
+        extra: {
+          masterId, masterTitle: master.title,
+          metadata: {
+            versionsArchived: versions.length,
+            jobsArchived: derivedJobs.length,
+            provisioningRecordsRemoved: provRecords.length,
+            deleteReason: body.reason || 'Platform Super Admin deletion',
+          },
+        },
+      });
+
+      return Response.json({
+        success: true,
+        masterId,
+        versionsArchived: versions.length,
+        jobsArchived: derivedJobs.length,
+        provisioningRecordsRemoved: provRecords.length,
+      });
+    }
+
     // ── ROLLBACK TO VERSION ───────────────────────────────────────────────────
     //
     // Staged, recoverable process using RollbackMutation as durable state machine.
