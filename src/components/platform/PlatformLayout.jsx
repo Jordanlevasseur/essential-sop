@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { useCompany } from '@/lib/CompanyContext';
@@ -6,6 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { Briefcase, Building2, Settings, User } from 'lucide-react';
 import OfflineBanner from '@/components/OfflineBanner';
 import PageTransition from '@/components/PageTransition';
+import RouteFallback from '@/components/RouteFallback';
 
 const TABS = [
   { to: '/platform/master-library', label: 'Master Jobs', icon: Briefcase },
@@ -63,9 +64,11 @@ export default function PlatformLayout() {
             : `calc(${NAV_CONTENT_HEIGHT}px + env(safe-area-inset-bottom))`,
         }}
       >
-        <PageTransition>
-          <Outlet />
-        </PageTransition>
+        <Suspense fallback={<RouteFallback />}>
+          <PageTransition>
+            <Outlet />
+          </PageTransition>
+        </Suspense>
       </main>
 
       {/* Bottom navigation — identical structure to Company Layout */}

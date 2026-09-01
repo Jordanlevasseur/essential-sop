@@ -11,43 +11,51 @@ import NoCompanyScreen from '@/components/NoCompanyScreen';
 import ScrollToTop from './components/ScrollToTop';
 import { AppProvider, useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
+import { lazy, Suspense } from 'react';
 import Layout from '@/components/Layout';
-import Jobs from '@/pages/Jobs';
-import JobDetail from '@/pages/JobDetail';
-import SectionDetail from '@/pages/SectionDetail';
-import CreateJob from '@/pages/CreateJob';
-import Assistant from '@/pages/Assistant';
-import Profile from '@/pages/Profile';
-import PrivacyPolicy from '@/pages/PrivacyPolicy';
-import TermsOfService from '@/pages/TermsOfService';
-import DeletionRequests from '@/pages/DeletionRequests';
-import Subscription from '@/pages/Subscription';
-import Plans from '@/pages/Plans';
-import TeamMembers from '@/pages/TeamMembers';
-import RequestsAndReviews from '@/pages/RequestsAndReviews';
-import EditRequests from '@/pages/EditRequests';
-import ActivityHistory from '@/pages/ActivityHistory';
-import Notifications from '@/pages/Notifications';
-import AcceptInvitation from '@/pages/AcceptInvitation';
-import CompanyProfile from '@/pages/CompanyProfile';
-import RoleLabels from '@/pages/RoleLabels';
-import OwnershipAndAccount from '@/pages/OwnershipAndAccount';
-import SyncSettings from '@/pages/SyncSettings';
-import MasterLibrary from '@/pages/admin/MasterLibrary';
-import MasterSOPEditor from '@/pages/admin/MasterSOPEditor';
+import RouteFallback from '@/components/RouteFallback';
 import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard';
 import { PlatformProvider } from '@/lib/PlatformContext';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import PlatformGuard from '@/components/platform/PlatformGuard';
-import PlatformDashboard from '@/pages/platform/PlatformDashboard';
-import PlatformAdmins from '@/pages/platform/PlatformAdmins';
-import PlatformAuditLog from '@/pages/platform/PlatformAuditLog';
-import PlatformCompanies from '@/pages/platform/PlatformCompanies';
-import PlatformBootstrap from '@/pages/platform/PlatformBootstrap';
-import MasterJobDetail from '@/pages/platform/MasterJobDetail';
-import CreateMasterJob from '@/pages/platform/CreateMasterJob';
-import NewMasterSopChooser from '@/pages/platform/NewMasterSopChooser';
-import AiMasterSopBuilder from '@/pages/platform/AiMasterSopBuilder';
+
+// Page-level routes are lazy-loaded so the initial bundle stays small and the
+// first paint in a mobile WebView isn't blocked by code the user may never
+// visit. Shell/layout/guard/provider components above stay eager. Each lazy
+// page is caught by a Suspense boundary (RouteFallback) that is dark-mode +
+// safe-area aware and never covers the fixed bottom nav.
+const Jobs = lazy(() => import('@/pages/Jobs'));
+const JobDetail = lazy(() => import('@/pages/JobDetail'));
+const SectionDetail = lazy(() => import('@/pages/SectionDetail'));
+const CreateJob = lazy(() => import('@/pages/CreateJob'));
+const Assistant = lazy(() => import('@/pages/Assistant'));
+const Profile = lazy(() => import('@/pages/Profile'));
+const PrivacyPolicy = lazy(() => import('@/pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('@/pages/TermsOfService'));
+const DeletionRequests = lazy(() => import('@/pages/DeletionRequests'));
+const Subscription = lazy(() => import('@/pages/Subscription'));
+const Plans = lazy(() => import('@/pages/Plans'));
+const TeamMembers = lazy(() => import('@/pages/TeamMembers'));
+const RequestsAndReviews = lazy(() => import('@/pages/RequestsAndReviews'));
+const EditRequests = lazy(() => import('@/pages/EditRequests'));
+const ActivityHistory = lazy(() => import('@/pages/ActivityHistory'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const AcceptInvitation = lazy(() => import('@/pages/AcceptInvitation'));
+const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
+const RoleLabels = lazy(() => import('@/pages/RoleLabels'));
+const OwnershipAndAccount = lazy(() => import('@/pages/OwnershipAndAccount'));
+const SyncSettings = lazy(() => import('@/pages/SyncSettings'));
+const MasterLibrary = lazy(() => import('@/pages/admin/MasterLibrary'));
+const MasterSOPEditor = lazy(() => import('@/pages/admin/MasterSOPEditor'));
+const PlatformDashboard = lazy(() => import('@/pages/platform/PlatformDashboard'));
+const PlatformAdmins = lazy(() => import('@/pages/platform/PlatformAdmins'));
+const PlatformAuditLog = lazy(() => import('@/pages/platform/PlatformAuditLog'));
+const PlatformCompanies = lazy(() => import('@/pages/platform/PlatformCompanies'));
+const PlatformBootstrap = lazy(() => import('@/pages/platform/PlatformBootstrap'));
+const MasterJobDetail = lazy(() => import('@/pages/platform/MasterJobDetail'));
+const CreateMasterJob = lazy(() => import('@/pages/platform/CreateMasterJob'));
+const NewMasterSopChooser = lazy(() => import('@/pages/platform/NewMasterSopChooser'));
+const AiMasterSopBuilder = lazy(() => import('@/pages/platform/AiMasterSopBuilder'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -115,6 +123,7 @@ const SeededApp = () => {
   }
 
   return (
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route element={<Layout />}>
         {/* Redirect platform-only super admins away from the company workspace root */}
@@ -161,6 +170,7 @@ const SeededApp = () => {
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
+    </Suspense>
   );
 };
 

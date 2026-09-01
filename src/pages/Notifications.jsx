@@ -68,15 +68,34 @@ export default function Notifications() {
     setLoading(false);
   };
 
+  // Optimistic mark-as-read: the unread dot clears instantly, the backend call
+  // fires next, and the state rolls back if the call fails. Low-risk, reversible,
+  // no data-integrity concern (the only effect is an isRead flag on the user's
+  // own notification).
   const markRead = async (id) => {
-    await base44.entities.Notification.update(id, { isRead: true, readAt: new Date().toISOString() });
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    const original = notifications.find(n => n.id === id);
+    if (!original || original.isRead) return;
+    const nowIso = new Date().toISOString();
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true, readAt: nowIso } : n));
+    try {
+      await base44.entities.Notification.update(id, { isRead: true, readAt: nowIso });
+    } catch (_) {
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: original.isRead, readAt: original.readAt } : n));
+    }
   };
 
   const markAllRead = async () => {
     const unread = notifications.filter(n => !n.isRead);
-    await Promise.all(unread.map(n => base44.entities.Notification.update(n.id, { isRead: true, readAt: new Date().toISOString() })));
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    if (unread.length === 0) return;
+    const nowIso = new Date().toISOString();
+    // Optimistic: mark everything read immediately.
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true, readAt: n.readAt || nowIso })));
+    try {
+      await Promise.all(unread.map(n => base44.entities.Notification.update(n.id, { isRead: true, readAt: nowIso })));
+    } catch (_) {
+      // Partial failure possible — re-read the authoritative state to reconcile.
+      loadNotifications();
+    }
   };
 
   const filtered = notifications.filter(n => {
