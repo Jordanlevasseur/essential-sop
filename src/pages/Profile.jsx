@@ -18,6 +18,10 @@ import { getRoleLabel } from '@/lib/roleLabels';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/constants';
 import { resolveLegalLink } from '@/lib/appSettings';
+import {
+  APP_VERSION_DISPLAY,
+  APP_RELEASE_NOTES,
+} from '@/lib/appVersion';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -269,7 +273,45 @@ export default function Profile() {
 
       {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
 
-      <p className="text-xs text-app-text-muted text-center mt-6">Essential SOP v4.2</p>
+      <ProductVersionFooter />
+    </div>
+  );
+}
+
+/**
+ * ProductVersionFooter — unobtrusive Essential SOP product-version display.
+ *
+ * Shows the app's product version (NOT Master SOP versioning) and an optional,
+ * collapsible "What's New" changelog for the current release. Lives at the
+ * bottom of the Profile screen only — never on technician job screens.
+ */
+function ProductVersionFooter() {
+  const [showNotes, setShowNotes] = useState(false);
+  return (
+    <div className="mt-6">
+      <p className="text-sm font-semibold text-app-text text-center">Essential SOP</p>
+      <p className="text-xs text-app-text-muted text-center">{APP_VERSION_DISPLAY}</p>
+      <button
+        onClick={() => setShowNotes(v => !v)}
+        className="mt-2 mx-auto block text-xs text-app-accent underline no-select touch-active"
+      >
+        {showNotes ? 'Hide release notes' : 'What\'s new in this release'}
+      </button>
+      {showNotes && (
+        <div className="mt-3 mx-auto max-w-md bg-app-card border border-app-border rounded-xl p-4">
+          <p className="text-xs font-bold text-app-text-muted uppercase tracking-wide mb-2">
+            What&apos;s New — {APP_VERSION_DISPLAY}
+          </p>
+          <ul className="space-y-1.5">
+            {APP_RELEASE_NOTES.map((note, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-app-text-2">
+                <span className="text-app-accent flex-shrink-0">•</span>
+                <span>{note}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
