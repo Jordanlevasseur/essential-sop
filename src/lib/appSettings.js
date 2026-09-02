@@ -18,7 +18,7 @@ export const APP_SETTINGS = {
   supportUrl: '',
 
   /** Support email address shown in Profile. */
-  supportEmail: '',
+  supportEmail: 'Support@essentialsop-job-flow.com',
 };
 
 /**
