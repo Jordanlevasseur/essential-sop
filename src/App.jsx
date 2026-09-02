@@ -68,7 +68,7 @@ const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin, isAuthenticated } = useAuth();
   const location = useLocation();
 
   // Public, unauthenticated pages — surfaced for App Store review and direct links.
@@ -81,11 +81,20 @@ const AuthenticatedApp = () => {
     return <Suspense fallback={<RouteFallback />}><LegalPage /></Suspense>;
   }
 
-  // Public authentication routes — reachable by logged-out visitors without
-  // waiting for app settings/auth to resolve, and without a company membership.
-  // Rendered before the seeding/company gate so existing users can sign in
-  // directly: no plan selection, no workspace creation, no billing.
+  // Public authentication routes — reachable by logged-out visitors without a
+  // company membership. Rendered before the seeding/company gate so existing
+  // users can sign in directly: no plan selection, no workspace, no billing.
+  //
+  // Root cause of the registration 500: submitting /register while already
+  // authenticated sends the existing session token with the register request,
+  // which the auth backend rejects with HTTP 500. An authenticated user has no
+  // reason to be on signup/login, so redirect them into the app. Password-reset
+  // flows (URL-token-based, not session-based) stay accessible to all.
   if (['/login', '/register', '/forgot-password', '/reset-password'].includes(location.pathname)) {
+    if (isLoadingPublicSettings || isLoadingAuth) return <RouteFallback />;
+    if (isAuthenticated && (location.pathname === '/register' || location.pathname === '/login')) {
+      return <Navigate to="/" replace />;
+    }
     return (
       <Suspense fallback={<RouteFallback />}>
         <Routes>
