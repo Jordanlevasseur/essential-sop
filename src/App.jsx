@@ -20,6 +20,7 @@ import { PlatformProvider } from '@/lib/PlatformContext';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import PlatformGuard from '@/components/platform/PlatformGuard';
 import Support from '@/pages/Support';
+import Privacy from '@/pages/Privacy';
 
 // Page-level routes are lazy-loaded so the initial bundle stays small and the
 // first paint in a mobile WebView isn't blocked by code the user may never
@@ -76,6 +77,7 @@ const AuthenticatedApp = () => {
   // /support is always public; the legal pages short-circuit only for logged-out
   // visitors so authenticated users keep their existing wrapped route below.
   if (location.pathname === '/support') return <Support />;
+  if (location.pathname === '/privacy') return <Privacy />;
   if (authError?.type === 'auth_required' && (location.pathname === '/privacy-policy' || location.pathname === '/terms-of-service')) {
     const LegalPage = location.pathname === '/privacy-policy' ? PrivacyPolicy : TermsOfService;
     return <Suspense fallback={<RouteFallback />}><LegalPage /></Suspense>;
