@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
@@ -19,6 +19,7 @@ import PlatformSuperAdminGuard from '@/components/admin/PlatformSuperAdminGuard'
 import { PlatformProvider } from '@/lib/PlatformContext';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import PlatformGuard from '@/components/platform/PlatformGuard';
+import Support from '@/pages/Support';
 
 // Page-level routes are lazy-loaded so the initial bundle stays small and the
 // first paint in a mobile WebView isn't blocked by code the user may never
@@ -60,6 +61,17 @@ const AiMasterSopBuilder = lazy(() => import('@/pages/platform/AiMasterSopBuilde
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const location = useLocation();
+
+  // Public, unauthenticated pages — surfaced for App Store review and direct links.
+  // These render before the auth/seed gate so no account is required to view them.
+  // /support is always public; the legal pages short-circuit only for logged-out
+  // visitors so authenticated users keep their existing wrapped route below.
+  if (location.pathname === '/support') return <Support />;
+  if (authError?.type === 'auth_required' && (location.pathname === '/privacy-policy' || location.pathname === '/terms-of-service')) {
+    const LegalPage = location.pathname === '/privacy-policy' ? PrivacyPolicy : TermsOfService;
+    return <Suspense fallback={<RouteFallback />}><LegalPage /></Suspense>;
+  }
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
