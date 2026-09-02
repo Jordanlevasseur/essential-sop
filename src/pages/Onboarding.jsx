@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
+import { useAuth } from '@/lib/AuthContext';
 import { PLANS, formatPrice } from '@/lib/plans';
 import { Check, Star, Building2, Loader2, ChevronRight } from 'lucide-react';
 
 export default function Onboarding() {
   const { refreshCompanies } = useCompany();
+  const { isAuthenticated } = useAuth();
   const [step, setStep] = useState('plan'); // 'plan' | 'name'
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [companyName, setCompanyName] = useState('');
@@ -42,6 +45,12 @@ export default function Onboarding() {
           <button onClick={() => setStep('plan')} className="text-xs text-app-text-muted mb-6 flex items-center gap-1">
             ← Back to plans
           </button>
+          {!isAuthenticated && (
+            <p className="text-xs text-app-text-muted mb-6 text-center">
+              Already have an account?{' '}
+              <Link to="/login" className="text-app-accent font-medium">Sign in</Link>
+            </p>
+          )}
 
           <div className="w-12 h-12 bg-app-info-bg rounded-xl flex items-center justify-center mb-4">
             <Building2 size={24} className="text-app-accent" />
@@ -91,6 +100,17 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-app-bg px-4 py-8">
       <div className="max-w-sm mx-auto">
+        {!isAuthenticated && (
+          <div className="flex items-center justify-between mb-6">
+            <span className="text-sm font-semibold text-app-text">Essential SOP</span>
+            <Link
+              to="/login"
+              className="px-3.5 py-2 text-sm font-semibold text-app-accent border border-app-accent rounded-lg no-select touch-active"
+            >
+              Sign In
+            </Link>
+          </div>
+        )}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-app-info-bg rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Building2 size={32} className="text-app-accent" />
@@ -108,6 +128,13 @@ export default function Onboarding() {
             />
           ))}
         </div>
+
+        {!isAuthenticated && (
+          <p className="text-sm text-app-text-2 text-center mt-5">
+            Already have an account?{' '}
+            <Link to="/login" className="text-app-accent font-medium">Sign in</Link>
+          </p>
+        )}
 
         <p className="text-xs text-app-text-muted text-center mt-6">
           All plans run in test mode — no charges apply.

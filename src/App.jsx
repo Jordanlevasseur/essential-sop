@@ -59,6 +59,14 @@ const CreateMasterJob = lazy(() => import('@/pages/platform/CreateMasterJob'));
 const NewMasterSopChooser = lazy(() => import('@/pages/platform/NewMasterSopChooser'));
 const AiMasterSopBuilder = lazy(() => import('@/pages/platform/AiMasterSopBuilder'));
 
+// Public authentication pages — lazy-loaded, rendered at the AuthenticatedApp
+// shell level (before the seeding/company gate) so logged-out visitors can
+// reach them without a company membership.
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
   const location = useLocation();
@@ -71,6 +79,23 @@ const AuthenticatedApp = () => {
   if (authError?.type === 'auth_required' && (location.pathname === '/privacy-policy' || location.pathname === '/terms-of-service')) {
     const LegalPage = location.pathname === '/privacy-policy' ? PrivacyPolicy : TermsOfService;
     return <Suspense fallback={<RouteFallback />}><LegalPage /></Suspense>;
+  }
+
+  // Public authentication routes — reachable by logged-out visitors without
+  // waiting for app settings/auth to resolve, and without a company membership.
+  // Rendered before the seeding/company gate so existing users can sign in
+  // directly: no plan selection, no workspace creation, no billing.
+  if (['/login', '/register', '/forgot-password', '/reset-password'].includes(location.pathname)) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+        </Routes>
+      </Suspense>
+    );
   }
 
   // Show loading spinner while checking app public settings or auth
