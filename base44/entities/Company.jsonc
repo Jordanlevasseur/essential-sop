@@ -57,7 +57,7 @@
     },
     "subscriptionPlanCode": {
       "type": "string",
-      "default": "contractor"
+      "default": "handyman"
     },
     "subscriptionStatus": {
       "type": "string",

@@ -15,13 +15,32 @@
  *  - The invitation must be pending and unexpired.
  *  - The user must not already be an active member.
  *
- * Concurrency safety (Base44 has no multi-record transactions / unique
- * constraints), so we use compensating writes:
- *  - Re-count active members AFTER creating the membership; if the company is
- *    now over its (finite) limit, the just-created membership is deleted and
- *    the acceptance is refused — the same final seat cannot be taken twice.
- *  - Re-read the invitation AFTER creating the membership; if another
- *    acceptance raced ahead and it is no longer pending, undo our membership.
+ * Concurrency — HONEST scope. Base44 exposes NO multi-record transactions and
+ * NO DB-level unique constraints, so this is compensating-write rollback, NOT
+ * an atomic operation. Do not read the steps below as a race-condition guarantee.
+ *
+ * What IS guaranteed (for a FINITE seatLimit):
+ *  - The committed active-member count never permanently exceeds the limit.
+ *    Step 7 re-counts AFTER the create; any membership that pushes the company
+ *    over its finite limit is deleted before the function returns success, so
+ *    the same final seat cannot be taken twice and the steady state is always
+ *    <= seatLimit. (seatLimit === null = unlimited profiles; Step 7 is skipped.)
+ *
+ * What is NOT guaranteed / NOT atomic:
+ *  - There is a TRANSIENT window between the create (Step 6) and the rollback
+ *    (Step 7) during which the active count is temporarily over the finite
+ *    limit. A concurrent read in that window observes the over-limit state.
+ *  - Concurrent acceptance of the SAME invitation by the SAME user across two
+ *    sessions (two tabs) can create DUPLICATE active memberships when the
+ *    company is BELOW its seat limit: both pass the "not already a member"
+ *    pre-check (Step 4) before either creates, and the invitation-status re-check
+ *    (Step 8) has a read-before-update race where both read "pending" before
+ *    either marks "accepted". There is no unique constraint on
+ *    (companyId, userId) to reject the second create. This duplicate only
+ *    matters below the limit — at the limit, Step 7 rolls back the excess.
+ *  - A true atomic guarantee requires a DB-level unique constraint on
+ *    (companyId, userId) and/or a conditional (compare-and-set) status
+ *    transition on the invitation, neither of which the platform exposes.
  *
  * Prototype billing is unchanged. No payment is processed. AI access is not
  * gated here. seatLimit === null means unlimited profiles (no cap).

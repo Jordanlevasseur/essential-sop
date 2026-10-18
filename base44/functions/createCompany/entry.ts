@@ -36,7 +36,12 @@ export default async function(req: Request): Promise<Response> {
     const name = (body.name || '').trim();
     if (!name) return Response.json({ error: 'Company name is required.' }, { status: 400 });
 
-    const planCode = (body.planCode || 'contractor').trim();
+    // Plan selection is REQUIRED — we never silently default a new workspace to a
+    // paid tier. Onboarding always passes an explicit planCode; a missing value
+    // (e.g. a direct API call without one) is rejected rather than granted the
+    // highest plan. Existing beta companies keep their stored plan regardless.
+    const planCode = (body.planCode || '').trim();
+    if (!planCode) return Response.json({ error: 'A plan selection is required to create a workspace.' }, { status: 400 });
     const plan = getPlan(planCode);
     if (!plan) return Response.json({ error: 'Invalid plan code.' }, { status: 400 });
     if (plan.legacy) return Response.json({ error: 'This plan is not available for new subscriptions.' }, { status: 400 });

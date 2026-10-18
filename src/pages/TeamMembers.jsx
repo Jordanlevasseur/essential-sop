@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
-import { getPlan } from '@/lib/plans';
+import { getPlan, isUnlimited } from '@/lib/plans';
 import { getRoleLabel, ROLE_CODES } from '@/lib/roleLabels';
 import SelectSheet from '@/components/ui/SelectSheet';
 import { ArrowLeft, UserPlus, MoreVertical, Mail, X, ChevronDown } from 'lucide-react';
@@ -26,9 +26,12 @@ export default function TeamMembers() {
   const [inviting, setInviting] = useState(false);
   const [roleSheetOpen, setRoleSheetOpen] = useState(false);
 
-  const plan = getPlan(activeCompany?.subscriptionPlanCode);
-  const seatLimit = plan ? plan.seatLimit : null; // null = unlimited
-  const isUnlimitedSeat = seatLimit == null;
+  // Mirror the backend: an unrecognized/missing plan code falls back to the
+  // LOWEST tier (homeowner, 1 profile), never to unlimited. This keeps the
+  // displayed limit consistent with server-side seat enforcement.
+  const plan = getPlan(activeCompany?.subscriptionPlanCode) || getPlan('homeowner');
+  const seatLimit = plan.seatLimit; // null only for a genuine unlimited plan (contractor)
+  const isUnlimitedSeat = isUnlimited(plan);
   const activeMembers = members.filter(m => m.status === 'active');
   const suspendedMembers = members.filter(m => m.status === 'suspended');
   const pendingInvites = invitations.filter(i => i.status === 'pending' && new Date(i.expiresAt) > new Date());

@@ -67,9 +67,14 @@ export function isUnlimited(plan) {
   return !!plan && plan.seatLimit == null;
 }
 
-/** Resolve the profile limit for a plan code. null = unlimited. */
+/** Resolve the profile limit for a plan code. null = unlimited.
+ *  An UNRECOGNIZED or MISSING plan code falls back to the LOWEST tier
+ *  (homeowner, 1 profile) — the most restrictive — never to the highest. This
+ *  prevents silently granting paid Contractor (unlimited) entitlements to a
+ *  company whose plan code is unset or corrupted. Existing members are never
+ *  removed by this; it only caps future invites. */
 export function getSeatLimit(planCode) {
-  const plan = getPlan(planCode) || getPlan('contractor');
+  const plan = getPlan(planCode) || getPlan('homeowner');
   return plan ? plan.seatLimit : null;
 }
 
@@ -80,7 +85,8 @@ export function getSeatLimit(planCode) {
  * seatLimit === null and remainingSeatCount === null for unlimited plans.
  */
 export async function getSeatUsage(serviceRole, companyId, planCode) {
-  const plan = getPlan(planCode) || getPlan('contractor');
+  // Unrecognized/missing plan → lowest tier (homeowner), never the highest.
+  const plan = getPlan(planCode) || getPlan('homeowner');
   const unlimited = isUnlimited(plan);
   const seatLimit = plan ? plan.seatLimit : null;
 
