@@ -88,42 +88,42 @@
   }
 
   .dark {
-    /* Shadcn base tokens — dark (Midnight Navy surfaces) */
-    --background: 214 35% 12%;           /* dark Midnight Navy */
-    --foreground: 210 25% 92%;
-    --card: 214 30% 16%;
-    --card-foreground: 210 25% 92%;
-    --popover: 214 30% 16%;
-    --popover-foreground: 210 25% 92%;
-    --primary: 208 80% 55%;             /* Essential Blue (lighter for dark) */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 214 28% 20%;
-    --secondary-foreground: 210 25% 92%;
-    --muted: 214 28% 20%;
-    --muted-foreground: 213 14% 65%;
-    --accent: 210 40% 22%;              /* Ice Blue (dark) */
-    --accent-foreground: 210 30% 95%;
+    /* Shadcn base tokens — dark (Deep Contrast palette) */
+    --background: 210 13% 6%;            /* Main background #0D0F11 */
+    --foreground: 220 23% 97%;          /* Primary text #F7F8FA */
+    --card: 214 11% 13%;                /* Cards #1D2024 */
+    --card-foreground: 220 23% 97%;
+    --popover: 214 11% 13%;             /* Cards #1D2024 */
+    --popover-foreground: 220 23% 97%;
+    --primary: 210 100% 74%;            /* Interactive blue #79BCFF */
+    --primary-foreground: 210 13% 6%;   /* Contrasting dark text on light-blue */
+    --secondary: 213 5% 16%;            /* Elevated surfaces #24282D */
+    --secondary-foreground: 220 23% 97%;
+    --muted: 213 5% 16%;                /* Elevated #24282D */
+    --muted-foreground: 213 11% 84%;    /* Secondary text #D3D7DC */
+    --accent: 212 17% 23%;              /* Selected background #303943 */
+    --accent-foreground: 220 23% 97%;
     --destructive: 354 65% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 25% 26%;
-    --input: 214 25% 26%;
-    --ring: 208 80% 55%;
+    --border: 215 10% 25%;             /* Borders #393E45 */
+    --input: 214 11% 13%;               /* Inputs #1D2024 */
+    --ring: 210 100% 74%;               /* Interactive blue */
 
-    /* App semantic tokens — dark */
-    --app-bg: 214 35% 12%;
-    --app-surface: 214 30% 15%;
-    --app-elevated: 214 25% 20%;
-    --app-card: 214 30% 16%;
-    --app-input-bg: 214 28% 18%;
-    --app-border: 214 25% 26%;
-    --app-divider: 214 22% 22%;
-    --app-text-primary: 210 25% 92%;
-    --app-text-secondary: 213 14% 68%;
-    --app-text-muted: 213 12% 52%;
-    --app-text-disabled: 213 10% 40%;
-    --app-heading: 204 60% 72%;          /* Arctic Blue accent for headings on dark */
-    --app-accent: 208 80% 55%;           /* Essential Blue (lighter) */
-    --app-accent-text: 0 0% 100%;
+    /* App semantic tokens — dark (Deep Contrast) */
+    --app-bg: 210 13% 6%;              /* Main background #0D0F11 */
+    --app-surface: 214 11% 13%;         /* Cards #1D2024 (header/bars mirror cards) */
+    --app-elevated: 213 5% 16%;         /* Elevated surfaces #24282D */
+    --app-card: 214 11% 13%;           /* Cards #1D2024 */
+    --app-input-bg: 214 11% 13%;       /* Inputs #1D2024 */
+    --app-border: 215 10% 25%;         /* Borders #393E45 */
+    --app-divider: 215 10% 25%;        /* Dividers #393E45 */
+    --app-text-primary: 220 23% 97%;   /* Primary text/headings #F7F8FA */
+    --app-text-secondary: 213 11% 84%; /* Secondary text #D3D7DC */
+    --app-text-muted: 214 11% 75%;     /* Muted text #B8BEC6 */
+    --app-text-disabled: 211 10% 58%; /* Disabled text #89939E */
+    --app-heading: 220 23% 97%;        /* Headings #F7F8FA */
+    --app-accent: 210 100% 74%;        /* Interactive blue #79BCFF */
+    --app-accent-text: 210 13% 6%;     /* Contrasting dark text on light-blue */
     --app-success: 152 55% 55%;
     --app-success-bg: 152 35% 16%;
     --app-warning: 39 90% 60%;
@@ -133,26 +133,26 @@
     --app-info: 209 80% 60%;
     --app-info-bg: 211 40% 16%;
     --app-inactive: 211 14% 60%;
-    --app-inactive-bg: 214 18% 20%;
-    --app-disabled-bg: 214 18% 20%;
+    --app-inactive-bg: 213 5% 16%;     /* Disabled/elevated surface #24282D */
+    --app-disabled-bg: 213 5% 16%;     /* Disabled surface #24282D */
     --app-overlay: 0 0% 0% / 0.6;
-    --app-nav-bg: 214 30% 14%;
-    --app-nav-active: 208 80% 55%;
-    --app-nav-inactive: 213 12% 55%;
-    --app-highlight: 204 70% 60%;
-    --chart-1: 208 80% 55%;
+    --app-nav-bg: 214 11% 13%;         /* Nav bar = cards #1D2024 */
+    --app-nav-active: 210 100% 74%;    /* Interactive blue #79BCFF */
+    --app-nav-inactive: 214 11% 75%;   /* Muted text #B8BEC6 */
+    --app-highlight: 204 70% 60%;      /* Arctic Blue (restrained) */
+    --chart-1: 210 100% 74%;           /* Interactive blue */
     --chart-2: 204 70% 60%;
     --chart-3: 214 40% 65%;
-    --chart-4: 213 14% 65%;
-    --chart-5: 39 80% 60%;
-    --sidebar-background: 214 35% 14%;
-    --sidebar-foreground: 210 25% 92%;
-    --sidebar-primary: 208 80% 55%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 40% 22%;
-    --sidebar-accent-foreground: 210 30% 95%;
-    --sidebar-border: 214 25% 26%;
-    --sidebar-ring: 208 80% 55%;
+    --chart-4: 213 11% 75%;
+    --chart-5: 39 90% 60%;
+    --sidebar-background: 214 11% 13%;
+    --sidebar-foreground: 213 11% 84%;
+    --sidebar-primary: 210 100% 74%;
+    --sidebar-primary-foreground: 210 13% 6%;
+    --sidebar-accent: 212 17% 23%;
+    --sidebar-accent-foreground: 220 23% 97%;
+    --sidebar-border: 215 10% 25%;
+    --sidebar-ring: 210 100% 74%;
   }
 }
 
