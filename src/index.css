@@ -298,6 +298,19 @@ input, textarea, [contenteditable] {
   justify-content: center;
 }
 
+/*
+ * 8. iOS Safari focus-zoom prevention. On iPhone, focusing an input/textarea/
+ * select with a font-size below 16px triggers an automatic page zoom. We pin
+ * form controls to 16px on small viewports — an intentional exception to the
+ * 15px body standard. Desktop and non-form text are unaffected, and user
+ * pinch-to-zoom is preserved (viewport meta is unchanged).
+ */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
 /* ─── Design System V1.0 — interaction timing ─────────────────────────────── */
 /* Screen transitions ~200ms (opacity-only, set in PageTransition).
    Modal transitions ~220ms (handled by Radix/shadcn defaults).

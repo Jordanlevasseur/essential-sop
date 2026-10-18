@@ -153,8 +153,8 @@ export default function Jobs() {
       {activeCompany && <p className="text-xs text-app-text-muted mb-3">{activeCompany.name}</p>}
 
       <div className="flex gap-2 mb-3">
-        <div className="relative flex-1">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
+        <div className="relative flex-1 min-w-0">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
           <input
             type="search"
             value={search}
@@ -162,10 +162,10 @@ export default function Jobs() {
             placeholder="Search procedures…"
             aria-label="Search jobs"
             enterKeyHint="search"
-            className="w-full pl-10 pr-9 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
+            className="w-full min-h-[44px] pl-9 pr-9 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent"
           />
           {search && (
-            <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-app-text-muted">
+            <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-app-text-muted icon-btn">
               <X size={16} />
             </button>
           )}
@@ -173,9 +173,9 @@ export default function Jobs() {
         {isCompanyAdmin && (
           <button
             onClick={() => navigate('/create-job')}
-            className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium"
+            className="min-h-[44px] px-3 py-2 bg-app-accent text-app-accent-text rounded-lg flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
           >
-            <Plus size={18} />
+            <Plus size={16} />
             Create
           </button>
         )}
@@ -185,32 +185,30 @@ export default function Jobs() {
       <div className="flex gap-2 mb-3">
         <button
           onClick={() => setShowSortSheet(true)}
-          className="flex-1 flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
+          className="flex-1 min-w-0 min-h-[44px] flex items-center gap-1.5 px-2.5 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
           aria-label="Sort by"
         >
-          <span className="flex items-center gap-1.5 min-w-0">
-            <ArrowUpDown size={14} className="text-app-text-muted flex-shrink-0" />
-            <span className="truncate"><span className="text-app-text-muted">Sort:</span> {sortLabel}</span>
-          </span>
-          <ChevronDown size={16} className="text-app-text-muted flex-shrink-0" />
+          <ArrowUpDown size={14} className="text-app-text-muted flex-shrink-0" />
+          <span className="text-xs text-app-text-muted flex-shrink-0">Sort</span>
+          <span className="flex-1 min-w-0 truncate text-app-text">{sortLabel}</span>
+          <ChevronDown size={14} className="text-app-text-muted flex-shrink-0" />
         </button>
         <button
           onClick={() => setShowCategorySheet(true)}
-          className="flex-1 flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
+          className="flex-1 min-w-0 min-h-[44px] flex items-center gap-1.5 px-2.5 py-2 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
           aria-label="Category"
         >
-          <span className="flex items-center gap-1.5 min-w-0">
-            <Tag size={14} className="text-app-text-muted flex-shrink-0" />
-            <span className="truncate"><span className="text-app-text-muted">Category:</span> {categoryLabel}</span>
-          </span>
-          <ChevronDown size={16} className="text-app-text-muted flex-shrink-0" />
+          <Tag size={14} className="text-app-text-muted flex-shrink-0" />
+          <span className="text-xs text-app-text-muted flex-shrink-0">Category</span>
+          <span className="flex-1 min-w-0 truncate text-app-text">{categoryLabel}</span>
+          <ChevronDown size={14} className="text-app-text-muted flex-shrink-0" />
         </button>
         <button
           onClick={() => setShowFilters(true)}
-          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 no-select touch-active ${filters.trade ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
+          className={`min-h-[44px] px-2.5 py-2 border rounded-lg flex items-center justify-center no-select touch-active flex-shrink-0 ${filters.trade ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
           aria-label="Filters"
         >
-          <SlidersHorizontal size={18} />
+          <SlidersHorizontal size={16} />
         </button>
       </div>
 

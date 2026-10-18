@@ -16,6 +16,9 @@ const NAV_CONTENT_HEIGHT = 60;
 export default function Layout() {
   const location = useLocation();
   const isSubPage = location.pathname.includes('/jobs/');
+  // Assistant manages its own full-height chat layout (dvh-based, composer
+  // anchored above this nav), so main must not reserve bottom padding for it.
+  const isAssistant = location.pathname === '/assistant';
 
   return (
     <div
@@ -30,7 +33,7 @@ export default function Layout() {
       <main
         className="flex-1 max-w-2xl w-full mx-auto"
         style={{
-          paddingBottom: isSubPage
+          paddingBottom: (isSubPage || isAssistant)
             ? 0
             : `calc(${NAV_CONTENT_HEIGHT}px + env(safe-area-inset-bottom))`,
         }}

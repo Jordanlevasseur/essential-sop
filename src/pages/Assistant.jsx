@@ -63,11 +63,11 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex flex-col bg-app-bg" style={{ height: '100dvh' }}>
-      <div
-        className="bg-app-surface border-b border-app-border px-3 py-3 flex-shrink-0"
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
-      >
+    <div
+      className="flex flex-col bg-app-bg"
+      style={{ height: 'calc(100dvh - env(safe-area-inset-top))' }}
+    >
+      <div className="bg-app-surface border-b border-app-border px-3 py-3 flex-shrink-0">
         <h1 className="text-2xl font-bold text-app-heading">Assistant</h1>
         <p className="text-xs text-app-text-muted mt-1">Ask questions about your company's jobs, procedures, tools, materials, safety requirements, and documentation.</p>
       </div>
@@ -130,7 +130,7 @@ export default function Assistant() {
 
       <div
         className="bg-app-surface border-t border-app-border p-3 flex-shrink-0"
-        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: 'calc(60px + env(safe-area-inset-bottom))' }}
       >
         <div className="flex gap-2">
           <input
@@ -140,13 +140,13 @@ export default function Assistant() {
             placeholder="Ask a question..."
             aria-label="Ask a question"
             enterKeyHint="send"
-            className="flex-1 px-4 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
+            className="flex-1 min-w-0 px-4 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
           />
           <button
             onClick={() => handleAsk()}
             disabled={!input.trim() || searching}
             aria-label="Send message"
-            className="w-10 h-10 bg-app-accent text-app-accent-text rounded-lg flex items-center justify-center disabled:bg-app-disabled disabled:text-app-text-disabled flex-shrink-0 touch-active"
+            className="w-11 h-11 bg-app-accent text-app-accent-text rounded-lg flex items-center justify-center disabled:bg-app-disabled disabled:text-app-text-disabled flex-shrink-0 touch-active"
           >
             <Send size={16} />
           </button>
