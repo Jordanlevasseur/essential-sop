@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Send, ExternalLink } from 'lucide-react';
-import { SECTION_MAP } from '@/lib/constants';
 import { useCompany } from '@/lib/CompanyContext';
 import { useAssistantViewport } from '@/lib/assistantViewport';
+import AssistantMessage from '@/components/assistant/AssistantMessage';
 
 const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
@@ -17,56 +17,55 @@ export default function Assistant() {
   const navigate = useNavigate();
   const { activeCompany } = useCompany();
   const companyId = activeCompany?.id;
-  const [jobs, setJobs] = useState([]);
-  const [contentIndex, setContentIndex] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [searching, setSearching] = useState(false);
   const scrollRef = useRef(null);
+  const lastJobIdsRef = useRef([]);
   // Single source of truth (shared with Layout): visualViewport height +
   // offsetTop + keyboard-open flag. The fixed chat surface is sized to the
   // visible area; Layout hides the bottom nav on this route while the keyboard
   // is open so the composer never sits behind it.
   const { vpHeight, vpOffsetTop, keyboardOpen } = useAssistantViewport();
 
+  // Reset conversation context when the active company changes.
   useEffect(() => {
-    if (!companyId) { setLoading(false); return; }
-    setJobs([]); setContentIndex([]); setMessages([]);
-    setLoading(true);
-    // Use resolver-backed service so provisioned SOP content (including overrides)
-    // is visible to search. No merge logic lives in this component.
-    base44.functions.invoke('resolveJobsForAssistant', { companyId })
-      .then(res => {
-        setJobs(res?.data?.jobs || []);
-        setContentIndex(res?.data?.contentIndex || []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    if (!companyId) return;
+    setMessages([]);
+    lastJobIdsRef.current = [];
   }, [companyId]);
 
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
 
-  const handleAsk = useCallback((question) => {
+  const handleAsk = useCallback(async (question) => {
     const q = (question || input).trim();
     if (!q || searching) return;
     setInput('');
+    const history = messages.slice(-8).map(m => ({ role: m.role, text: m.text }));
     setMessages(prev => [...prev, { role: 'user', text: q }]);
     setSearching(true);
-    setTimeout(() => {
-      const result = searchJobs(q, jobs, contentIndex);
+    try {
+      const res = await base44.functions.invoke('askAssistant', {
+        companyId,
+        question: q,
+        history,
+        focusJobIds: lastJobIdsRef.current,
+      });
+      const data = res?.data || {};
+      const answer = data.answer || 'I could not generate an answer. Please try again.';
+      const sources = Array.isArray(data.sources) ? data.sources : [];
+      setMessages(prev => [...prev, { role: 'assistant', text: answer, sources }]);
+      lastJobIdsRef.current = sources.map(s => s.jobId).filter(Boolean);
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        text: 'Something went wrong reaching the assistant. Please try again.',
+        sources: [],
+      }]);
+    } finally {
       setSearching(false);
-      setMessages(prev => [...prev, result]);
-    }, 500);
-  }, [input, searching, jobs, contentIndex]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-app-bg">
-        <div className="w-8 h-8 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />
-      </div>
-    );
-  }
+    }
+  }, [input, searching, companyId, messages]);
 
   return (
     <div
@@ -108,7 +107,7 @@ export default function Assistant() {
               </div>
             ) : (
               <div className="bg-app-card border border-app-border rounded-2xl rounded-bl-md p-4 max-w-[95%] w-full">
-                <p className="text-sm text-app-text whitespace-pre-wrap mb-3 selectable">{msg.text}</p>
+                <div className="mb-3 selectable"><AssistantMessage text={msg.text} /></div>
                 {msg.sources && msg.sources.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Sources</p>
@@ -137,7 +136,7 @@ export default function Assistant() {
           <div className="flex justify-center">
             <div className="flex items-center gap-2 text-sm text-app-text-muted">
               <div className="w-4 h-4 border-2 border-app-border border-t-app-accent rounded-full animate-spin" />
-              Searching company jobs...
+              Thinking...
             </div>
           </div>
         )}
@@ -169,108 +168,4 @@ export default function Assistant() {
       </div>
     </div>
   );
-}
-
-// Search function now operates on the resolver-backed contentIndex.
-// The contentIndex includes provisioned SOP content (master + override) from the server.
-// No merge logic here — results come pre-resolved.
-function searchJobs(query, jobs, contentIndex) {
-  const q = query.toLowerCase();
-  const keywords = q.split(/\s+/).filter(w => w.length > 2);
-  const matchingJobs = new Set();
-  const sources = [];
-  const summaryParts = [];
-
-  for (const job of jobs) {
-    if (job.isArchived || job.status !== 'Published') continue;
-    const jobText = [job.title, job.shortDescription, job.trade, job.category, ...(job.tags || [])].join(' ').toLowerCase();
-    if (keywords.some(k => jobText.includes(k))) matchingJobs.add(job.id);
-  }
-
-  const contentByJob = {};
-  for (const item of contentIndex) {
-    if (!contentByJob[item.jobId]) contentByJob[item.jobId] = [];
-    contentByJob[item.jobId].push(item);
-    const itemText = [item.title, item.body || ''].join(' ').toLowerCase();
-    if (keywords.some(k => itemText.includes(k))) matchingJobs.add(item.jobId);
-  }
-
-  if (matchingJobs.size === 0) {
-    return { role: 'assistant', text: 'I could not find enough approved company information to answer that. Try another search or ask an administrator to add the missing information.', sources: [] };
-  }
-
-  for (const jobId of matchingJobs) {
-    const job = jobs.find(j => j.id === jobId);
-    if (!job) continue;
-    const contents = contentByJob[jobId] || [];
-    const isRespiratorQuery = q.includes('respirator') || q.includes('respir');
-    const isToolsQuery = q.includes('tool') || q.includes('equipment');
-    const isProcedureQuery = q.includes('procedure') || q.includes('step') || q.includes('how') || q.includes('summarize');
-    const isQualityQuery = q.includes('quality') || q.includes('standard') || q.includes('acceptable');
-    const isSafetyQuery = q.includes('safety') || q.includes('hazard') || q.includes('ppe');
-    const isMaterialsQuery = q.includes('material') || q.includes('supply') || q.includes('product');
-    let jobParts = [];
-
-    if (isRespiratorQuery) {
-      const respiratorItems = contents.filter(c =>
-        c.title.toLowerCase().includes('respirator') ||
-        (c.body || '').toLowerCase().includes('respirator')
-      );
-      if (respiratorItems.length > 0) {
-        jobParts.push('Requires a respirator — see Safety section.');
-        respiratorItems.forEach(item => {
-          sources.push({ jobId, jobTitle: job.title, sectionType: item.sectionType, section: SECTION_MAP[item.sectionType]?.title || item.sectionType, item: item.title });
-        });
-      } else { continue; }
-    } else {
-      if (isToolsQuery || (!isProcedureQuery && !isQualityQuery && !isSafetyQuery && !isMaterialsQuery)) {
-        const tools = contents.filter(c => c.sectionType === 'tools');
-        if (tools.length > 0) {
-          jobParts.push(`Tools: ${tools.map(t => t.title).join(', ')}`);
-          if (tools[0]) sources.push({ jobId, jobTitle: job.title, sectionType: 'tools', section: 'Tools', item: tools[0].title });
-        }
-      }
-      if (isProcedureQuery || (!isToolsQuery && !isQualityQuery && !isSafetyQuery && !isMaterialsQuery)) {
-        const steps = contents.filter(c => c.sectionType === 'procedure');
-        if (steps.length > 0) {
-          jobParts.push(`Procedure: ${steps.length} steps starting with "${steps[0].title}"`);
-          sources.push({ jobId, jobTitle: job.title, sectionType: 'procedure', section: 'Procedure', item: steps[0].title });
-        }
-      }
-      if (isSafetyQuery || (!isToolsQuery && !isProcedureQuery && !isQualityQuery && !isMaterialsQuery)) {
-        const safety = contents.filter(c => c.sectionType === 'safety');
-        if (safety.length > 0) {
-          jobParts.push(`Safety: ${safety.length} item(s) — ${safety.map(s => s.title).join(', ')}`);
-          sources.push({ jobId, jobTitle: job.title, sectionType: 'safety', section: 'Safety', item: safety[0].title });
-        }
-      }
-      if (isQualityQuery || (!isToolsQuery && !isProcedureQuery && !isSafetyQuery && !isMaterialsQuery)) {
-        const quality = contents.filter(c => c.sectionType === 'quality');
-        if (quality.length > 0) {
-          jobParts.push(`Quality Standards: ${quality.map(q => q.title).slice(0, 3).join(', ')}`);
-          sources.push({ jobId, jobTitle: job.title, sectionType: 'quality', section: 'Quality Standards', item: quality[0].title });
-        }
-      }
-      if (isMaterialsQuery) {
-        const mats = contents.filter(c => c.sectionType === 'materials');
-        if (mats.length > 0) {
-          jobParts.push(`Materials: ${mats.map(m => m.title).join(', ')}`);
-          sources.push({ jobId, jobTitle: job.title, sectionType: 'materials', section: 'Materials', item: mats[0].title });
-        }
-      }
-    }
-    if (jobParts.length > 0) summaryParts.push(`**${job.title}**\n${jobParts.join('\n')}`);
-  }
-
-  if (summaryParts.length === 0) {
-    return { role: 'assistant', text: 'I could not find enough approved company information to answer that. Try another search or ask an administrator to add the missing information.', sources: [] };
-  }
-
-  const uniqueSources = [];
-  const seen = new Set();
-  for (const s of sources) {
-    const key = `${s.jobId}_${s.sectionType}`;
-    if (!seen.has(key)) { seen.add(key); uniqueSources.push(s); }
-  }
-  return { role: 'assistant', text: summaryParts.join('\n\n'), sources: uniqueSources.slice(0, 6) };
 }
