@@ -1,138 +1,158 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ════════════════════════════════════════════════════════════════════════════
+   Essential SOP — Official Design System V1.0 (token layer)
+   ────────────────────────────────────────────────────────────────────────────
+   Color distribution target: ~75% neutral, ~20% brand, ~5% functional status.
+   Brand identity: Midnight Navy (#172B46). Interactive identity: Essential
+   Blue (#0F6CBD). Arctic Blue (#7CC4F5) used sparingly only.
+   Surfaces: white cards on a Soft Cloud (#F6F8FA) app background.
+   Functional status colors are paired with labels/icons (never color alone).
+   Dark-mode equivalents maintained under .dark wherever dark mode exists.
+   ════════════════════════════════════════════════════════════════════════════ */
 @layer base {
   :root {
-    /* Shadcn base tokens */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    /* Shadcn base tokens — mapped to the approved palette */
+    --background: 210 29% 97%;          /* Soft Cloud — main app background */
+    --foreground: 210 25% 20%;          /* Graphite — primary body text */
+    --card: 0 0% 100%;                  /* Pure White — cards/content surfaces */
+    --card-foreground: 210 25% 20%;      /* Graphite */
+    --popover: 0 0% 100%;               /* Pure White — dialogs/menus */
+    --popover-foreground: 210 25% 20%;
+    --primary: 208 85% 40%;             /* Essential Blue — primary buttons */
+    --primary-foreground: 0 0% 100%;     /* Pure White */
+    --secondary: 210 29% 97%;            /* Soft Cloud */
+    --secondary-foreground: 210 25% 20%; /* Graphite */
+    --muted: 210 29% 97%;                /* Soft Cloud */
+    --muted-foreground: 213 16% 45%;     /* Slate */
+    --accent: 210 75% 95%;              /* Ice Blue — selected/icon backgrounds */
+    --accent-foreground: 214 50% 18%;    /* Midnight Navy */
+    --destructive: 354 67% 42%;         /* Danger */
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 16% 89%;              /* Border Gray */
+    --input: 214 16% 89%;               /* Border Gray */
+    --ring: 208 85% 40%;                /* Essential Blue — focus */
 
     /* App semantic tokens — light */
-    --app-bg: 210 20% 97%;
-    --app-surface: 0 0% 100%;
-    --app-elevated: 0 0% 100%;
-    --app-card: 0 0% 100%;
-    --app-input-bg: 0 0% 100%;
-    --app-border: 220 13% 90%;
-    --app-divider: 220 13% 93%;
-    --app-text-primary: 222 20% 10%;
-    --app-text-secondary: 220 10% 40%;
-    --app-text-muted: 220 8% 58%;
-    --app-text-disabled: 220 8% 75%;
-    --app-accent: 217 91% 50%;
-    --app-accent-text: 0 0% 100%;
-    --app-success: 142 71% 29%;
-    --app-success-bg: 142 76% 94%;
-    --app-warning: 38 92% 40%;
-    --app-warning-bg: 48 100% 94%;
-    --app-danger: 0 84% 45%;
-    --app-danger-bg: 0 100% 95%;
-    --app-info: 205 87% 35%;
-    --app-info-bg: 205 100% 94%;
-    --app-disabled-bg: 220 14% 94%;
-    --app-overlay: 0 0% 0% / 0.4;
-    --app-nav-bg: 0 0% 100%;
-    --app-nav-active: 217 91% 50%;
-    --app-nav-inactive: 220 9% 60%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-    --font-heading: ui-sans-serif, system-ui, sans-serif;
-    --font-body: ui-sans-serif, system-ui, sans-serif;
-    --font-display: ui-sans-serif, system-ui, sans-serif;
+    --app-bg: 210 29% 97%;              /* Soft Cloud */
+    --app-surface: 0 0% 100%;            /* Pure White — header/bars */
+    --app-elevated: 210 75% 95%;         /* Ice Blue — raised/hover/selected */
+    --app-card: 0 0% 100%;              /* Pure White */
+    --app-input-bg: 0 0% 100%;           /* Pure White */
+    --app-border: 214 16% 89%;          /* Border Gray */
+    --app-divider: 214 14% 93%;         /* slightly lighter than Border Gray */
+    --app-text-primary: 210 25% 20%;    /* Graphite */
+    --app-text-secondary: 213 16% 45%;   /* Slate */
+    --app-text-muted: 213 12% 60%;       /* Slate (lighter) — tertiary */
+    --app-text-disabled: 210 10% 72%;
+    --app-heading: 214 50% 18%;         /* Midnight Navy — major headings/branding */
+    --app-accent: 208 85% 40%;           /* Essential Blue — buttons/active nav/links */
+    --app-accent-text: 0 0% 100%;        /* Pure White */
+    --app-success: 152 68% 27%;          /* Approved/Success */
+    --app-success-bg: 142 40% 94%;
+    --app-warning: 39 100% 29%;          /* Caution */
+    --app-warning-bg: 38 100% 94%;
+    --app-danger: 354 67% 42%;           /* Danger/Critical */
+    --app-danger-bg: 357 74% 95%;
+    --app-info: 209 87% 32%;             /* Information */
+    --app-info-bg: 211 77% 95%;
+    --app-inactive: 211 14% 39%;         /* Draft/Inactive */
+    --app-inactive-bg: 210 22% 95%;
+    --app-disabled-bg: 210 22% 95%;
+    --app-overlay: 214 40% 12% / 0.4;
+    --app-nav-bg: 0 0% 100%;             /* Pure White */
+    --app-nav-active: 208 85% 40%;       /* Essential Blue */
+    --app-nav-inactive: 213 16% 45%;     /* Slate */
+    --app-highlight: 204 86% 72%;        /* Arctic Blue — restrained use */
+    --chart-1: 208 85% 40%;              /* Essential Blue */
+    --chart-2: 204 86% 72%;              /* Arctic Blue */
+    --chart-3: 214 50% 18%;              /* Midnight Navy */
+    --chart-4: 213 16% 45%;              /* Slate */
+    --chart-5: 39 100% 29%;              /* Caution */
+    --radius: 0.5rem;                    /* 8px — standard cards (base scale) */
+    --font-heading: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 0 0% 100%;    /* Pure White */
+    --sidebar-foreground: 210 25% 20%;  /* Graphite */
+    --sidebar-primary: 208 85% 40%;      /* Essential Blue */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 75% 95%;       /* Ice Blue */
+    --sidebar-accent-foreground: 214 50% 18%; /* Midnight Navy */
+    --sidebar-border: 214 16% 89%;      /* Border Gray */
+    --sidebar-ring: 208 85% 40%;         /* Essential Blue */
   }
 
   .dark {
-    --background: 222 20% 10%;
-    --foreground: 210 17% 92%;
-    --card: 222 18% 14%;
-    --card-foreground: 210 17% 92%;
-    --popover: 222 18% 14%;
-    --popover-foreground: 210 17% 92%;
-    --primary: 210 17% 92%;
-    --primary-foreground: 222 20% 10%;
-    --secondary: 222 16% 20%;
-    --secondary-foreground: 210 17% 92%;
-    --muted: 222 16% 20%;
-    --muted-foreground: 215 13% 60%;
-    --accent: 222 16% 20%;
-    --accent-foreground: 210 17% 92%;
-    --destructive: 0 62% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 222 14% 22%;
-    --input: 222 14% 22%;
-    --ring: 215 60% 60%;
+    /* Shadcn base tokens — dark (Midnight Navy surfaces) */
+    --background: 214 35% 12%;           /* dark Midnight Navy */
+    --foreground: 210 25% 92%;
+    --card: 214 30% 16%;
+    --card-foreground: 210 25% 92%;
+    --popover: 214 30% 16%;
+    --popover-foreground: 210 25% 92%;
+    --primary: 208 80% 55%;             /* Essential Blue (lighter for dark) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 28% 20%;
+    --secondary-foreground: 210 25% 92%;
+    --muted: 214 28% 20%;
+    --muted-foreground: 213 14% 65%;
+    --accent: 210 40% 22%;              /* Ice Blue (dark) */
+    --accent-foreground: 210 30% 95%;
+    --destructive: 354 65% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 25% 26%;
+    --input: 214 25% 26%;
+    --ring: 208 80% 55%;
 
     /* App semantic tokens — dark */
-    --app-bg: 222 20% 10%;
-    --app-surface: 222 18% 14%;
-    --app-elevated: 222 16% 18%;
-    --app-card: 222 18% 14%;
-    --app-input-bg: 222 16% 18%;
-    --app-border: 222 14% 24%;
-    --app-divider: 222 14% 20%;
-    --app-text-primary: 210 17% 92%;
-    --app-text-secondary: 215 13% 68%;
-    --app-text-muted: 215 11% 50%;
-    --app-text-disabled: 215 10% 38%;
-    --app-accent: 217 91% 60%;
+    --app-bg: 214 35% 12%;
+    --app-surface: 214 30% 15%;
+    --app-elevated: 214 25% 20%;
+    --app-card: 214 30% 16%;
+    --app-input-bg: 214 28% 18%;
+    --app-border: 214 25% 26%;
+    --app-divider: 214 22% 22%;
+    --app-text-primary: 210 25% 92%;
+    --app-text-secondary: 213 14% 68%;
+    --app-text-muted: 213 12% 52%;
+    --app-text-disabled: 213 10% 40%;
+    --app-heading: 204 60% 72%;          /* Arctic Blue accent for headings on dark */
+    --app-accent: 208 80% 55%;           /* Essential Blue (lighter) */
     --app-accent-text: 0 0% 100%;
-    --app-success: 142 60% 45%;
-    --app-success-bg: 142 40% 14%;
-    --app-warning: 38 85% 55%;
-    --app-warning-bg: 38 60% 14%;
-    --app-danger: 0 72% 55%;
-    --app-danger-bg: 0 55% 14%;
-    --app-info: 205 80% 55%;
-    --app-info-bg: 205 55% 14%;
-    --app-disabled-bg: 222 14% 22%;
+    --app-success: 152 55% 55%;
+    --app-success-bg: 152 35% 16%;
+    --app-warning: 39 90% 60%;
+    --app-warning-bg: 38 50% 16%;
+    --app-danger: 354 65% 60%;
+    --app-danger-bg: 354 40% 16%;
+    --app-info: 209 80% 60%;
+    --app-info-bg: 211 40% 16%;
+    --app-inactive: 211 14% 60%;
+    --app-inactive-bg: 214 18% 20%;
+    --app-disabled-bg: 214 18% 20%;
     --app-overlay: 0 0% 0% / 0.6;
-    --app-nav-bg: 222 18% 14%;
-    --app-nav-active: 217 91% 60%;
-    --app-nav-inactive: 215 11% 50%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --app-nav-bg: 214 30% 14%;
+    --app-nav-active: 208 80% 55%;
+    --app-nav-inactive: 213 12% 55%;
+    --app-highlight: 204 70% 60%;
+    --chart-1: 208 80% 55%;
+    --chart-2: 204 70% 60%;
+    --chart-3: 214 40% 65%;
+    --chart-4: 213 14% 65%;
+    --chart-5: 39 80% 60%;
+    --sidebar-background: 214 35% 14%;
+    --sidebar-foreground: 210 25% 92%;
+    --sidebar-primary: 208 80% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 210 40% 22%;
+    --sidebar-accent-foreground: 210 30% 95%;
+    --sidebar-border: 214 25% 26%;
+    --sidebar-ring: 208 80% 55%;
   }
 }
 
@@ -264,7 +284,7 @@ input, textarea, [contenteditable] {
 }
 .touch-active:active {
   opacity: 0.65;
-  transition: opacity 0.08s ease;
+  transition: opacity 0.12s ease; /* ~120ms button feedback */
 }
 
 /*
@@ -277,3 +297,8 @@ input, textarea, [contenteditable] {
   align-items: center;
   justify-content: center;
 }
+
+/* ─── Design System V1.0 — interaction timing ─────────────────────────────── */
+/* Screen transitions ~200ms (opacity-only, set in PageTransition).
+   Modal transitions ~220ms (handled by Radix/shadcn defaults).
+   Button feedback ~120ms (see .touch-active above). */

@@ -143,7 +143,7 @@ export default function Jobs() {
   return (
     <div className="px-4 pt-6 pb-4">
       <PullToRefresh onRefresh={fetchJobs} disabled={showFilters} />
-      <h1 className="text-2xl font-bold text-app-text mb-1">Jobs</h1>
+      <h1 className="text-2xl font-bold text-app-heading mb-1">Company Procedures</h1>
       {activeCompany && <p className="text-xs text-app-text-muted mb-4">{activeCompany.name}</p>}
 
       <div className="flex gap-2 mb-4">

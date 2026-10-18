@@ -5,9 +5,28 @@ module.exports = {
   theme: {
   	extend: {
   		borderRadius: {
-  			lg: 'var(--radius)',
+  			/* Design System V1.0 radius scale. Base --radius = 8px (cards).
+  			   md = 6px (buttons/inputs/icon containers), sm = 4px (badges/chips),
+  			   micro = 2px (indicators), panel = 10px, dialog = 12px. */
+  			micro: '2px',
+  			sm: 'calc(var(--radius) - 4px)',
   			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
+  			lg: 'var(--radius)',
+  			panel: '10px',
+  			dialog: '12px'
+  		},
+  		fontSize: {
+  			/* Design System V1.0 type scale. 14px is intentionally absent.
+  			   text-sm = 15px (standard body), text-base = 16px (profile-adjacent
+  			   defaults), headings: text-lg 18 / text-xl 22 / text-2xl 28.
+  			   All rem-based to preserve accessibility text scaling. */
+  			xs: ['0.75rem', { lineHeight: '1rem' }],
+  			sm: ['0.9375rem', { lineHeight: '1.45rem' }],
+  			base: ['1rem', { lineHeight: '1.5rem' }],
+  			lg: ['1.125rem', { lineHeight: '1.6rem' }],
+  			xl: ['1.375rem', { lineHeight: '1.75rem' }],
+  			'2xl': ['1.75rem', { lineHeight: '2.05rem' }],
+  			'3xl': ['1.875rem', { lineHeight: '2.15rem' }]
   		},
   		colors: {
   			background: 'hsl(var(--background))',
@@ -24,6 +43,7 @@ module.exports = {
   			'app-text-2': 'hsl(var(--app-text-secondary))',
   			'app-text-muted': 'hsl(var(--app-text-muted))',
   			'app-text-disabled': 'hsl(var(--app-text-disabled))',
+  			'app-heading': 'hsl(var(--app-heading))',
   			'app-accent': 'hsl(var(--app-accent))',
   			'app-accent-text': 'hsl(var(--app-accent-text))',
   			'app-success': 'hsl(var(--app-success))',
@@ -34,6 +54,9 @@ module.exports = {
   			'app-danger-bg': 'hsl(var(--app-danger-bg))',
   			'app-info': 'hsl(var(--app-info))',
   			'app-info-bg': 'hsl(var(--app-info-bg))',
+  			'app-inactive': 'hsl(var(--app-inactive))',
+  			'app-inactive-bg': 'hsl(var(--app-inactive-bg))',
+  			'app-highlight': 'hsl(var(--app-highlight))',
   			'app-disabled': 'hsl(var(--app-disabled-bg))',
   			'app-nav': 'hsl(var(--app-nav-bg))',
   			'app-nav-active': 'hsl(var(--app-nav-active))',
@@ -91,7 +114,8 @@ module.exports = {
   			heading: ['var(--font-heading)'],
   			body: ['var(--font-body)'],
   			display: ['var(--font-display)'],
-  			mono: ['var(--font-mono)']
+  			mono: ['var(--font-mono)'],
+  			sans: ['var(--font-body)']
   		},
   		keyframes: {
   			'accordion-down': {
