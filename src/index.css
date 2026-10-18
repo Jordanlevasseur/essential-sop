@@ -307,7 +307,11 @@ input, textarea, [contenteditable] {
  */
 @media (max-width: 768px) {
   input, textarea, select {
-    font-size: 16px;
+    /* !important so this overrides Tailwind text-* utilities (e.g. .text-sm,
+       15px) on form controls. Without it, .text-sm wins on specificity and
+       iOS Safari focus-zooms on the <16px input — the cause of the Assistant
+       white-screen-on-focus regression. Desktop and non-form text unaffected. */
+    font-size: 16px !important;
   }
 }
 

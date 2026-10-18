@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Send, ExternalLink } from 'lucide-react';
 import { SECTION_MAP } from '@/lib/constants';
 import { useCompany } from '@/lib/CompanyContext';
+import useVisualViewportHeight from '@/hooks/useVisualViewportHeight';
 
 const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
@@ -23,6 +24,15 @@ export default function Assistant() {
   const [input, setInput] = useState('');
   const [searching, setSearching] = useState(false);
   const scrollRef = useRef(null);
+  // visualViewport.height is the on-screen area excluding the iOS soft
+  // keyboard. The chat surface is sized to it so the composer reliably rises
+  // above the keyboard without relying on 100dvh (inconsistent on iOS Safari).
+  // fullHeightRef tracks the largest height seen (keyboard closed) so we can
+  // detect the keyboard and drop the bottom-nav reservation while it is open.
+  const vpHeight = useVisualViewportHeight();
+  const fullHeightRef = useRef(typeof window !== 'undefined' ? window.innerHeight : 0);
+  if (vpHeight > fullHeightRef.current) fullHeightRef.current = vpHeight;
+  const keyboardOpen = vpHeight < fullHeightRef.current - 120;
 
   useEffect(() => {
     if (!companyId) { setLoading(false); return; }
@@ -64,21 +74,30 @@ export default function Assistant() {
 
   return (
     <div
-      className="flex flex-col bg-app-bg"
-      style={{ height: 'calc(100dvh - env(safe-area-inset-top))' }}
+      className="flex flex-col bg-app-bg max-w-2xl mx-auto"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: vpHeight,
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+      }}
     >
-      <div className="bg-app-surface border-b border-app-border px-3 py-3 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-app-heading">Assistant</h1>
-        <p className="text-xs text-app-text-muted mt-1">Ask questions about your company's jobs, procedures, tools, materials, safety requirements, and documentation.</p>
+      <div className="bg-app-surface border-b border-app-border px-3 py-2 flex-shrink-0">
+        <h1 className="text-xl font-bold text-app-heading">Assistant</h1>
+        <p className="text-xs text-app-text-muted mt-0.5">Ask about jobs, procedures, tools, materials, and safety.</p>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 overscroll-contain">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 overscroll-contain">
         {messages.length === 0 && !searching && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-app-text-muted uppercase mb-1.5">Suggested Questions</p>
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-app-text-muted uppercase mb-1">Suggested Questions</p>
             {SUGGESTED_QUESTIONS.map(q => (
               <button key={q} onClick={() => handleAsk(q)}
-                className="w-full text-left px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-text hover:border-app-accent transition-colors no-select touch-active">
+                className="w-full text-left px-3 py-2.5 bg-app-card border border-app-border rounded-lg text-sm text-app-text hover:border-app-accent transition-colors no-select touch-active">
                 {q}
               </button>
             ))}
@@ -130,7 +149,7 @@ export default function Assistant() {
 
       <div
         className="bg-app-surface border-t border-app-border p-3 flex-shrink-0"
-        style={{ paddingBottom: 'calc(60px + env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: keyboardOpen ? '0.5rem' : 'calc(60px + env(safe-area-inset-bottom))' }}
       >
         <div className="flex gap-2">
           <input
