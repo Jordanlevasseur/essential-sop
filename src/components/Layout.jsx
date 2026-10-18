@@ -4,6 +4,7 @@ import { Briefcase, MessageSquare, User } from 'lucide-react';
 import OfflineBanner from '@/components/OfflineBanner';
 import PageTransition from '@/components/PageTransition';
 import RouteFallback from '@/components/RouteFallback';
+import { AssistantViewportProvider, useAssistantViewport } from '@/lib/assistantViewport';
 
 const TABS = [
   { to: '/', label: 'Jobs', icon: Briefcase, end: true },
@@ -14,11 +15,23 @@ const TABS = [
 const NAV_CONTENT_HEIGHT = 60;
 
 export default function Layout() {
+  return (
+    <AssistantViewportProvider>
+      <LayoutInner />
+    </AssistantViewportProvider>
+  );
+}
+
+function LayoutInner() {
   const location = useLocation();
+  const { keyboardOpen } = useAssistantViewport();
   const isSubPage = location.pathname.includes('/jobs/');
-  // Assistant manages its own full-height chat layout (dvh-based, composer
-  // anchored above this nav), so main must not reserve bottom padding for it.
+  // Assistant manages its own visualViewport-sized fixed chat surface, so main
+  // reserves no bottom padding for it. The bottom nav is hidden on the
+  // Assistant route ONLY while the keyboard is open, so it can never overlap
+  // the composer; Jobs and Profile keep normal nav behavior.
   const isAssistant = location.pathname === '/assistant';
+  const hideNav = isAssistant && keyboardOpen;
 
   return (
     <div
@@ -45,7 +58,7 @@ export default function Layout() {
         </Suspense>
       </main>
 
-      {!isSubPage && (
+      {!isSubPage && !hideNav && (
         <nav
           aria-label="Main navigation"
           className="fixed bottom-0 left-0 right-0 bg-app-nav border-t border-app-border z-40"

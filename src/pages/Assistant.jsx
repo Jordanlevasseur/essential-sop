@@ -4,7 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Send, ExternalLink } from 'lucide-react';
 import { SECTION_MAP } from '@/lib/constants';
 import { useCompany } from '@/lib/CompanyContext';
-import useVisualViewportHeight from '@/hooks/useVisualViewportHeight';
+import { useAssistantViewport } from '@/lib/assistantViewport';
 
 const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
@@ -24,15 +24,11 @@ export default function Assistant() {
   const [input, setInput] = useState('');
   const [searching, setSearching] = useState(false);
   const scrollRef = useRef(null);
-  // visualViewport.height is the on-screen area excluding the iOS soft
-  // keyboard. The chat surface is sized to it so the composer reliably rises
-  // above the keyboard without relying on 100dvh (inconsistent on iOS Safari).
-  // fullHeightRef tracks the largest height seen (keyboard closed) so we can
-  // detect the keyboard and drop the bottom-nav reservation while it is open.
-  const vpHeight = useVisualViewportHeight();
-  const fullHeightRef = useRef(typeof window !== 'undefined' ? window.innerHeight : 0);
-  if (vpHeight > fullHeightRef.current) fullHeightRef.current = vpHeight;
-  const keyboardOpen = vpHeight < fullHeightRef.current - 120;
+  // Single source of truth (shared with Layout): visualViewport height +
+  // offsetTop + keyboard-open flag. The fixed chat surface is sized to the
+  // visible area; Layout hides the bottom nav on this route while the keyboard
+  // is open so the composer never sits behind it.
+  const { vpHeight, vpOffsetTop, keyboardOpen } = useAssistantViewport();
 
   useEffect(() => {
     if (!companyId) { setLoading(false); return; }
@@ -77,11 +73,11 @@ export default function Assistant() {
       className="flex flex-col bg-app-bg max-w-2xl mx-auto"
       style={{
         position: 'fixed',
-        top: 0,
+        top: `${vpOffsetTop}px`,
         left: 0,
         right: 0,
-        height: vpHeight,
-        paddingTop: 'env(safe-area-inset-top)',
+        height: `${vpHeight}px`,
+        paddingTop: `max(env(safe-area-inset-top) - ${vpOffsetTop}px, 0px)`,
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',
       }}
