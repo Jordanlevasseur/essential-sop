@@ -13,7 +13,7 @@ import { Sparkles, AlertTriangle, X } from 'lucide-react';
  */
 const MAX_INSTRUCTION = 2000;
 
-export default function AiSectionGeneratorDialog({ open, onClose, onApplied, sectionTitle, hasExisting }) {
+export default function AiSectionGeneratorDialog({ open, onClose, onApplied, sectionTitle, hasExisting, jobId, sectionType, companyId }) {
   const [instruction, setInstruction] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
@@ -27,6 +27,9 @@ export default function AiSectionGeneratorDialog({ open, onClose, onApplied, sec
     try {
       const res = await base44.functions.invoke('generateCompanySopDraft', {
         action: 'regenerate_section',
+        companyId,
+        jobId,
+        sectionType,
         instruction: instruction.trim(),
       });
       const items = res?.data?.items;

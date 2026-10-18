@@ -4,7 +4,9 @@ import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, Copy, Check, X, AlertTriangle, Info, AlertCircle, ShieldAlert, Camera, CheckCircle2, Circle } from 'lucide-react';
 import { SECTION_MAP, SEVERITY_LEVELS, DOCUMENTATION_TYPES, DISCLAIMER } from '@/lib/constants';
+import { Sparkles } from 'lucide-react';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
+import AiSectionGeneratorDialog from '@/components/sections/AiSectionGeneratorDialog';
 
 export default function SectionDetail() {
   const { jobId, sectionType } = useParams();
@@ -20,6 +22,7 @@ export default function SectionDetail() {
   const [loading, setLoading] = useState(true);
   const [editItem, setEditItem] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showAiGen, setShowAiGen] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -90,6 +93,26 @@ export default function SectionDetail() {
     setItems(newItems.map((item, i) => ({ ...item, sortOrder: i })));
   };
 
+  // AI section regenerate: backend returns items without persisting. We replace
+  // only this section's SectionContent through the existing mutation-guarded path.
+  const handleAiGenerated = async (newItems) => {
+    await assertMutationAllowed();
+    if (items.length > 0) {
+      await base44.entities.SectionContent.deleteMany({ jobId, sectionType });
+    }
+    const created = await base44.entities.SectionContent.bulkCreate(
+      newItems.map((it, i) => ({
+        companyId: job?.companyId, sectionId: section.id, jobId, sectionType,
+        contentType: it.contentType, title: it.title, body: it.body || '',
+        sortOrder: i, isRequired: !!it.isRequired, isCritical: !!it.isCritical, metadata: it.metadata || {},
+      }))
+    );
+    const sorted = (created || []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+    setItems(sorted);
+    updateSectionStatus(sorted);
+    setShowAiGen(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -114,9 +137,14 @@ export default function SectionDetail() {
             <h1 className="font-semibold text-app-heading truncate">{sectionTitle}</h1>
           </div>
           {canEdit && (
-            <button onClick={() => setShowAdd(true)} className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium flex items-center gap-1">
-              <Plus size={16} /> Add
-            </button>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button onClick={() => setShowAiGen(true)} aria-label="Generate with AI" className="px-2.5 py-2 border border-app-accent/40 text-app-accent rounded-lg text-sm font-medium flex items-center gap-1 bg-app-info-bg">
+                <Sparkles size={15} /> <span className="hidden xs:inline">AI</span>
+              </button>
+              <button onClick={() => setShowAdd(true)} className="px-3 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium flex items-center gap-1">
+                <Plus size={16} /> Add
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -152,6 +180,18 @@ export default function SectionDetail() {
           item={editItem}
           onSave={handleSaveItem}
           onClose={() => { setShowAdd(false); setEditItem(null); }}
+        />
+      )}
+      {canEdit && (
+        <AiSectionGeneratorDialog
+          open={showAiGen}
+          onClose={() => setShowAiGen(false)}
+          onApplied={handleAiGenerated}
+          sectionTitle={sectionTitle}
+          hasExisting={items.length > 0}
+          jobId={jobId}
+          sectionType={sectionType}
+          companyId={job?.companyId}
         />
       )}
     </div>

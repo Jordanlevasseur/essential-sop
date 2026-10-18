@@ -6,7 +6,9 @@ import { useCompany } from '@/lib/CompanyContext';
 import { createJobWithSections } from '@/lib/seedData';
 import { ArrowLeft, Check, Eye, Save, Send, ChevronDown } from 'lucide-react';
 import { SECTION_DEFINITIONS, TRADES, CATEGORIES } from '@/lib/constants';
+import { Sparkles } from 'lucide-react';
 import SelectSheet from '@/components/ui/SelectSheet';
+import AiSopGeneratorDialog from '@/components/jobs/AiSopGeneratorDialog';
 
 const fieldCls = 'w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent';
 
@@ -14,7 +16,7 @@ export default function CreateJob() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
-  const { companyId } = useApp();
+  const { companyId, isCompanyAdmin } = useApp();
   const { activeCompany } = useCompany();
 
   const [step, setStep] = useState(1);
@@ -28,6 +30,7 @@ export default function CreateJob() {
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [openSheet, setOpenSheet] = useState(null); // 'trade' | 'category' | null
+  const [showAiGen, setShowAiGen] = useState(false);
 
   useEffect(() => {
     if (editId) {
@@ -179,7 +182,16 @@ export default function CreateJob() {
                 ))}
               </div>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
+              {isCompanyAdmin && (
+                <button
+                  onClick={() => setShowAiGen(true)}
+                  type="button"
+                  className="w-full py-3 border border-app-accent/40 text-app-accent rounded-lg text-sm font-medium flex items-center justify-center gap-2 bg-app-info-bg"
+                >
+                  <Sparkles size={16} /> Generate with AI
+                </button>
+              )}
               <button onClick={handleSaveDraft} disabled={saving || !form.title.trim()}
                 className="w-full py-3 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium disabled:bg-app-disabled disabled:text-app-text-disabled flex items-center justify-center gap-2">
                 <Save size={16} /> {saving ? 'Saving...' : 'Save & Continue'}
@@ -263,6 +275,14 @@ export default function CreateJob() {
             </div>
           </div>
         </div>
+      )}
+      {isCompanyAdmin && (
+        <AiSopGeneratorDialog
+          open={showAiGen}
+          onClose={() => setShowAiGen(false)}
+          onGenerated={(jid) => { setShowAiGen(false); navigate(`/create-job?edit=${jid}`); }}
+          hints={{ title: form.title, trade: form.trade, category: form.category }}
+        />
       )}
     </div>
   );
