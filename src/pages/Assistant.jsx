@@ -22,6 +22,11 @@ export default function Assistant() {
   const [searching, setSearching] = useState(false);
   const scrollRef = useRef(null);
   const lastJobIdsRef = useRef([]);
+  // Refs to each rendered message wrapper + last-seen message count, used only
+  // to top-align a newly arrived Assistant answer. No repositioning on keyboard
+  // or viewport changes.
+  const messageRefs = useRef([]);
+  const prevLenRef = useRef(0);
   // Single source of truth (shared with Layout): visualViewport height +
   // offsetTop + keyboard-open flag. The fixed chat surface is sized to the
   // visible area; Layout hides the bottom nav on this route while the keyboard
@@ -35,7 +40,35 @@ export default function Assistant() {
     lastJobIdsRef.current = [];
   }, [companyId]);
 
-  useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight); }, [messages, searching]);
+  // Position a newly arrived Assistant answer with its TOP at the top of the
+  // scrollable conversation region (heading + first lines visible immediately)
+  // instead of jumping to the bottom. A new user message keeps the existing
+  // bottom behavior so the user sees their message + the "Thinking…" indicator.
+  // Only message appends trigger repositioning — never keyboard/viewport
+  // changes, source-card rendering, or in-place updates. Positioning is
+  // immediate (no smooth animation) and clamped by the browser, so a short
+  // answer never leaves forced blank space.
+  useEffect(() => {
+    const len = messages.length;
+    if (len === prevLenRef.current) return;
+    const grew = len > prevLenRef.current;
+    prevLenRef.current = len;
+    if (!grew) return; // messages cleared (company change) — no reposition
+    const last = messages[len - 1];
+    if (!last) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    if (last.role === 'assistant') {
+      const node = messageRefs.current[len - 1];
+      if (!node) return;
+      const cRect = container.getBoundingClientRect();
+      const nRect = node.getBoundingClientRect();
+      const paddingTop = parseFloat(window.getComputedStyle(container).paddingTop) || 0;
+      container.scrollTop += nRect.top - cRect.top - paddingTop;
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [messages]);
 
   const handleAsk = useCallback(async (question) => {
     const q = (question || input).trim();
@@ -100,7 +133,7 @@ export default function Assistant() {
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={msg.role === 'user' ? 'flex justify-end' : ''}>
+          <div key={i} ref={(el) => { messageRefs.current[i] = el; }} className={msg.role === 'user' ? 'flex justify-end' : ''}>
             {msg.role === 'user' ? (
               <div className="bg-app-accent text-app-accent-text px-4 py-2.5 rounded-2xl rounded-br-md max-w-[85%]">
                 <p className="text-sm">{msg.text}</p>
@@ -146,7 +179,7 @@ export default function Assistant() {
         className="bg-app-surface border-t border-app-border p-3 flex-shrink-0"
         style={{ paddingBottom: keyboardOpen ? '0.5rem' : 'calc(60px + env(safe-area-inset-bottom))' }}
       >
-        <div className="flex gap-2">
+        <div className="flex gap-3 items-center">
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -154,7 +187,7 @@ export default function Assistant() {
             placeholder="Ask a question..."
             aria-label="Ask a question"
             enterKeyHint="send"
-            className="flex-1 min-w-0 px-4 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
+            className="flex-1 min-w-0 min-h-[44px] px-4 py-3 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
           />
           <button
             onClick={() => handleAsk()}
