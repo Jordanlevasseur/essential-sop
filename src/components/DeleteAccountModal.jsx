@@ -102,7 +102,7 @@ export default function DeleteAccountModal({ onClose }) {
         {/* Step 1 — Information */}
         {step === 1 && (
           <div className="p-5">
-            <div className="bg-app-danger-bg border border-app-danger rounded-xl p-4 mb-5">
+            <div className="bg-app-danger-bg border border-app-danger rounded-lg p-3 mb-5">
               <div className="flex items-start gap-2.5">
                 <AlertTriangle size={18} className="text-app-danger flex-shrink-0 mt-0.5" />
                 <div>

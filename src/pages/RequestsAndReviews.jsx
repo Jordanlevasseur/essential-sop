@@ -173,7 +173,7 @@ export default function RequestsAndReviews() {
             : submitted.map(r => {
               const revision = revisions.find(rev => rev.editRequestId === r.id);
               return (
-                <div key={r.id} className="bg-app-card border border-app-border rounded-xl p-4">
+                <div key={r.id} className="bg-app-card border border-app-border rounded-lg p-3">
                   <RequestCard request={r} job={getJob(r.jobId)} requester={getUser(r.requestedByUserId)} />
                   {revision && (
                     <div className="mt-3 pt-3 border-t border-app-divider">
@@ -285,7 +285,7 @@ function RequestCard({ request, job, requester, grant, actions = [], onClick }) 
   const statusClass = STATUS_STYLES[request.status] || 'bg-app-elevated text-app-text-muted';
   const expiresIn = grant ? Math.max(0, Math.round((new Date(grant.expiresAt) - new Date()) / 3600000)) : null;
   return (
-    <div onClick={onClick} className={`bg-app-card border border-app-border rounded-xl p-4 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
+    <div onClick={onClick} className={`bg-app-card border border-app-border rounded-lg p-3 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
       <div className="flex items-start justify-between gap-2 mb-1">
         <p className="font-semibold text-sm text-app-text flex-1">{job?.title || 'Unknown Job'}</p>
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusClass}`}>{request.status.replace(/_/g, ' ')}</span>

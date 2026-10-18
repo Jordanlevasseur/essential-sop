@@ -79,7 +79,7 @@ export default function CompanyProfile() {
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Company Profile</h1>
           <button onClick={handleSave} disabled={saving}
@@ -89,7 +89,7 @@ export default function CompanyProfile() {
         </div>
       </div>
 
-      <div className="px-4 pt-6 pb-8 max-w-lg mx-auto space-y-5">
+      <div className="px-3 pt-4 pb-6 max-w-lg mx-auto space-y-4">
         {/* Logo placeholder */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-app-info-bg flex items-center justify-center">

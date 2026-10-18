@@ -72,7 +72,7 @@ export default function JobWorkspacePresentation({
         className="bg-app-surface border-b border-app-border sticky top-0 z-40"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button
             onClick={onBack}
             className="icon-btn no-select touch-active"
@@ -87,7 +87,7 @@ export default function JobWorkspacePresentation({
       </div>
 
       {/* ── Job header ────────────────────────────────────────────────────── */}
-      <div className="px-5 pt-5 pb-4 border-b border-app-divider max-w-2xl mx-auto w-full">
+      <div className="px-3 pt-4 pb-3 border-b border-app-divider max-w-2xl mx-auto w-full">
         {label && (
           <p className="text-[10px] font-bold text-app-text-muted uppercase tracking-widest mb-1">
             {label}
@@ -96,15 +96,15 @@ export default function JobWorkspacePresentation({
         <p className="text-xs font-semibold text-app-accent uppercase tracking-wide mb-1">
           {[job.trade, job.category].filter(Boolean).join(' · ')}
         </p>
-        <h2 className="text-xl font-bold text-app-text mb-2 leading-snug">{job.title}</h2>
+        <h2 className="text-xl font-bold text-app-text mb-1.5 leading-snug">{job.title}</h2>
         {job.shortDescription && (
-          <p className="text-sm text-app-text-2 leading-relaxed mb-3 selectable">
+          <p className="text-sm text-app-text-2 leading-relaxed mb-2 selectable">
             {job.shortDescription}
           </p>
         )}
 
         {/* Standard metadata chips */}
-        <div className="flex flex-wrap gap-3 text-xs text-app-text-muted">
+        <div className="flex flex-wrap gap-2.5 text-xs text-app-text-muted">
           {job.estimatedDuration && (
             <span className="flex items-center gap-1">
               <Clock size={12} />{job.estimatedDuration}
@@ -118,7 +118,7 @@ export default function JobWorkspacePresentation({
         </div>
 
         {job.tags?.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {job.tags.map(t => (
               <span key={t} className="text-xs px-2 py-0.5 bg-app-elevated text-app-text-muted rounded-full">
                 #{t}

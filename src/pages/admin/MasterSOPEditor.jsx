@@ -527,7 +527,7 @@ export default function MasterSOPEditor() {
     return (
       <div className="min-h-screen bg-app-bg flex flex-col">
         <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
-          <div className="max-w-4xl mx-auto px-6 py-3 flex items-center gap-3">
+          <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center gap-2.5">
             <button onClick={() => navigate(libraryPath)} className="icon-btn text-app-text-2">
               <ArrowLeft size={20} />
             </button>
@@ -553,7 +553,7 @@ export default function MasterSOPEditor() {
     <div className="min-h-screen bg-app-bg">
       {/* Sticky header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-2">
+        <div className="max-w-4xl mx-auto px-3 py-2.5 flex items-center gap-2">
           <button onClick={handleBack} className="icon-btn text-app-text-2 flex-shrink-0" aria-label="Back">
             <ArrowLeft size={20} />
           </button>
@@ -631,7 +631,7 @@ export default function MasterSOPEditor() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-6">
+      <div className="max-w-4xl mx-auto px-4 py-4">
         {/* AI-generated draft banner — visual indicator only */}
         {isAiDraft && (
           <div className="mb-4 flex items-start gap-2.5 p-3.5 bg-app-info-bg border border-app-accent/30 rounded-xl">

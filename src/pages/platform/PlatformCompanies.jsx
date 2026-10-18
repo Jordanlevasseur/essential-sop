@@ -134,7 +134,7 @@ export default function PlatformCompanies() {
               const result = provisionResults[company.id];
               const isProvisioning = provisioningId === company.id;
               return (
-                <div key={company.id} className="bg-app-card border border-app-border rounded-xl p-4">
+                <div key={company.id} className="bg-app-card border border-app-border rounded-lg p-3">
                   <div className="flex items-center gap-3">
                     {/* Avatar */}
                     <div className="w-10 h-10 bg-app-elevated rounded-lg flex items-center justify-center flex-shrink-0">

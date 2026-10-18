@@ -55,7 +55,7 @@ export default function SopItemEditor({ item, onSave, onCancel, onDelete, sectio
   const Icon = typeDef.icon;
 
   return (
-    <div className="border border-app-accent/40 rounded-xl p-4 bg-app-elevated space-y-3">
+    <div className="border border-app-accent/40 rounded-lg p-3 bg-app-elevated space-y-3">
       {/* Type selector */}
       <div>
         <label className="text-xs font-semibold text-app-text-muted uppercase tracking-wide mb-1.5 block">Content Type</label>

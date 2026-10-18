@@ -95,7 +95,7 @@ export default function PlatformAuditLog() {
               const cfg = getActionConfig(entry.action);
               const Icon = cfg.icon;
               return (
-                <div key={entry.id || entry.timestamp} className="bg-app-card border border-app-border rounded-xl p-4 flex items-start gap-4">
+                <div key={entry.id || entry.timestamp} className="bg-app-card border border-app-border rounded-lg p-3 flex items-start gap-4">
                   <div className="w-8 h-8 bg-app-elevated rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
                     <Icon size={15} className={cfg.cls} />
                   </div>

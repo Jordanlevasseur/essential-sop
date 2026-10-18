@@ -111,7 +111,7 @@ export default function TeamMembers() {
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Team Members</h1>
           {isGeneralManager && (
@@ -123,9 +123,9 @@ export default function TeamMembers() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-2 max-w-2xl mx-auto">
+      <div className="px-3 pt-4 pb-2 max-w-2xl mx-auto">
         {/* Plan / seat summary */}
-        <div className="bg-app-card border border-app-border rounded-xl p-4 mb-5">
+        <div className="bg-app-card border border-app-border rounded-lg p-3 mb-5">
           <div className="flex items-baseline justify-between mb-2">
             <p className="font-semibold text-app-text">{plan?.displayName || 'Current Plan'}</p>
             <p className="text-sm text-app-text-2">{activeMembers.length} of {seatLimit} profiles used</p>
@@ -139,7 +139,7 @@ export default function TeamMembers() {
 
         {/* Invite form */}
         {showInviteForm && !inviteResult && (
-          <div className="mb-5 bg-app-card border border-app-border rounded-xl p-4">
+          <div className="mb-5 bg-app-card border border-app-border rounded-lg p-3">
             <h2 className="font-semibold text-app-text mb-3">Invite a Member</h2>
             <label htmlFor="invite-email" className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Email Address</label>
             <input id="invite-email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
@@ -162,7 +162,7 @@ export default function TeamMembers() {
         )}
 
         {inviteResult && (
-          <div className="mb-5 bg-app-success-bg border border-app-success rounded-xl p-4">
+          <div className="mb-5 bg-app-success-bg border border-app-success rounded-lg p-3">
             <p className="font-semibold text-app-success mb-1">Invitation Sent</p>
             <p className="text-sm text-app-text-2 mb-3">Prototype mode: email not sent. Share this link manually:</p>
             <div className="bg-app-elevated rounded-lg p-2.5 break-all text-xs text-app-text font-mono mb-3">{inviteResult.inviteLink}</div>

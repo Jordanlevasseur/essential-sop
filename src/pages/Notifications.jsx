@@ -108,7 +108,7 @@ export default function Notifications() {
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Notifications</h1>
           {unreadCount > 0 && (
@@ -136,7 +136,7 @@ export default function Notifications() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-4 max-w-2xl mx-auto">
+      <div className="px-3 pt-4 pb-3 max-w-2xl mx-auto">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />

@@ -70,7 +70,7 @@ export default function RoleLabels() {
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Role Labels</h1>
           <button onClick={handleSave} disabled={saving}
@@ -80,7 +80,7 @@ export default function RoleLabels() {
         </div>
       </div>
 
-      <div className="px-4 pt-5 pb-8 max-w-lg mx-auto">
+      <div className="px-3 pt-4 pb-6 max-w-lg mx-auto">
         <div className="bg-app-info-bg border border-app-info/20 rounded-xl p-3.5 mb-6">
           <p className="text-xs text-app-info leading-relaxed">
             Role labels change how positions are named in this workspace. They do not change permissions.
@@ -90,7 +90,7 @@ export default function RoleLabels() {
         {/* Fixed role — not editable */}
         <div className="mb-4">
           <p className="text-xs font-semibold text-app-text-muted uppercase mb-2 px-1">Fixed Roles</p>
-          <div className="bg-app-card border border-app-border rounded-xl p-4">
+          <div className="bg-app-card border border-app-border rounded-lg p-3">
             <p className="text-sm font-medium text-app-text">General Manager</p>
             <p className="text-xs text-app-text-muted mt-0.5">This label is fixed and cannot be changed.</p>
           </div>
@@ -100,7 +100,7 @@ export default function RoleLabels() {
         <p className="text-xs font-semibold text-app-text-muted uppercase mb-2 px-1">Customizable Roles</p>
         <div className="space-y-3">
           {customizableRoles.map(r => (
-            <div key={r} className="bg-app-card border border-app-border rounded-xl p-4">
+            <div key={r} className="bg-app-card border border-app-border rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-app-text-muted">{DEFAULT_ROLE_LABELS[r]}</p>
                 <button onClick={() => resetRole(r)} className="text-xs text-app-text-muted touch-active flex items-center gap-1 no-select">

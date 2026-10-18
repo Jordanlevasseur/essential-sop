@@ -77,7 +77,7 @@ export default function MasterLibrary() {
         <p className="text-sm text-app-text-muted">{error}</p>
         <button
           onClick={load}
-          className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-medium"
+          className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium"
         >
           Try Again
         </button>
@@ -86,13 +86,13 @@ export default function MasterLibrary() {
   }
 
   return (
-    <div className="px-4 pt-6 pb-4">
+    <div className="px-3 pt-4 pb-3">
       {/* Header — mirrors Company Jobs page heading */}
       <h1 className="text-2xl font-bold text-app-heading mb-1">Master Jobs</h1>
-      <p className="text-xs text-app-text-muted mb-4">Essential SOP Platform</p>
+      <p className="text-xs text-app-text-muted mb-3">Essential SOP Platform</p>
 
       {/* Search + filter bar — identical structure to Company Jobs */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
           <input
@@ -150,7 +150,7 @@ export default function MasterLibrary() {
         masters.length === 0 ? (
           // True empty state
           <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
-            <div className="w-16 h-16 bg-app-elevated rounded-2xl flex items-center justify-center text-3xl">
+            <div className="w-14 h-14 bg-app-elevated rounded-lg flex items-center justify-center text-2xl">
               📋
             </div>
             <div>
@@ -161,7 +161,7 @@ export default function MasterLibrary() {
             </div>
             <button
               onClick={() => navigate(`${basePath}/new`)}
-              className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold inline-flex items-center gap-1.5"
+              className="px-5 py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-semibold inline-flex items-center gap-1.5"
             >
               <Plus size={15} /> Create Master Job
             </button>
@@ -173,7 +173,7 @@ export default function MasterLibrary() {
           </div>
         )
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {filtered.map(master => (
             <MasterJobCard
               key={master.id}

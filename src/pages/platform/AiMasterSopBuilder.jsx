@@ -79,7 +79,7 @@ export default function AiMasterSopBuilder() {
     >
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-2xl mx-auto px-3 py-2.5 flex items-center gap-2.5">
           <button
             onClick={() => navigate(`${basePath}/new`)}
             className="icon-btn text-app-text-2 flex-shrink-0"
@@ -98,7 +98,7 @@ export default function AiMasterSopBuilder() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
+      <div className="flex-1 max-w-2xl mx-auto w-full px-3 py-4">
         <div className="bg-app-info-bg border border-app-info/30 rounded-xl p-3.5 mb-5 flex items-start gap-2.5">
           <Sparkles size={16} className="text-app-accent flex-shrink-0 mt-0.5" />
           <p className="text-xs text-app-info leading-relaxed">

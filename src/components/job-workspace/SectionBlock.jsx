@@ -24,9 +24,9 @@ export default function SectionBlock({
   emptyMessage,
 }) {
   return (
-    <div className="px-5 pt-8 pb-2">
+    <div className="px-3 pt-5 pb-1.5">
       {/* Section heading row */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2.5">
         <h2 className="text-xs font-bold text-app-text-muted uppercase tracking-widest">
           {sectionDef.title}
         </h2>
@@ -46,7 +46,7 @@ export default function SectionBlock({
       )}
 
       {/* Divider */}
-      <div className="mt-6 border-b border-app-divider" />
+      <div className="mt-4 border-b border-app-divider" />
     </div>
   );
 }

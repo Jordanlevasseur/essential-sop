@@ -11,7 +11,7 @@ export default function SectionCard({ section, icon: Icon, onClick }) {
   const status = section.completionStatus || 'Empty';
 
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl p-4 cursor-pointer active:bg-neutral-50 transition-colors" onClick={onClick}>
+    <div className="bg-white border border-neutral-200 rounded-lg p-3 cursor-pointer active:bg-neutral-50 transition-colors" onClick={onClick}>
       <div className="flex items-center gap-3">
         {Icon && (
           <div className="flex-shrink-0 w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">

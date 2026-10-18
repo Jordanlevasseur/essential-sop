@@ -94,7 +94,7 @@ export default function PlatformAdmins() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-6 space-y-5">
+      <div className="max-w-4xl mx-auto px-6 py-6 space-y-4">
         {/* Safety warning */}
         <div className="flex items-start gap-3 p-4 bg-app-warning-bg border border-app-warning/30 rounded-xl">
           <AlertTriangle size={16} className="text-app-warning flex-shrink-0 mt-0.5" />
@@ -154,7 +154,7 @@ export default function PlatformAdmins() {
               const isCurrentUser = m.userId === user?.id;
               const isActing = actionLoading === m.id;
               return (
-                <div key={m.id} className="bg-app-card border border-app-border rounded-xl p-4 flex items-center gap-4">
+                <div key={m.id} className="bg-app-card border border-app-border rounded-lg p-3 flex items-center gap-4">
                   <div className="w-10 h-10 bg-app-info-bg rounded-full flex items-center justify-center flex-shrink-0">
                     <ShieldCheck size={18} className="text-app-accent" />
                   </div>

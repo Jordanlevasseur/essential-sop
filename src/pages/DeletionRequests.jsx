@@ -58,7 +58,7 @@ export default function DeletionRequests() {
     <div className="min-h-screen bg-app-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3 max-w-2xl mx-auto">
+        <div className="px-3 py-2.5 flex items-center gap-2.5 max-w-2xl mx-auto">
           <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>

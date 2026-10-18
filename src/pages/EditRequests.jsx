@@ -163,7 +163,7 @@ export default function EditRequests() {
     <div className="min-h-screen bg-app-bg">
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active" aria-label="Back"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Edit Requests</h1>
         </div>
@@ -178,7 +178,7 @@ export default function EditRequests() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-4 max-w-2xl mx-auto space-y-3">
+      <div className="px-3 pt-4 pb-3 max-w-2xl mx-auto space-y-3">
 
         {/* ── REVIEWER VIEWS ── */}
         {isReviewer && tab === 'awaiting' && (
@@ -418,7 +418,7 @@ function RequestCard({ request, job, requester, company, grant, onClick, onRevok
       tabIndex={onClick ? 0 : undefined}
       aria-label={onClick ? (job?.title || 'Edit request') : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
-      className={`bg-app-card border border-app-border rounded-xl p-4 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
+      className={`bg-app-card border border-app-border rounded-lg p-3 ${onClick ? 'cursor-pointer touch-active' : ''}`}>
       {urgency === 'urgent_safety_correction' && (
         <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-app-danger">
           <span>⚠</span> Urgent Safety Correction

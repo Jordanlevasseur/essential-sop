@@ -105,7 +105,7 @@ export default function SectionDetail() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <div className="bg-white border-b border-neutral-200 sticky top-0 z-40">
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)}>
             <ArrowLeft size={22} className="text-neutral-700" />
           </button>
@@ -114,18 +114,18 @@ export default function SectionDetail() {
             <h1 className="font-semibold text-neutral-900 truncate">{sectionTitle}</h1>
           </div>
           {canEdit && (
-            <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-1">
+            <button onClick={() => setShowAdd(true)} className="px-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-1">
               <Plus size={16} /> Add
             </button>
           )}
         </div>
       </div>
 
-      <div className="px-4 py-4">
-        <p className="text-sm text-neutral-600 mb-4">{sectionDesc}</p>
+      <div className="px-3 py-3">
+        <p className="text-sm text-neutral-600 mb-3">{sectionDesc}</p>
 
         {items.length === 0 ? (
-          <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center">
+          <div className="bg-white border border-neutral-200 rounded-lg p-6 text-center">
             <p className="text-neutral-400 text-sm">No content in this section yet.</p>
             {canEdit && <p className="text-xs text-blue-600 mt-1">Tap "Add" to create the first item.</p>}
           </div>
@@ -184,7 +184,7 @@ function AdminControls({ item, index, total, onEdit, onDelete, onDuplicate, onRe
 
 function ItemCard({ item, children, isAdmin, index, total, onEdit, onDelete, onDuplicate, onReorder }) {
   return (
-    <div className="bg-white border border-neutral-200 rounded-xl p-3.5">
+    <div className="bg-white border border-neutral-200 rounded-lg p-2.5">
       <div className="flex items-start gap-2">
         {item.isRequired && <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Required</span>}
         {item.isCritical && <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium flex-shrink-0">Critical</span>}
@@ -197,7 +197,7 @@ function ItemCard({ item, children, isAdmin, index, total, onEdit, onDelete, onD
 
 function ScopeView({ items, isAdmin, onEdit, onDelete, onReorder }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {items.map((item, i) => (
         <ItemCard key={item.id} item={item} isAdmin={isAdmin} index={i} total={items.length} onEdit={onEdit} onDelete={onDelete} onReorder={onReorder}>
           <h3 className="font-semibold text-neutral-900 text-sm mb-1">{item.title}</h3>
@@ -210,7 +210,7 @@ function ScopeView({ items, isAdmin, onEdit, onDelete, onReorder }) {
 
 function ProcedureView({ items, isAdmin, session, setSessionItem, sessionPrefix, onEdit, onDelete, onDuplicate, onReorder }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {items.map((item, i) => {
         const checked = session[`${sessionPrefix}_${item.id}`];
         return (
@@ -253,7 +253,7 @@ function ToolsView({ items, isAdmin, session, setSessionItem, sessionPrefix, onE
   const required = items.filter(i => i.isRequired);
   const optional = items.filter(i => !i.isRequired);
   const renderGroup = (list, title) => list.length === 0 ? null : (
-    <div className="mb-4">
+    <div className="mb-3">
       <h3 className="text-xs font-semibold text-neutral-500 uppercase mb-2">{title}</h3>
       <div className="space-y-2">
         {list.map((item, i) => {
@@ -286,7 +286,7 @@ function MaterialsView({ items, isAdmin, session, setSessionItem, sessionPrefix,
   const required = items.filter(i => i.isRequired);
   const optional = items.filter(i => !i.isRequired);
   const renderGroup = (list, title) => list.length === 0 ? null : (
-    <div className="mb-4">
+    <div className="mb-3">
       <h3 className="text-xs font-semibold text-neutral-500 uppercase mb-2">{title}</h3>
       <div className="space-y-2">
         {list.map((item) => {
@@ -320,7 +320,7 @@ function SafetyView({ items, isAdmin, session, setSessionItem, sessionPrefix, on
   const acknowledged = session[`${sessionPrefix}_ack`];
   return (
     <div>
-      <div className="space-y-2.5 mb-4">
+      <div className="space-y-2 mb-3">
         {items.map((item, i) => {
           const severity = SEVERITY_LEVELS.find(s => s.value === item.metadata?.severity) || SEVERITY_LEVELS[0];
           const SevIcon = severity.icon;
@@ -344,7 +344,7 @@ function SafetyView({ items, isAdmin, session, setSessionItem, sessionPrefix, on
         })}
       </div>
       {!isAdmin && (
-        <div className={`rounded-xl p-4 border-2 transition-colors ${acknowledged ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-300'}`}>
+        <div className={`rounded-lg p-3 border-2 transition-colors ${acknowledged ? 'bg-green-50 border-green-300' : 'bg-white border-neutral-300'}`}>
           <label className="flex items-center gap-3 cursor-pointer">
             <button onClick={() => setSessionItem(`${sessionPrefix}_ack`, !acknowledged)}>
               {acknowledged ? <CheckCircle2 size={24} className="text-green-500" /> : <Circle size={24} className="text-neutral-300" />}
@@ -371,7 +371,7 @@ function DocumentationView({ items, isAdmin, session, setSessionItem, sessionPre
           </div>
         </div>
       )}
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {items.map((item, i) => {
           const done = session[`${sessionPrefix}_${item.id}`];
           const docType = item.metadata?.documentationType || 'Note';
@@ -438,7 +438,7 @@ function QualityView({ items, isAdmin, session, setSessionItem, sessionPrefix, o
 
   if (submitted) {
     return (
-      <div className="bg-white border border-green-200 rounded-xl p-6 text-center">
+      <div className="bg-white border border-green-200 rounded-lg p-5 text-center">
         <CheckCircle2 size={40} className="text-green-500 mx-auto mb-2" />
         <h3 className="font-semibold text-neutral-900 mb-1">Checklist Submitted</h3>
         <p className="text-sm text-neutral-500">Quality checklist has been saved for this session.</p>
@@ -449,7 +449,7 @@ function QualityView({ items, isAdmin, session, setSessionItem, sessionPrefix, o
 
   return (
     <div>
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {items.map((item, i) => {
           const result = getResult(item.id);
           const failNote = session[`${sessionPrefix}_${item.id}_note`];
@@ -479,7 +479,7 @@ function QualityView({ items, isAdmin, session, setSessionItem, sessionPrefix, o
         })}
       </div>
       {!isAdmin && items.length > 0 && (
-        <div className="mt-4 bg-white border border-neutral-200 rounded-xl p-4">
+        <div className="mt-3 bg-white border border-neutral-200 rounded-lg p-3">
           <h3 className="font-semibold text-sm text-neutral-900 mb-2">Final Notes</h3>
           <textarea value={finalNotes} onChange={e => setFinalNotes(e.target.value)} rows={3}
             placeholder="Add any final notes..." className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm" />

@@ -23,11 +23,11 @@ export default function MasterJobCard({ master, onClick }) {
   return (
     <div
       onClick={onClick}
-      className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity no-select"
+      className="bg-app-card border border-app-border rounded-lg p-2.5 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2.5">
         {/* Trade emoji icon — mirrors JobCard exactly */}
-        <div className="flex-shrink-0 w-10 h-10 bg-app-elevated rounded-lg flex items-center justify-center text-xl">
+        <div className="flex-shrink-0 w-9 h-9 bg-app-elevated rounded-md flex items-center justify-center text-lg">
           {TRADE_EMOJI[master.trade] || '📋'}
         </div>
 
@@ -47,7 +47,7 @@ export default function MasterJobCard({ master, onClick }) {
 
           {/* Tags */}
           {master.tags?.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
+            <div className="flex flex-wrap gap-1 mt-1">
               {master.tags.slice(0, 4).map(tag => (
                 <span key={tag} className="px-1.5 py-0.5 bg-app-info-bg text-app-accent text-[10px] rounded font-medium">{tag}</span>
               ))}
@@ -58,7 +58,7 @@ export default function MasterJobCard({ master, onClick }) {
           )}
 
           {/* Platform-specific metadata row */}
-          <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <div className="flex items-center gap-2.5 mt-1.5 flex-wrap">
             {hasVersion && (
               <span className="text-xs text-app-text-muted flex items-center gap-1">
                 <GitBranch size={11} />

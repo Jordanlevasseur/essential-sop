@@ -77,7 +77,7 @@ export default function PlatformDashboard() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
         {/* Stats */}
         {!loadingStats && stats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -88,7 +88,7 @@ export default function PlatformDashboard() {
               { label: 'Archived', value: stats.archivedSOPs, icon: Archive, cls: 'text-app-text-muted' },
               { label: 'Admins', value: stats.activeAdmins, icon: ShieldCheck, cls: 'text-app-info' },
             ].map(s => (
-              <div key={s.label} className="bg-app-card border border-app-border rounded-xl p-4 flex items-center gap-3">
+              <div key={s.label} className="bg-app-card border border-app-border rounded-lg p-3 flex items-center gap-3">
                 <s.icon size={18} className={s.cls} />
                 <div>
                   <p className="text-xl font-bold text-app-text">{s.value}</p>
@@ -126,7 +126,7 @@ export default function PlatformDashboard() {
         </div>
 
         {/* Session info */}
-        <div className="bg-app-elevated border border-app-border rounded-xl p-4 text-xs text-app-text-muted space-y-1">
+        <div className="bg-app-elevated border border-app-border rounded-lg p-3 text-xs text-app-text-muted space-y-1">
           <p className="font-semibold text-app-text-2 text-sm mb-2">Platform Session</p>
           <p>Granted since: {platformMembership?.grantedAt ? new Date(platformMembership.grantedAt).toLocaleDateString() : 'Unknown'}</p>
           <p>Role: Platform Super Admin</p>

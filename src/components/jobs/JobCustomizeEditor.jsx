@@ -243,7 +243,7 @@ export default function JobCustomizeEditor({ job, contentBySection, override, on
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto w-full px-4 py-5 space-y-5">
           {/* Job metadata overrides */}
-          <div className="bg-app-surface border border-app-border rounded-xl p-4 space-y-3">
+          <div className="bg-app-surface border border-app-border rounded-lg p-3 space-y-3">
             <h2 className="text-xs font-bold text-app-text-muted uppercase tracking-widest">Job Details</h2>
             <div>
               <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Title</label>

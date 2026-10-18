@@ -120,7 +120,7 @@ export default function SyncSettings() {
         </div>
       </div>
 
-      <div className="px-4 py-4 space-y-4 pb-12">
+      <div className="px-3 py-3 space-y-4 pb-12">
         {/* Sync error */}
         {syncError && (
           <div className="flex items-start gap-2 px-4 py-3 bg-app-danger-bg border border-app-danger/30 rounded-xl text-sm text-app-danger">
@@ -131,12 +131,12 @@ export default function SyncSettings() {
 
         {/* Status card */}
         <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-app-divider">
+          <div className="px-3 py-2.5 border-b border-app-divider">
             <p className="text-xs font-semibold text-app-text-muted uppercase tracking-wide">Sync Status</p>
           </div>
 
           {syncing ? (
-            <div className="px-4 py-6 flex flex-col items-center gap-3">
+            <div className="px-3 py-5 flex flex-col items-center gap-3">
               <div className="w-10 h-10 border-4 border-app-border border-t-app-accent rounded-full animate-spin" />
               <p className="text-sm text-app-text-2 font-medium">Syncing your library…</p>
               <p className="text-xs text-app-text-muted text-center max-w-xs">
@@ -170,7 +170,7 @@ export default function SyncSettings() {
               </div>
             </div>
           ) : (
-            <div className="px-4 py-6 text-center">
+            <div className="px-3 py-5 text-center">
               <p className="text-sm text-app-text-2 mb-1">No sync recorded yet</p>
               <p className="text-xs text-app-text-muted">A sync will run automatically the next time the app loads, or tap "Sync Now" above.</p>
             </div>
@@ -180,7 +180,7 @@ export default function SyncSettings() {
         {/* Summary stats */}
         {summary && (
           <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-app-divider">
+            <div className="px-3 py-2.5 border-b border-app-divider">
               <p className="text-xs font-semibold text-app-text-muted uppercase tracking-wide">Last Sync Results</p>
             </div>
             <div className="grid grid-cols-3 divide-x divide-app-divider">
@@ -197,7 +197,7 @@ export default function SyncSettings() {
 
         {/* Library stats */}
         <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-app-divider">
+          <div className="px-3 py-2.5 border-b border-app-divider">
             <p className="text-xs font-semibold text-app-text-muted uppercase tracking-wide">Library</p>
           </div>
           <div className="divide-y divide-app-divider">
@@ -216,7 +216,7 @@ export default function SyncSettings() {
         {/* Failed items */}
         {syncRecord?.failedItems?.length > 0 && (
           <div className="bg-app-card border border-app-danger/30 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-app-divider flex items-center gap-2">
+            <div className="px-3 py-2.5 border-b border-app-divider flex items-center gap-2">
               <AlertTriangle size={13} className="text-app-danger" />
               <p className="text-xs font-semibold text-app-danger uppercase tracking-wide">
                 Failed Provisioning ({syncRecord.failedItems.length})
@@ -238,7 +238,7 @@ export default function SyncSettings() {
 
         {/* About */}
         <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-app-divider">
+          <div className="px-3 py-2.5 border-b border-app-divider">
             <p className="text-xs font-semibold text-app-text-muted uppercase tracking-wide">About Synchronization</p>
           </div>
           <div className="px-4 py-3 space-y-2">

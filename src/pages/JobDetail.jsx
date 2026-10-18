@@ -223,7 +223,7 @@ export default function JobDetail() {
       {canEdit && (
         <button
           onClick={() => setEditMode(e => !e)}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active transition-colors ${
+          className={`px-3 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active transition-colors ${
             editMode ? 'bg-app-accent text-app-accent-text' : 'bg-app-elevated text-app-text-2'
           }`}
         >
@@ -233,7 +233,7 @@ export default function JobDetail() {
       {capabilities?.canCustomize && !editMode && (
         <button
           onClick={() => setShowCustomizeEditor(true)}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-accent text-app-accent bg-app-info-bg"
+          className="px-3 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-accent text-app-accent bg-app-info-bg"
         >
           <Sliders size={14} /> {overrideMeta ? 'Edit Custom' : 'Customize'}
         </button>
@@ -241,7 +241,7 @@ export default function JobDetail() {
       {isProjectLead && job?.status === 'Published' && !activeGrant && !editMode && (
         <button
           onClick={() => setShowRequestForm(true)}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated"
+          className="px-3 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated"
         >
           <Edit3 size={14} /> Request Edit
         </button>
@@ -394,7 +394,7 @@ function ActiveGrantBanner({ grant }) {
 
   return (
     <div
-      className="bg-app-info border-t border-app-info/30 px-4 py-3"
+      className="bg-app-info border-t border-app-info/30 px-3 py-2.5"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <p className="text-xs font-bold text-white">Editing Enabled</p>

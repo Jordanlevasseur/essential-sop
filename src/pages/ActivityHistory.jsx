@@ -113,7 +113,7 @@ export default function ActivityHistory() {
   return (
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="px-4 py-3 flex items-center gap-3">
+        <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)} className="icon-btn touch-active"><ArrowLeft size={22} className="text-app-text-2" /></button>
           <h1 className="font-semibold text-app-text flex-1">Activity History</h1>
           <button onClick={() => setShowFilterSheet(true)}
@@ -132,7 +132,7 @@ export default function ActivityHistory() {
         </div>
       </div>
 
-      <div className="px-4 pt-4 pb-4 max-w-2xl mx-auto">
+      <div className="px-3 pt-4 pb-3 max-w-2xl mx-auto">
         {/* Search */}
         <div className="relative mb-4">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
