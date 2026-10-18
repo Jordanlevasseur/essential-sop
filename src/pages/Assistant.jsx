@@ -27,6 +27,17 @@ export default function Assistant() {
   // or viewport changes.
   const messageRefs = useRef([]);
   const prevLenRef = useRef(0);
+  // Auto-expanding composer textarea: grows with content up to 5 lines, then
+  // scrolls internally. Sized by measuring scrollHeight after each input change
+  // (including the clear-after-send), capped to the CSS max-height (5 lines).
+  const textareaRef = useRef(null);
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const max = parseFloat(window.getComputedStyle(el).maxHeight) || 0;
+    el.style.height = (max ? Math.min(el.scrollHeight, max) : el.scrollHeight) + 'px';
+  }, []);
   // Single source of truth (shared with Layout): visualViewport height +
   // offsetTop + keyboard-open flag. The fixed chat surface is sized to the
   // visible area; Layout hides the bottom nav on this route while the keyboard
@@ -69,6 +80,10 @@ export default function Assistant() {
       container.scrollTop = container.scrollHeight;
     }
   }, [messages]);
+
+  // Keep the textarea height in sync with its content — both while typing and
+  // after a send clears the field. Runs after DOM commit so scrollHeight is fresh.
+  useEffect(() => { resizeTextarea(); }, [input, resizeTextarea]);
 
   const handleAsk = useCallback(async (question) => {
     const q = (question || input).trim();
@@ -180,14 +195,14 @@ export default function Assistant() {
         style={{ paddingBottom: keyboardOpen ? '0.5rem' : 'calc(60px + env(safe-area-inset-bottom))' }}
       >
         <div className="flex gap-3 items-center">
-          <input
+          <textarea
+            ref={textareaRef}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !searching && handleAsk()}
             placeholder="Ask a question..."
             aria-label="Ask a question"
-            enterKeyHint="send"
-            className="flex-1 min-w-0 min-h-[44px] px-4 py-3 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
+            rows={1}
+            className="flex-1 min-w-0 min-h-[44px] max-h-[144px] overflow-y-auto resize-none px-4 py-3 leading-6 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
           />
           <button
             onClick={() => handleAsk()}
