@@ -205,14 +205,24 @@ html, body, #root {
 /* Contain iOS overscroll/bounce so the app reads as a native container rather
    than a page floating in Mobile Safari. The document itself does NOT
    rubber-band; inner scroll regions are contained so their overscroll never
-   chains to the body. */
+   chains to the body.
+
+   -webkit-overflow-scrolling: touch routes both the document scroller and every
+   internal overflow container through iOS's hardware-accelerated, momentum-
+   capable compositor path. A WKWebView app wrapper does not always inherit
+   the iOS-Safari default that enables this, which is the root cause of the
+   flat, resistant "molasses" scroll feel in the native build. This is pure
+   native CSS momentum — no JS, no scroll interception, no layout change. */
 html, body {
   overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
 }
 /* Inner vertical scroll regions (bottom sheets, dialogs, long lists) contain
-   their own overscroll instead of bouncing the whole page. */
+   their own overscroll instead of bouncing the whole page, and use native
+   iOS momentum scrolling. */
 .overflow-y-auto {
   overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Native-feel touch & selection rules ─────────────────────────────────── */
