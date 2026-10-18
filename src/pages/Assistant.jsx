@@ -192,7 +192,7 @@ export default function Assistant() {
 
       <div
         className="bg-app-surface border-t border-app-border p-3 flex-shrink-0"
-        style={{ paddingBottom: keyboardOpen ? '0.5rem' : 'calc(60px + env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: keyboardOpen ? '0.5rem' : 'calc(72px + env(safe-area-inset-bottom))' }}
       >
         <div className="flex gap-3 items-center">
           <textarea
