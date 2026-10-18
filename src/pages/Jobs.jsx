@@ -23,7 +23,7 @@ export default function Jobs() {
   const [showFilters, setShowFilters] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showCategorySheet, setShowCategorySheet] = useState(false);
-  const [filters, setFilters] = useState({ trade: '', skillLevel: '' });
+  const [filters, setFilters] = useState({ trade: '' });
   const { saveListState, restoreListState } = useJobsListState();
   const scrollRestoredRef = useRef(false);
 
@@ -36,7 +36,7 @@ export default function Jobs() {
     const saved = restoreListState();
     if (saved) {
       if (saved.search) setSearch(saved.search);
-      if (saved.filters) setFilters({ trade: saved.filters.trade || '', skillLevel: saved.filters.skillLevel || '' });
+      if (saved.filters) setFilters({ trade: saved.filters.trade || '' });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -126,7 +126,6 @@ export default function Jobs() {
   const filteredJobs = useMemo(() => {
     let list = searchResults ? searchResults.map(r => r.job) : publishedJobs;
     if (filters.trade) list = list.filter(j => j.trade === filters.trade);
-    if (filters.skillLevel) list = list.filter(j => j.skillLevel === filters.skillLevel);
     if (activeCategory) list = list.filter(j => j.category === activeCategory);
     return sortItems(list, sort);
   }, [searchResults, publishedJobs, filters, activeCategory, sort]);
@@ -137,7 +136,7 @@ export default function Jobs() {
     () => [{ value: '', label: 'All Categories' }, ...categories.map(c => ({ value: c, label: c }))],
     [categories]
   );
-  const hasFilters = filters.trade || filters.skillLevel || !!activeCategory;
+  const hasFilters = filters.trade || !!activeCategory;
 
   if (loading) {
     return (
@@ -208,7 +207,7 @@ export default function Jobs() {
         </button>
         <button
           onClick={() => setShowFilters(true)}
-          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 no-select touch-active ${filters.trade || filters.skillLevel ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
+          className={`px-3 py-2.5 border rounded-lg flex items-center gap-1.5 no-select touch-active ${filters.trade ? 'border-app-accent bg-app-info-bg text-app-accent' : 'border-app-border bg-app-surface text-app-text-2'}`}
           aria-label="Filters"
         >
           <SlidersHorizontal size={18} />

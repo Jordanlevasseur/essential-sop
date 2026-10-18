@@ -5,7 +5,7 @@ import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
 import { createJobWithSections } from '@/lib/seedData';
 import { ArrowLeft, Check, Eye, Save, Send, ChevronDown } from 'lucide-react';
-import { SECTION_DEFINITIONS, TRADES, CATEGORIES, SKILL_LEVELS } from '@/lib/constants';
+import { SECTION_DEFINITIONS, TRADES, CATEGORIES } from '@/lib/constants';
 import SelectSheet from '@/components/ui/SelectSheet';
 
 const fieldCls = 'w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent';
@@ -19,7 +19,7 @@ export default function CreateJob() {
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    title: '', shortDescription: '', trade: '', category: '', skillLevel: 'Intermediate',
+    title: '', shortDescription: '', trade: '', category: '',
     estimatedDuration: '', tags: [], status: 'Draft', isArchived: false,
   });
   const [tagInput, setTagInput] = useState('');
@@ -27,7 +27,7 @@ export default function CreateJob() {
   const [saving, setSaving] = useState(false);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [jobId, setJobId] = useState(null);
-  const [openSheet, setOpenSheet] = useState(null); // 'trade' | 'category' | 'skillLevel' | null
+  const [openSheet, setOpenSheet] = useState(null); // 'trade' | 'category' | null
 
   useEffect(() => {
     if (editId) {
@@ -37,7 +37,7 @@ export default function CreateJob() {
       ]).then(([j, secs]) => {
         setForm({
           title: j.title, shortDescription: j.shortDescription || '', trade: j.trade || '',
-          category: j.category || '', skillLevel: j.skillLevel || 'Intermediate',
+          category: j.category || '',
           estimatedDuration: j.estimatedDuration || '', tags: j.tags || [], status: j.status || 'Draft', isArchived: j.isArchived || false,
         });
         setJobId(j.id);
@@ -144,20 +144,10 @@ export default function CreateJob() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Skill Level</label>
-                <button type="button" onClick={() => setOpenSheet('skillLevel')}
-                  className={`${fieldCls} flex items-center justify-between text-left no-select touch-active`}>
-                  <span>{form.skillLevel}</span>
-                  <ChevronDown size={16} className="text-app-text-muted" />
-                </button>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Estimated Duration</label>
-                <input value={form.estimatedDuration} onChange={e => set('estimatedDuration', e.target.value)}
-                  placeholder="e.g., 4-6 hours" className={fieldCls} />
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Estimated Duration</label>
+              <input value={form.estimatedDuration} onChange={e => set('estimatedDuration', e.target.value)}
+                placeholder="e.g., 4-6 hours" className={fieldCls} />
             </div>
             <div>
               <label className="text-xs font-semibold text-app-text-muted uppercase mb-1 block">Tags</label>
@@ -261,15 +251,6 @@ export default function CreateJob() {
         onSelect={(v) => set('category', v)}
         onClose={() => setOpenSheet(null)}
       />
-      <SelectSheet
-        open={openSheet === 'skillLevel'}
-        title="Skill Level"
-        value={form.skillLevel}
-        options={SKILL_LEVELS}
-        onSelect={(v) => set('skillLevel', v)}
-        onClose={() => setOpenSheet(null)}
-      />
-
       {showPublishConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowPublishConfirm(false)}>
           <div className="absolute inset-0 bg-black/50" />

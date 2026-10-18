@@ -1,12 +1,6 @@
 import React from 'react';
 import { Clock } from 'lucide-react';
 
-const SKILL_COLORS = {
-  Entry: 'text-app-success bg-app-success-bg',
-  Intermediate: 'text-app-warning bg-app-warning-bg',
-  Advanced: 'text-app-danger bg-app-danger-bg',
-};
-
 export default function JobCard({ job, onClick, match }) {
   return (
     <div
@@ -22,18 +16,13 @@ export default function JobCard({ job, onClick, match }) {
           <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
           <p className="text-xs text-app-accent font-medium mt-0.5">{job.trade} · {job.category}</p>
           <p className="text-xs text-app-text-muted mt-0.5 line-clamp-2">{job.shortDescription}</p>
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            {job.skillLevel && (
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SKILL_COLORS[job.skillLevel] || 'text-app-text-2 bg-app-elevated'}`}>
-                {job.skillLevel}
-              </span>
-            )}
-            {job.estimatedDuration && (
+          {job.estimatedDuration && (
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className="text-xs text-app-text-muted flex items-center gap-1">
                 <Clock size={11} />{job.estimatedDuration}
               </span>
-            )}
-          </div>
+            </div>
+          )}
           {match && (
             <p className="text-xs text-app-info mt-1">
               Found in {match.section}: "{match.item}"

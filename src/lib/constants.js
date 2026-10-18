@@ -13,7 +13,6 @@ export const SECTION_MAP = Object.fromEntries(SECTION_DEFINITIONS.map(s => [s.se
 
 export const TRADES = ['Plumbing', 'Carpentry', 'Electrical', 'Drywall', 'Roofing', 'Inspection', 'Waterproofing', 'HVAC', 'Painting', 'General'];
 export const CATEGORIES = ['Water Systems', 'Doors & Windows', 'Ventilation', 'Crawlspace', 'Repairs', 'Decking', 'Electrical', 'Interior', 'Exterior'];
-export const SKILL_LEVELS = ['Entry', 'Intermediate', 'Advanced'];
 export const SEVERITY_LEVELS = [
   { value: 'Information', icon: Info, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
   { value: 'Caution', icon: AlertCircle, color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-200' },

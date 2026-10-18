@@ -9,7 +9,7 @@
  *
  * job (required)
  *   Normalized job object:
- *   { id, title, shortDescription, trade, category, skillLevel,
+ *   { id, title, shortDescription, trade, category,
  *     estimatedDuration, tags }
  *
  * contentBySection (required)
@@ -108,9 +108,6 @@ export default function JobWorkspacePresentation({
             <span className="flex items-center gap-1">
               <Clock size={12} />{job.estimatedDuration}
             </span>
-          )}
-          {job.skillLevel && (
-            <span className="text-app-text-muted">{job.skillLevel}</span>
           )}
           {/* Workspace-supplied metadata view */}
           {metadataView}

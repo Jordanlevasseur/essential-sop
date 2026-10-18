@@ -22,7 +22,6 @@ function normalizeMasterToJob(master) {
     shortDescription:  master.description || '',
     trade:             master.trade || '',
     category:          master.category || '',
-    skillLevel:        null,
     estimatedDuration: null,
     tags:              Array.isArray(master.tags) ? master.tags : [],
     _status:           master.status,
