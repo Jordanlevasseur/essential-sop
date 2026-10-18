@@ -65,17 +65,17 @@ export default function Assistant() {
   return (
     <div className="flex flex-col bg-app-bg" style={{ height: '100dvh' }}>
       <div
-        className="bg-app-surface border-b border-app-border px-4 py-4 flex-shrink-0"
+        className="bg-app-surface border-b border-app-border px-3 py-3 flex-shrink-0"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <h1 className="text-2xl font-bold text-app-heading">Assistant</h1>
         <p className="text-xs text-app-text-muted mt-1">Ask questions about your company's jobs, procedures, tools, materials, safety requirements, and documentation.</p>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 overscroll-contain">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 overscroll-contain">
         {messages.length === 0 && !searching && (
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Suggested Questions</p>
+            <p className="text-xs font-semibold text-app-text-muted uppercase mb-1.5">Suggested Questions</p>
             {SUGGESTED_QUESTIONS.map(q => (
               <button key={q} onClick={() => handleAsk(q)}
                 className="w-full text-left px-4 py-3 bg-app-card border border-app-border rounded-xl text-sm text-app-text hover:border-app-accent transition-colors no-select touch-active">

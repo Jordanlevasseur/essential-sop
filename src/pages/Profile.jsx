@@ -65,12 +65,12 @@ export default function Profile() {
   ];
 
   return (
-    <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-app-heading mb-4">Profile</h1>
+    <div className="px-3 pt-4 pb-3">
+      <h1 className="text-2xl font-bold text-app-heading mb-3">Profile</h1>
 
       {/* User card */}
-      <div className="bg-app-card border border-app-border rounded-xl p-4 mb-4 flex items-center gap-3">
-        <div className="w-14 h-14 bg-app-info-bg rounded-full flex items-center justify-center flex-shrink-0">
+      <div className="bg-app-card border border-app-border rounded-lg p-3 mb-3 flex items-center gap-2.5">
+        <div className="w-12 h-12 bg-app-info-bg rounded-full flex items-center justify-center flex-shrink-0">
           <span className="text-xl font-bold text-app-accent">{user.name?.charAt(0) || 'U'}</span>
         </div>
         <div className="flex-1 min-w-0">

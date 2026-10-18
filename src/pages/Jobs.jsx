@@ -141,12 +141,12 @@ export default function Jobs() {
   }
 
   return (
-    <div className="px-4 pt-6 pb-4">
+    <div className="px-3 pt-4 pb-3">
       <PullToRefresh onRefresh={fetchJobs} disabled={showFilters} />
       <h1 className="text-2xl font-bold text-app-heading mb-1">Company Procedures</h1>
-      {activeCompany && <p className="text-xs text-app-text-muted mb-4">{activeCompany.name}</p>}
+      {activeCompany && <p className="text-xs text-app-text-muted mb-3">{activeCompany.name}</p>}
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-app-text-muted" />
           <input
@@ -187,21 +187,21 @@ export default function Jobs() {
       )}
 
       {!search && favoriteJobs.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-sm font-semibold text-app-text-2 mb-2 flex items-center gap-1.5">
+        <div className="mb-[18px]">
+          <h2 className="text-sm font-semibold text-app-text-2 mb-1.5 flex items-center gap-1.5">
             <Star size={14} className="text-yellow-500 fill-yellow-500" />
             Favorites
           </h2>
-          <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+          <div className="flex gap-2 overflow-x-auto pb-1.5 -mx-3 px-3 scrollbar-hide">
             {favoriteJobs.map(job => (
-              <div key={job.id} role="button" tabIndex={0} aria-label={job.title} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); } }} className="flex-shrink-0 w-56 bg-app-card border border-app-border rounded-xl p-3 cursor-pointer no-select touch-active" onClick={() => { saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); }}>
+              <div key={job.id} role="button" tabIndex={0} aria-label={job.title} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); } }} className="flex-shrink-0 w-52 bg-app-card border border-app-border rounded-lg p-2.5 cursor-pointer no-select touch-active" onClick={() => { saveListState({ search, filters, scrollY: window.scrollY }); navigate(`/jobs/${job.id}`); }}>
                 <div className="flex items-start justify-between mb-1">
                   <h3 className="font-semibold text-sm text-app-text line-clamp-2 flex-1 pr-2">{job.title}</h3>
                   <button onClick={(e) => { e.stopPropagation(); toggleFavorite(job.id); }} className="icon-btn touch-active" aria-label="Remove from favorites">
                     <Star size={16} className="text-yellow-500 fill-yellow-500 flex-shrink-0" />
                   </button>
                 </div>
-                <p className="text-xs text-app-accent font-medium mb-1">{job.trade}</p>
+                <p className="text-xs text-app-accent font-medium mb-0.5">{job.trade}</p>
                 <p className="text-xs text-app-text-muted line-clamp-2">{job.shortDescription}</p>
               </div>
             ))}
@@ -210,13 +210,13 @@ export default function Jobs() {
       )}
 
       {!search && favoriteJobs.length === 0 && (
-        <div className="mb-6 bg-app-surface border border-app-border rounded-xl p-4 text-center">
+        <div className="mb-[18px] bg-app-surface border border-app-border rounded-lg p-3 text-center">
           <Star size={20} className="text-app-text-disabled mx-auto mb-1.5" />
           <p className="text-xs text-app-text-muted">No favorite jobs yet. Tap the star on a job to add it here.</p>
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {!search && <h2 className="text-sm font-semibold text-app-text-2">All Jobs</h2>}
         {filteredJobs.length === 0 ? (
           <div className="text-center py-12">

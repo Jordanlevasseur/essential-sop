@@ -16,10 +16,10 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
       tabIndex={0}
       aria-label={job.title}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-      className="bg-app-card border border-app-border rounded-xl p-4 cursor-pointer active:opacity-80 transition-opacity no-select"
+      className="bg-app-card border border-app-border rounded-lg p-2.5 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-10 h-10 bg-app-elevated rounded-lg flex items-center justify-center text-xl">
+      <div className="flex items-start gap-2.5">
+        <div className="flex-shrink-0 w-9 h-9 bg-app-elevated rounded-md flex items-center justify-center text-lg">
           {TRADE_EMOJI[job.trade] || '🔨'}
         </div>
         <div className="flex-1 min-w-0">
@@ -34,8 +34,8 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
             </button>
           </div>
           <p className="text-xs text-app-accent font-medium mt-0.5">{job.trade} · {job.category}</p>
-          <p className="text-xs text-app-text-muted mt-1 line-clamp-2">{job.shortDescription}</p>
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <p className="text-xs text-app-text-muted mt-0.5 line-clamp-2">{job.shortDescription}</p>
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {job.skillLevel && (
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SKILL_COLORS[job.skillLevel] || 'text-app-text-2 bg-app-elevated'}`}>
                 {job.skillLevel}
@@ -48,7 +48,7 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
             )}
           </div>
           {match && (
-            <p className="text-xs text-app-info mt-1.5">
+            <p className="text-xs text-app-info mt-1">
               Found in {match.section}: "{match.item}"
             </p>
           )}

@@ -11,7 +11,7 @@ const TABS = [
   { to: '/profile', label: 'Profile', icon: User },
 ];
 
-const NAV_CONTENT_HEIGHT = 66;
+const NAV_CONTENT_HEIGHT = 60;
 
 export default function Layout() {
   const location = useLocation();
@@ -61,12 +61,12 @@ export default function Layout() {
                 replace
                 aria-label={label}
                 className={({ isActive }) =>
-                  `flex-1 flex flex-col items-center gap-1 py-3 transition-colors no-select touch-active ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
+                  `flex-1 flex flex-col items-center gap-1 py-2.5 transition-colors no-select touch-active ${isActive ? 'text-app-nav-active' : 'text-app-nav-inactive'}`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <Icon size={22} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
+                    <Icon size={20} strokeWidth={isActive ? 2.5 : 2} aria-hidden="true" />
                     <span className={`text-xs ${isActive ? 'font-semibold' : 'font-medium'}`}>{label}</span>
                   </>
                 )}
