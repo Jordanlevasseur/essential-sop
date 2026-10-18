@@ -1,6 +1,5 @@
 import React from 'react';
 import { GitBranch, Globe, Lock } from 'lucide-react';
-import { TRADE_EMOJI } from '@/lib/constants';
 
 const STATUS_CONFIG = {
   draft:    { label: 'Draft',     cls: 'text-app-warning bg-app-warning-bg' },
@@ -25,12 +24,7 @@ export default function MasterJobCard({ master, onClick }) {
       onClick={onClick}
       className="bg-app-card border border-app-border rounded-lg p-2.5 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
-      <div className="flex items-start gap-2.5">
-        {/* Trade emoji icon — mirrors JobCard exactly */}
-        <div className="flex-shrink-0 w-9 h-9 bg-app-elevated rounded-md flex items-center justify-center text-lg">
-          {TRADE_EMOJI[master.trade] || '📋'}
-        </div>
-
+      <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           {/* Title + status badge */}
           <div className="flex items-start justify-between gap-2">

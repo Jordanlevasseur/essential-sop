@@ -1,6 +1,5 @@
 import React from 'react';
 import { Star, Clock } from 'lucide-react';
-import { TRADE_EMOJI } from '@/lib/constants';
 
 const SKILL_COLORS = {
   Entry: 'text-app-success bg-app-success-bg',
@@ -18,10 +17,7 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       className="bg-app-card border border-app-border rounded-lg p-2.5 cursor-pointer active:opacity-80 transition-opacity no-select"
     >
-      <div className="flex items-start gap-2.5">
-        <div className="flex-shrink-0 w-9 h-9 bg-app-elevated rounded-md flex items-center justify-center text-lg">
-          {TRADE_EMOJI[job.trade] || '🔨'}
-        </div>
+      <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
