@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useAuth } from '@/lib/AuthContext';
-import { PLANS, formatPrice } from '@/lib/plans';
+import { PLANS, formatPrice, seatLimitLabel } from '@/lib/plans';
 import { Check, Star, Building2, Loader2, ChevronRight } from 'lucide-react';
 
 export default function Onboarding() {
@@ -61,7 +61,7 @@ export default function Onboarding() {
             Selected plan: <span className="font-semibold text-app-accent">{selectedPlan.displayName}</span> — {formatPrice(selectedPlan)}
           </p>
           <p className="text-xs text-app-text-muted mb-6">
-            {selectedPlan.seatLimit === 1 ? '1 profile' : `Up to ${selectedPlan.seatLimit} profiles`}
+            {seatLimitLabel(selectedPlan)}
           </p>
 
           <div className="bg-app-card border border-app-border rounded-2xl p-5">
@@ -174,7 +174,7 @@ function PlanCard({ plan, onSelect }) {
         </div>
         <div className="text-right flex-shrink-0 ml-3">
           <div className="text-sm font-semibold text-app-text">
-            {plan.seatLimit === 1 ? '1 profile' : `${plan.seatLimit} profiles`}
+            {seatLimitLabel(plan)}
           </div>
         </div>
       </div>

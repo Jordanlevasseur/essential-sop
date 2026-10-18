@@ -1,13 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '@/lib/CompanyContext';
-import { PLANS, formatPrice } from '@/lib/plans';
+import { PLANS, formatPrice, seatLimitLabel } from '@/lib/plans';
 import { ArrowLeft, Check, Star } from 'lucide-react';
 
 export default function Plans() {
   const navigate = useNavigate();
   const { activeCompany } = useCompany();
-  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor_plus';
+  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor';
 
   return (
     <div className="min-h-screen bg-app-bg">
@@ -49,7 +49,7 @@ export default function Plans() {
               <div className="flex items-baseline gap-3 mb-2">
                 <span className="text-xl font-bold text-app-accent">{formatPrice(plan)}</span>
                 <span className="text-sm text-app-text-muted">
-                  {plan.seatLimit === 1 ? '1 profile' : `${plan.seatLimit} profiles`}
+                  {seatLimitLabel(plan)}
                 </span>
               </div>
 

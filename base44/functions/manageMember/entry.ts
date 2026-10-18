@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { getSeatLimit } from '../../shared/planUtils.js';
 
 const VALID_ROLES = ['general_manager', 'project_manager', 'project_lead', 'technician'];
 
@@ -97,12 +98,11 @@ export default async function(req) {
       if (target.status !== 'suspended') {
         return Response.json({ error: 'Member is not suspended' }, { status: 409 });
       }
-      // Recheck seat capacity
-      const PLAN_LIMITS = { homeowner: 1, handyman: 2, contractor: 15, contractor_plus: 40 };
+      // Recheck seat capacity — null seatLimit means unlimited
       const company = await base44.asServiceRole.entities.Company.get(companyId);
-      const seatLimit = PLAN_LIMITS[company?.subscriptionPlanCode] || 40;
+      const seatLimit = getSeatLimit(company?.subscriptionPlanCode);
       const activeMembers = await base44.asServiceRole.entities.CompanyMembership.filter({ companyId, status: 'active' });
-      if ((activeMembers || []).length >= seatLimit) {
+      if (seatLimit != null && (activeMembers || []).length >= seatLimit) {
         return Response.json({ error: 'No available seats. Remove or suspend another member first.' }, { status: 409 });
       }
       await base44.asServiceRole.entities.CompanyMembership.update(targetMembershipId, { status: 'active', suspendedAt: null });

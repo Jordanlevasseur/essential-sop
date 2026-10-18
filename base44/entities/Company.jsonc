@@ -57,7 +57,7 @@
     },
     "subscriptionPlanCode": {
       "type": "string",
-      "default": "contractor_plus"
+      "default": "contractor"
     },
     "subscriptionStatus": {
       "type": "string",

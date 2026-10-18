@@ -39,54 +39,22 @@ export default function AcceptInvitation() {
       const user = await base44.auth.me();
       if (!user) { base44.auth.redirectToLogin(window.location.href); return; }
 
-      // Verify email matches
-      if (user.email?.toLowerCase() !== invitation.invitedEmail?.toLowerCase()) {
-        setError(`This invitation was sent to ${invitation.invitedEmail}. You are signed in as ${user.email}. Please sign in with the correct account.`);
+      // Seat enforcement, token verification, and all writes are server-side.
+      const resp = await base44.functions.invoke('acceptInvitation', { invitationId, token });
+      const data = resp.data || {};
+      if (!data.success) {
+        setError(data.error || 'Failed to accept invitation.');
         setAccepting(false);
         return;
       }
-
-      // Check seat capacity
-      const PLAN_LIMITS = { homeowner: 1, handyman: 2, contractor: 15, contractor_plus: 40 };
-      const seatLimit = PLAN_LIMITS[company?.subscriptionPlanCode] || 40;
-      const activeMembers = await base44.entities.CompanyMembership.filter({ companyId: invitation.companyId, status: 'active' });
-      if ((activeMembers || []).length >= seatLimit) {
-        setError('This invitation cannot currently be accepted because the company has reached its profile limit. Contact the company\'s General Manager.');
-        setAccepting(false);
-        return;
-      }
-
-      // Check not already a member
-      const existing = (activeMembers || []).find(m => m.userId === user.id);
-      if (existing) { setError('You are already a member of this workspace.'); setAccepting(false); return; }
-
-      // Create membership
-      await base44.entities.CompanyMembership.create({
-        companyId: invitation.companyId,
-        userId: user.id,
-        role: invitation.intendedRole,
-        status: 'active',
-        joinedAt: new Date().toISOString(),
-      });
-
-      // Mark invitation accepted
-      await base44.entities.CompanyInvitation.update(invitationId, { status: 'accepted', acceptedAt: new Date().toISOString() });
-
-      // Log
-      await base44.entities.ActivityLog.create({
-        companyId: invitation.companyId,
-        actingUserId: user.id,
-        actionType: 'invitation_accepted',
-        targetType: 'invitation',
-        targetId: invitationId,
-        summary: `${user.full_name || user.email} accepted invitation to join as ${getRoleLabel(invitation.intendedRole, null)}`,
-        timestamp: new Date().toISOString(),
-      });
 
       setSuccess(true);
-      setTimeout(() => { localStorage.setItem('esop_active_company_id', invitation.companyId); window.location.href = '/'; }, 2000);
+      setTimeout(() => {
+        localStorage.setItem('esop_active_company_id', data.companyId);
+        window.location.href = '/';
+      }, 2000);
     } catch (e) {
-      setError(e.message || 'Failed to accept invitation');
+      setError(e?.response?.data?.error || e?.message || 'Failed to accept invitation');
       setAccepting(false);
     }
   };

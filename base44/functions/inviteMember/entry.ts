@@ -1,4 +1,5 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
+import { getSeatLimit } from '../../shared/planUtils.js';
 
 const ALLOWED_ROLES = ['general_manager', 'project_manager', 'project_lead', 'technician'];
 const INVITE_EXPIRY_DAYS = 7;
@@ -72,13 +73,12 @@ export default async function(req) {
       return Response.json({ error: 'An active invitation already exists for this email' }, { status: 409 });
     }
 
-    // 5. Check seat capacity (active + pending)
-    const PLAN_LIMITS = { homeowner: 1, handyman: 2, contractor: 15, contractor_plus: 40 };
-    const seatLimit = PLAN_LIMITS[company.subscriptionPlanCode] || 40;
+    // 5. Check seat capacity (active + pending) — null seatLimit means unlimited
+    const seatLimit = getSeatLimit(company.subscriptionPlanCode);
     const activeCount = (existingMembers || []).length;
     const pendingInvites = await base44.asServiceRole.entities.CompanyInvitation.filter({ companyId, status: 'pending' });
     const pendingCount = (pendingInvites || []).filter(i => new Date(i.expiresAt) > new Date()).length;
-    if (activeCount + pendingCount >= seatLimit) {
+    if (seatLimit != null && activeCount + pendingCount >= seatLimit) {
       return Response.json({
         error: 'This workspace has no profiles available. Cancel a pending invitation, remove an active member, or upgrade the plan.',
         seatLimit, activeCount, pendingCount

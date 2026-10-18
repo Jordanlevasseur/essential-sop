@@ -1,53 +1,108 @@
 /**
- * Shared backend plan utilities.
- * Imported by: seatCheck, managePlan, createCompany.
+ * Shared backend plan utilities — the authoritative source for plan
+ * definitions and profile limits. Imported by seatCheck, managePlan,
+ * createCompany, inviteMember, manageMember, acceptInvitation.
  *
- * BILLING STATUS:
- * - All plans run in prototype mode. No real payment is processed.
- * - Apple IAP: NOT connected.
- * - Stripe / web billing: NOT connected.
+ * BILLING STATUS: prototype only — no real payment is processed.
+ * Apple IAP / web billing: NOT connected.
+ *
+ * APPROVED PLANS (selectable for new subscriptions):
+ *   homeowner   $5.99/mo   1 profile
+ *   handyman    $15.99/mo  5 profiles
+ *   contractor  $29.99/mo  Unlimited profiles  (seatLimit === null)
+ *
+ * LEGACY: contractor_plus ($39.99/mo, 40 profiles) is preserved for EXISTING
+ * companies only — never selectable for new companies. getPlan() still
+ * resolves it so live companies keep their entitlement; it is absent from
+ * the exported PLANS list, so selectors/Onboarding never offer it.
+ *
+ * "Unlimited" means unlimited PROFILES — it does NOT mean unlimited AI usage.
  */
 
 export const PLANS = [
-  { code: 'homeowner',      displayName: 'Homeowner',      monthlyPrice: 5.99,  seatLimit: 1,  accountType: 'individual', supportsTeamMembers: false, sortOrder: 1 },
-  { code: 'handyman',       displayName: 'Handyman',       monthlyPrice: 10.99, seatLimit: 2,  accountType: 'business',   supportsTeamMembers: true,  sortOrder: 2 },
-  { code: 'contractor',     displayName: 'Contractor',     monthlyPrice: 19.99, seatLimit: 15, accountType: 'business',   supportsTeamMembers: true,  sortOrder: 3 },
-  { code: 'contractor_plus',displayName: 'Contractor Plus',monthlyPrice: 39.99, seatLimit: 40, accountType: 'business',   supportsTeamMembers: true,  sortOrder: 4 },
+  {
+    code: 'homeowner', displayName: 'Homeowner', monthlyPrice: 5.99, currency: 'USD',
+    seatLimit: 1, accountType: 'individual', supportsTeamMembers: false,
+    recommended: false, sortOrder: 1,
+    description: 'For one person managing personal home-repair and maintenance knowledge.',
+    features: ['1 profile', 'Full job editing', 'Full uploads', 'Assistant access', 'No team management'],
+  },
+  {
+    code: 'handyman', displayName: 'Handyman', monthlyPrice: 15.99, currency: 'USD',
+    seatLimit: 5, accountType: 'business', supportsTeamMembers: true,
+    recommended: false, sortOrder: 2,
+    description: 'For a solo handyman or small operation.',
+    features: ['Up to 5 profiles', 'Team roles', 'Job editing', 'Uploads', 'Assistant access'],
+  },
+  {
+    code: 'contractor', displayName: 'Contractor', monthlyPrice: 29.99, currency: 'USD',
+    seatLimit: null, accountType: 'business', supportsTeamMembers: true,
+    recommended: true, sortOrder: 3,
+    description: 'For growing residential construction teams.',
+    features: ['Unlimited profiles', 'Team roles', 'Job editing', 'Uploads', 'Assistant access'],
+  },
 ];
 
+// Legacy plans are resolvable but never listed for selection.
+const LEGACY_PLANS = {
+  contractor_plus: {
+    code: 'contractor_plus', displayName: 'Contractor Plus', monthlyPrice: 39.99, currency: 'USD',
+    seatLimit: 40, accountType: 'business', supportsTeamMembers: true,
+    recommended: false, sortOrder: 5, legacy: true,
+    description: 'Legacy plan — not available for new subscriptions.',
+    features: ['Up to 40 profiles', 'Team roles', 'Job editing', 'Uploads', 'Assistant access'],
+  },
+};
+
+/** Look up a plan by code. Resolves approved plans, then legacy plans. */
 export function getPlan(code) {
-  return PLANS.find(p => p.code === code) || null;
+  const approved = PLANS.find(p => p.code === code);
+  if (approved) return approved;
+  if (code && LEGACY_PLANS[code]) return LEGACY_PLANS[code];
+  return null;
+}
+
+/** True when a plan allows unlimited profiles (seatLimit === null). */
+export function isUnlimited(plan) {
+  return !!plan && plan.seatLimit == null;
+}
+
+/** Resolve the profile limit for a plan code. null = unlimited. */
+export function getSeatLimit(planCode) {
+  const plan = getPlan(planCode) || getPlan('contractor');
+  return plan ? plan.seatLimit : null;
 }
 
 /**
  * Count active seats for a company using the service role client.
- * Returns { seatLimit, activeSeatCount, remainingSeatCount, isAtLimit, isOverLimit }
+ * Returns { seatLimit, isUnlimited, activeSeatCount, remainingSeatCount,
+ *           isAtLimit, isOverLimit, planCode, planDisplayName }
+ * seatLimit === null and remainingSeatCount === null for unlimited plans.
  */
 export async function getSeatUsage(serviceRole, companyId, planCode) {
-  const plan = getPlan(planCode || 'contractor_plus');
-  const seatLimit = plan ? plan.seatLimit : 1;
+  const plan = getPlan(planCode) || getPlan('contractor');
+  const unlimited = isUnlimited(plan);
+  const seatLimit = plan ? plan.seatLimit : null;
 
   const memberships = await serviceRole.entities.CompanyMembership.filter({
     companyId,
     status: 'active',
   });
   const activeSeatCount = (memberships || []).length;
-  const remainingSeatCount = Math.max(0, seatLimit - activeSeatCount);
 
   return {
     seatLimit,
+    isUnlimited: unlimited,
     activeSeatCount,
-    remainingSeatCount,
-    isAtLimit: activeSeatCount >= seatLimit,
-    isOverLimit: activeSeatCount > seatLimit,
+    remainingSeatCount: unlimited ? null : Math.max(0, seatLimit - activeSeatCount),
+    isAtLimit: unlimited ? false : activeSeatCount >= seatLimit,
+    isOverLimit: unlimited ? false : activeSeatCount > seatLimit,
     planCode: plan ? plan.code : planCode,
     planDisplayName: plan ? plan.displayName : planCode,
   };
 }
 
-/**
- * Log a subscription or seat activity event.
- */
+/** Log a subscription or seat activity event. */
 export async function logActivity(serviceRole, {
   companyId, actingUserId, actionType,
   previousPlan, newPlan, activeSeatCount, seatLimit, summary,

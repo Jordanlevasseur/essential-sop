@@ -27,8 +27,8 @@ export default function TeamMembers() {
   const [roleSheetOpen, setRoleSheetOpen] = useState(false);
 
   const plan = getPlan(activeCompany?.subscriptionPlanCode);
-  const PLAN_LIMITS = { homeowner: 1, handyman: 2, contractor: 15, contractor_plus: 40 };
-  const seatLimit = PLAN_LIMITS[activeCompany?.subscriptionPlanCode] || 40;
+  const seatLimit = plan ? plan.seatLimit : null; // null = unlimited
+  const isUnlimitedSeat = seatLimit == null;
   const activeMembers = members.filter(m => m.status === 'active');
   const suspendedMembers = members.filter(m => m.status === 'suspended');
   const pendingInvites = invitations.filter(i => i.status === 'pending' && new Date(i.expiresAt) > new Date());
@@ -128,10 +128,10 @@ export default function TeamMembers() {
         <div className="bg-app-card border border-app-border rounded-lg p-3 mb-5">
           <div className="flex items-baseline justify-between mb-2">
             <p className="font-semibold text-app-text">{plan?.displayName || 'Current Plan'}</p>
-            <p className="text-sm text-app-text-2">{activeMembers.length} of {seatLimit} profiles used</p>
+            <p className="text-sm text-app-text-2">{isUnlimitedSeat ? `${activeMembers.length} profiles used` : `${activeMembers.length} of ${seatLimit} profiles used`}</p>
           </div>
           <div className="h-1.5 bg-app-elevated rounded-full overflow-hidden">
-            <div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${Math.min((activeMembers.length / seatLimit) * 100, 100)}%` }} />
+            <div className="h-full bg-app-accent rounded-full transition-all" style={{ width: `${isUnlimitedSeat ? 100 : Math.min((activeMembers.length / seatLimit) * 100, 100)}%` }} />
           </div>
         </div>
 

@@ -36,9 +36,10 @@ export default async function(req: Request): Promise<Response> {
     const name = (body.name || '').trim();
     if (!name) return Response.json({ error: 'Company name is required.' }, { status: 400 });
 
-    const planCode = (body.planCode || 'contractor_plus').trim();
+    const planCode = (body.planCode || 'contractor').trim();
     const plan = getPlan(planCode);
     if (!plan) return Response.json({ error: 'Invalid plan code.' }, { status: 400 });
+    if (plan.legacy) return Response.json({ error: 'This plan is not available for new subscriptions.' }, { status: 400 });
 
     const role = 'general_manager';
     const now = new Date().toISOString();

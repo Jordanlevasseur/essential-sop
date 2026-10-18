@@ -1,13 +1,16 @@
 /**
- * Centralized subscription plan definitions.
+ * Centralized subscription plan definitions — frontend source of truth.
  * ALL seat limits, prices, and plan metadata must be read from here.
- * Never hard-code plan values elsewhere in the codebase.
  *
- * BILLING STATUS NOTE:
- * - subscriptionStatus: "prototype" — no real payment is being processed.
- * - Apple In-App Purchase: NOT connected.
- * - Web billing (Stripe): NOT connected.
- * - All plan changes are prototype-mode only.
+ * Approved plans (selectable for new subscriptions):
+ *   Homeowner  $5.99/mo   1 profile
+ *   Handyman   $15.99/mo  5 profiles
+ *   Contractor $29.99/mo  Unlimited profiles (seatLimit === null)
+ *
+ * Legacy contractor_plus is intentionally ABSENT here — existing companies
+ * keep their entitlement via the backend planUtils.getPlan() resolution.
+ *
+ * Prototype mode: no payment is processed. Apple IAP / web billing not connected.
  */
 
 export const PLANS = [
@@ -33,16 +36,16 @@ export const PLANS = [
   {
     code: 'handyman',
     displayName: 'Handyman',
-    monthlyPrice: 10.99,
+    monthlyPrice: 15.99,
     currency: 'USD',
-    seatLimit: 2,
+    seatLimit: 5,
     accountType: 'business',
     supportsTeamMembers: true,
     recommended: false,
     sortOrder: 2,
-    description: 'For a solo handyman or two-person operation.',
+    description: 'For a solo handyman or small operation.',
     features: [
-      'Up to 2 profiles',
+      'Up to 5 profiles',
       'Team roles',
       'Job editing',
       'Uploads',
@@ -52,35 +55,16 @@ export const PLANS = [
   {
     code: 'contractor',
     displayName: 'Contractor',
-    monthlyPrice: 19.99,
+    monthlyPrice: 29.99,
     currency: 'USD',
-    seatLimit: 15,
+    seatLimit: null,
     accountType: 'business',
     supportsTeamMembers: true,
     recommended: true,
     sortOrder: 3,
     description: 'For growing residential construction teams.',
     features: [
-      'Up to 15 profiles',
-      'Team roles',
-      'Job editing',
-      'Uploads',
-      'Assistant access',
-    ],
-  },
-  {
-    code: 'contractor_plus',
-    displayName: 'Contractor Plus',
-    monthlyPrice: 39.99,
-    currency: 'USD',
-    seatLimit: 40,
-    accountType: 'business',
-    supportsTeamMembers: true,
-    recommended: false,
-    sortOrder: 4,
-    description: 'For larger construction teams.',
-    features: [
-      'Up to 40 profiles',
+      'Unlimited profiles',
       'Team roles',
       'Job editing',
       'Uploads',
@@ -89,9 +73,36 @@ export const PLANS = [
   },
 ];
 
-/** Look up a plan by its code. Returns undefined if not found. */
+// Legacy plans are resolvable for display/entitlement of EXISTING companies
+// but are intentionally absent from the PLANS list, so selectors never offer them.
+const LEGACY_PLANS = {
+  contractor_plus: {
+    code: 'contractor_plus', displayName: 'Contractor Plus', monthlyPrice: 39.99, currency: 'USD',
+    seatLimit: 40, accountType: 'business', supportsTeamMembers: true,
+    recommended: false, sortOrder: 5, legacy: true,
+    description: 'Legacy plan — not available for new subscriptions.',
+    features: ['Up to 40 profiles', 'Team roles', 'Job editing', 'Uploads', 'Assistant access'],
+  },
+};
+
+/** Look up a plan by its code. Resolves approved plans, then legacy plans. */
 export function getPlan(code) {
-  return PLANS.find(p => p.code === code);
+  const approved = PLANS.find(p => p.code === code);
+  if (approved) return approved;
+  if (code && LEGACY_PLANS[code]) return LEGACY_PLANS[code];
+  return undefined;
+}
+
+/** True when a plan allows unlimited profiles (seatLimit === null). */
+export function isUnlimited(plan) {
+  return !!plan && plan.seatLimit == null;
+}
+
+/** Human-readable profile-limit label, handling unlimited. */
+export function seatLimitLabel(plan) {
+  if (!plan) return '';
+  if (plan.seatLimit == null) return 'Unlimited profiles';
+  return plan.seatLimit === 1 ? '1 profile' : `${plan.seatLimit} profiles`;
 }
 
 /** Format a price for display: "$19.99/month" */
@@ -102,7 +113,7 @@ export function formatPrice(plan) {
 
 /**
  * Valid upgrade paths (from → to).
- * Upgrades are allowed when the target plan has a higher seat limit.
+ * Upgrades are allowed when the target plan has a higher sortOrder.
  */
 export function canUpgrade(fromCode, toCode) {
   const from = getPlan(fromCode);
@@ -113,7 +124,7 @@ export function canUpgrade(fromCode, toCode) {
 
 /**
  * Valid downgrade paths (from → to).
- * Downgrades are allowed when the target plan has a lower seat limit.
+ * Downgrades are allowed when the target plan has a lower sortOrder.
  * Actual capacity enforcement happens on the backend.
  */
 export function canDowngrade(fromCode, toCode) {

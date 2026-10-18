@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
-import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions } from '@/lib/plans';
+import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions, seatLimitLabel } from '@/lib/plans';
 import { ArrowLeft, CreditCard, Users, ArrowUp, ArrowDown, AlertTriangle, CheckCircle2, Loader2, Info } from 'lucide-react';
 
 export default function Subscription() {
@@ -25,7 +25,7 @@ export default function Subscription() {
       .catch(() => setLoading(false));
   }, [activeCompany?.id]);
 
-  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor_plus';
+  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor';
   const currentPlan = getPlan(currentPlanCode);
   const upgradeOptions = getUpgradeOptions(currentPlanCode);
   const downgradeOptions = getDowngradeOptions(currentPlanCode);
@@ -107,19 +107,19 @@ export default function Subscription() {
               <StatusBadge status={activeCompany?.subscriptionStatus} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <StatBox label="Profiles used" value={`${usage?.activeSeatCount ?? '—'} of ${usage?.seatLimit ?? '—'}`} />
-              <StatBox label="Profiles remaining" value={usage?.remainingSeatCount ?? '—'} />
+              <StatBox label="Profiles used" value={usage?.isUnlimited ? `${usage?.activeSeatCount ?? 0} of Unlimited` : `${usage?.activeSeatCount ?? '—'} of ${usage?.seatLimit ?? '—'}`} />
+              <StatBox label="Profiles remaining" value={usage?.isUnlimited ? 'Unlimited' : (usage?.remainingSeatCount ?? '—')} />
             </div>
             {usage && (
               <div className="mt-3">
                 <div className="flex justify-between text-xs text-app-text-muted mb-1">
                   <span>{usage.activeSeatCount} active</span>
-                  <span>{usage.seatLimit} max</span>
+                  <span>{usage.isUnlimited ? 'Unlimited max' : `${usage.seatLimit} max`}</span>
                 </div>
                 <div className="h-2 bg-app-elevated rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${usage.isOverLimit ? 'bg-app-danger' : usage.isAtLimit ? 'bg-app-warning' : 'bg-app-accent'}`}
-                    style={{ width: `${Math.min(100, (usage.activeSeatCount / usage.seatLimit) * 100)}%` }}
+                    style={{ width: `${usage.isUnlimited ? 100 : Math.min(100, (usage.activeSeatCount / usage.seatLimit) * 100)}%` }}
                   />
                 </div>
               </div>
@@ -151,7 +151,7 @@ export default function Subscription() {
                   <ArrowUp size={16} className="text-app-success flex-shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-app-text">{plan.displayName}</p>
-                    <p className="text-xs text-app-text-muted">{formatPrice(plan)} · {plan.seatLimit} profiles</p>
+                    <p className="text-xs text-app-text-muted">{formatPrice(plan)} · {seatLimitLabel(plan)}</p>
                   </div>
                   <span className="text-xs text-app-success font-medium">Upgrade</span>
                 </button>
@@ -170,7 +170,7 @@ export default function Subscription() {
                   <ArrowDown size={16} className="text-app-text-muted flex-shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-app-text">{plan.displayName}</p>
-                    <p className="text-xs text-app-text-muted">{formatPrice(plan)} · {plan.seatLimit} profile{plan.seatLimit !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-app-text-muted">{formatPrice(plan)} · {seatLimitLabel(plan)}</p>
                   </div>
                   <span className="text-xs text-app-text-muted font-medium">Downgrade</span>
                 </button>
@@ -218,7 +218,7 @@ export default function Subscription() {
             <div className="bg-app-elevated rounded-xl px-3 py-2 mb-4 space-y-1 text-xs text-app-text-muted">
               <p><span className="font-medium">New plan:</span> {planAction.plan.displayName}</p>
               <p><span className="font-medium">Price:</span> {formatPrice(planAction.plan)}</p>
-              <p><span className="font-medium">Profile limit:</span> {planAction.plan.seatLimit === 1 ? '1 profile' : `${planAction.plan.seatLimit} profiles`}</p>
+              <p><span className="font-medium">Profile limit:</span> {seatLimitLabel(planAction.plan)}</p>
             </div>
             {actionError && (
               <div className="bg-app-danger-bg border border-app-danger/30 rounded-xl px-3 py-2 mb-3">

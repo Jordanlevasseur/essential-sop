@@ -14,7 +14,7 @@
  * processSubscriptionWebhook — wire into this function when a provider is connected.
  */
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { getPlan, getSeatUsage, logActivity, PLANS } from '../../shared/planUtils.js';
+import { getPlan, getSeatUsage, isUnlimited, logActivity, PLANS } from '../../shared/planUtils.js';
 
 export default async function(req) {
   try {
@@ -48,7 +48,7 @@ export default async function(req) {
     const company = await base44.asServiceRole.entities.Company.get(companyId);
     if (!company) return Response.json({ error: 'Company not found.' }, { status: 404 });
 
-    const currentPlanCode = company.subscriptionPlanCode || 'contractor_plus';
+    const currentPlanCode = company.subscriptionPlanCode || 'contractor';
     const currentPlan = getPlan(currentPlanCode);
 
     if (currentPlanCode === targetPlanCode) {
@@ -62,8 +62,8 @@ export default async function(req) {
     const usage = await getSeatUsage(base44.asServiceRole, companyId, currentPlanCode);
 
     if (isDowngrade) {
-      // Check if active seats fit within the target plan
-      if (usage.activeSeatCount > targetPlan.seatLimit) {
+      // Check if active seats fit within the target plan (unlimited plans never block)
+      if (!isUnlimited(targetPlan) && usage.activeSeatCount > targetPlan.seatLimit) {
         await logActivity(base44.asServiceRole, {
           companyId, actingUserId: user.id,
           actionType: 'downgrade_blocked',
