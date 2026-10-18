@@ -20,7 +20,7 @@ export default function MasterLibrary() {
   const [showCategorySheet, setShowCategorySheet] = useState(false);
   const searchRef = useRef(null);
   const { preferences, updatePreferences } = useApp();
-  const sort = preferences.defaultSort || 'name_az';
+  const sort = preferences.mastersSort || 'name_az';
 
   const basePath = window.location.pathname.startsWith('/platform')
     ? '/platform/master-library'
@@ -232,7 +232,7 @@ export default function MasterLibrary() {
         title="Sort by"
         value={sort}
         options={SORT_OPTIONS}
-        onSelect={(v) => updatePreferences({ defaultSort: v })}
+        onSelect={(v) => updatePreferences({ mastersSort: v })}
         onClose={() => setShowSortSheet(false)}
       />
       <SelectSheet

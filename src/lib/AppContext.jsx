@@ -16,7 +16,7 @@ const STORAGE_KEYS = {
   user: 'esop_user',
 };
 
-const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'name_az', jobsCategory: '', mastersCategory: '' };
+const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'name_az', jobsCategory: '', mastersCategory: '', mastersSort: '' };
 
 // ── Company capability builder ────────────────────────────────────────────────
 function buildCompanyCapabilities(membership) {
