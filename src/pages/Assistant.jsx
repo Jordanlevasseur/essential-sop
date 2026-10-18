@@ -68,7 +68,7 @@ export default function Assistant() {
         className="bg-app-surface border-b border-app-border px-4 py-4 flex-shrink-0"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <h1 className="text-xl font-bold text-app-text">Assistant</h1>
+        <h1 className="text-2xl font-bold text-app-heading">Assistant</h1>
         <p className="text-xs text-app-text-muted mt-1">Ask questions about your company's jobs, procedures, tools, materials, safety requirements, and documentation.</p>
       </div>
 

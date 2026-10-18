@@ -66,7 +66,7 @@ export default function Profile() {
 
   return (
     <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-app-text mb-4">Profile</h1>
+      <h1 className="text-2xl font-bold text-app-heading mb-4">Profile</h1>
 
       {/* User card */}
       <div className="bg-app-card border border-app-border rounded-xl p-4 mb-4 flex items-center gap-3">

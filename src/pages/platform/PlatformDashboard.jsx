@@ -66,7 +66,7 @@ export default function PlatformDashboard() {
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-3 mb-1">
             <ShieldCheck size={20} className="text-app-accent" />
-            <h1 className="text-2xl font-bold text-app-text">Platform Administration</h1>
+            <h1 className="text-2xl font-bold text-app-heading">Platform Administration</h1>
           </div>
           <p className="text-sm text-app-text-muted">
             Essential SOP — Platform Control Center

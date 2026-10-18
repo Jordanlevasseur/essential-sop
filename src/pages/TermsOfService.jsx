@@ -169,7 +169,7 @@ export default function TermsOfService() {
 function Section({ title, children }) {
   return (
     <div className="mb-6">
-      <h2 className="text-base font-bold text-app-text mb-2">{title}</h2>
+      <h2 className="text-xl font-semibold text-app-heading mb-2">{title}</h2>
       <div className="text-sm text-app-text-2 leading-relaxed space-y-1">{children}</div>
     </div>
   );

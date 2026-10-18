@@ -88,7 +88,7 @@ export default function MasterLibrary() {
   return (
     <div className="px-4 pt-6 pb-4">
       {/* Header — mirrors Company Jobs page heading */}
-      <h1 className="text-2xl font-bold text-app-text mb-1">Master Jobs</h1>
+      <h1 className="text-2xl font-bold text-app-heading mb-1">Master Jobs</h1>
       <p className="text-xs text-app-text-muted mb-4">Essential SOP Platform</p>
 
       {/* Search + filter bar — identical structure to Company Jobs */}

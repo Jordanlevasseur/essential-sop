@@ -12,9 +12,12 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)',
   			md: 'calc(var(--radius) - 2px)',
   			lg: 'var(--radius)',
+  			xl: '8px',
+  			'2xl': '10px',
+  			'3xl': '12px',
   			panel: '10px',
   			dialog: '12px'
-  		},
+  			},
   		fontSize: {
   			/* Design System V1.0 type scale. 14px is intentionally absent.
   			   text-sm = 15px (standard body), text-base = 16px (profile-adjacent
@@ -22,7 +25,8 @@ module.exports = {
   			   All rem-based to preserve accessibility text scaling. */
   			xs: ['0.75rem', { lineHeight: '1rem' }],
   			sm: ['0.9375rem', { lineHeight: '1.45rem' }],
-  			base: ['1rem', { lineHeight: '1.5rem' }],
+  			base: ['0.9375rem', { lineHeight: '1.5rem' }],
+  			desc: ['0.8125rem', { lineHeight: '1.35rem' }],
   			lg: ['1.125rem', { lineHeight: '1.6rem' }],
   			xl: ['1.375rem', { lineHeight: '1.75rem' }],
   			'2xl': ['1.75rem', { lineHeight: '2.05rem' }],

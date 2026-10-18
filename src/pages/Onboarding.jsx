@@ -56,7 +56,7 @@ export default function Onboarding() {
             <Building2 size={24} className="text-app-accent" />
           </div>
 
-          <h1 className="text-2xl font-bold text-app-text mb-1">Name your workspace</h1>
+          <h1 className="text-2xl font-bold text-app-heading mb-1">Name your workspace</h1>
           <p className="text-sm text-app-text-2 mb-2">
             Selected plan: <span className="font-semibold text-app-accent">{selectedPlan.displayName}</span> — {formatPrice(selectedPlan)}
           </p>
@@ -115,7 +115,7 @@ export default function Onboarding() {
           <div className="w-16 h-16 bg-app-info-bg rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Building2 size={32} className="text-app-accent" />
           </div>
-          <h1 className="text-2xl font-bold text-app-text mb-2">Choose your plan</h1>
+          <h1 className="text-2xl font-bold text-app-heading mb-2">Choose your plan</h1>
           <p className="text-sm text-app-text-2">Select the plan that fits your team size.</p>
         </div>
 
