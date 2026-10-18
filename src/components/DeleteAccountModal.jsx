@@ -118,7 +118,7 @@ export default function DeleteAccountModal({ onClose }) {
             <ul className="space-y-2.5 mb-4">
               {[
                 { icon: '🚪', text: 'You will be signed out and lose access immediately.' },
-                { icon: '👤', text: 'Your personal app data, favorites, preferences, and history will be removed.' },
+                { icon: '👤', text: 'Your personal app data, preferences, and history will be removed.' },
                 { icon: '🏢', text: 'Company-owned job templates, procedures, and shared knowledge will not be deleted.' },
                 { icon: '🔐', text: 'A deletion request will be logged. An administrator will permanently remove your login identity via the Base44 dashboard.' },
               ].map((item, i) => (

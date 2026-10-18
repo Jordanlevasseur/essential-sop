@@ -18,7 +18,7 @@ import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
 import {
-  Star, Pencil, Plus, Trash2, ArrowUp, ArrowDown,
+  Pencil, Plus, Trash2, ArrowUp, ArrowDown,
   AlertTriangle, Sliders, Edit3,
 } from 'lucide-react';
 import JobWorkspacePresentation from '@/components/job-workspace/JobWorkspacePresentation';
@@ -34,7 +34,7 @@ import { useJobsListState } from '@/lib/useJobsListState';
 export default function JobDetail() {
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { isFavorite, toggleFavorite, addRecentlyViewed, isCompanyAdmin } = useApp();
+  const { addRecentlyViewed, isCompanyAdmin } = useApp();
   const { activeCompany, activeMembership } = useCompany();
   const { navigateBackToJobs } = useJobsListState();
 
@@ -210,16 +210,6 @@ export default function JobDetail() {
   const headerActions = (
     <>
       <NotificationBell />
-      <button
-        onClick={() => toggleFavorite(job.id)}
-        className="icon-btn no-select touch-active"
-        aria-label="Toggle favorite"
-      >
-        <Star
-          size={20}
-          className={isFavorite(job.id) ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'}
-        />
-      </button>
       {canEdit && (
         <button
           onClick={() => setEditMode(e => !e)}

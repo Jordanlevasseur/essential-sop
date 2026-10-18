@@ -4,7 +4,7 @@
  * State captured before entering Job Detail:
  *   - scrollY of the page scroll container
  *   - search query
- *   - filters (trade, skillLevel, category)
+ *   - filters (trade, skillLevel)
  *   - sort preference (read from preferences, not stored here)
  *
  * Storage: sessionStorage so state is cleared when the tab is closed or
@@ -31,7 +31,7 @@ export function useJobsListState() {
     try {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({
         search: state.search ?? '',
-        filters: state.filters ?? { trade: '', skillLevel: '', category: '' },
+        filters: state.filters ?? { trade: '', skillLevel: '' },
         scrollY: state.scrollY ?? 0,
         savedAt: Date.now(),
       }));

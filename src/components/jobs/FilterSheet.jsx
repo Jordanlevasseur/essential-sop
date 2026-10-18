@@ -1,12 +1,11 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { SKILL_LEVELS, TRADES, CATEGORIES } from '@/lib/constants';
+import { SKILL_LEVELS, TRADES } from '@/lib/constants';
 
-export default function FilterSheet({ open, onClose, filters, setFilters, trades, categories }) {
+export default function FilterSheet({ open, onClose, filters, setFilters, trades }) {
   if (!open) return null;
 
   const tradesList = trades.length > 0 ? trades : TRADES;
-  const catsList = categories.length > 0 ? categories : CATEGORIES;
   const update = (key, value) => setFilters(prev => ({ ...prev, [key]: prev[key] === value ? '' : value }));
 
   return (
@@ -28,7 +27,6 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
           {[
             { label: 'Trade', key: 'trade', items: tradesList },
             { label: 'Skill Level', key: 'skillLevel', items: SKILL_LEVELS },
-            { label: 'Category', key: 'category', items: catsList },
           ].map(({ label, key, items }) => (
             <div key={key}>
               <h3 className="text-xs font-semibold text-app-text-muted uppercase mb-2">{label}</h3>
@@ -47,7 +45,7 @@ export default function FilterSheet({ open, onClose, filters, setFilters, trades
           className="sticky bottom-0 bg-app-surface border-t border-app-border p-3 flex gap-2"
           style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
-          <button onClick={() => setFilters({ trade: '', skillLevel: '', category: '' })}
+          <button onClick={() => setFilters({ trade: '', skillLevel: '' })}
             className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2">
             Clear All
           </button>

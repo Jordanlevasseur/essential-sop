@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 
 const SKILL_COLORS = {
   Entry: 'text-app-success bg-app-success-bg',
@@ -7,7 +7,7 @@ const SKILL_COLORS = {
   Advanced: 'text-app-danger bg-app-danger-bg',
 };
 
-export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
+export default function JobCard({ job, onClick, match }) {
   return (
     <div
       onClick={onClick}
@@ -19,16 +19,7 @@ export default function JobCard({ job, isFav, onFavToggle, onClick, match }) {
     >
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
-            <button
-              onClick={e => { e.stopPropagation(); onFavToggle(); }}
-              className="flex-shrink-0 mt-0.5 icon-btn no-select touch-active"
-              aria-label="Toggle favorite"
-            >
-              <Star size={18} className={isFav ? 'text-yellow-500 fill-yellow-500' : 'text-app-text-disabled'} />
-            </button>
-          </div>
+          <h3 className="font-semibold text-sm text-app-text leading-snug">{job.title}</h3>
           <p className="text-xs text-app-accent font-medium mt-0.5">{job.trade} · {job.category}</p>
           <p className="text-xs text-app-text-muted mt-0.5 line-clamp-2">{job.shortDescription}</p>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">

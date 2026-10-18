@@ -21,12 +21,6 @@ export const SEVERITY_LEVELS = [
   { value: 'Critical', icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
 ];
 export const DOCUMENTATION_TYPES = ['Before photo', 'During photo', 'After photo', 'Measurement', 'Note', 'Signature', 'Form'];
-export const SORT_OPTIONS = [
-  { value: 'updated', label: 'Last Updated' },
-  { value: 'title', label: 'Title (A-Z)' },
-  { value: 'trade', label: 'Trade' },
-];
-
 export const DISCLAIMER = 'Verify local code, project specifications, and manufacturer instructions before proceeding.';
 
 export const TRADE_EMOJI = {

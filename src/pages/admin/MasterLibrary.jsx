@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Search, SlidersHorizontal, Plus, X, AlertTriangle } from 'lucide-react';
+import { Search, SlidersHorizontal, Plus, X, AlertTriangle, ArrowUpDown, ChevronDown, Tag } from 'lucide-react';
 import MasterJobCard from '@/components/platform/MasterJobCard';
 import MasterJobFilterSheet from '@/components/platform/MasterJobFilterSheet';
+import SelectSheet from '@/components/ui/SelectSheet';
+import { useApp } from '@/lib/AppContext';
+import { sortItems, SORT_OPTIONS } from '@/lib/jobsSort';
 
 export default function MasterLibrary() {
   const navigate = useNavigate();
@@ -11,9 +14,13 @@ export default function MasterLibrary() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState({ status: '', trade: '', category: '' });
+  const [filters, setFilters] = useState({ status: '', trade: '' });
   const [showFilters, setShowFilters] = useState(false);
+  const [showSortSheet, setShowSortSheet] = useState(false);
+  const [showCategorySheet, setShowCategorySheet] = useState(false);
   const searchRef = useRef(null);
+  const { preferences, updatePreferences } = useApp();
+  const sort = preferences.defaultSort || 'name_az';
 
   const basePath = window.location.pathname.startsWith('/platform')
     ? '/platform/master-library'
@@ -36,11 +43,13 @@ export default function MasterLibrary() {
   const trades = useMemo(() => [...new Set(masters.map(m => m.trade).filter(Boolean))], [masters]);
   const categories = useMemo(() => [...new Set(masters.map(m => m.category).filter(Boolean))], [masters]);
 
+  const activeCategory = categories.includes(preferences.mastersCategory) ? preferences.mastersCategory : '';
+
   const filtered = useMemo(() => {
     let list = masters;
     if (filters.status) list = list.filter(m => m.status === filters.status);
     if (filters.trade) list = list.filter(m => m.trade === filters.trade);
-    if (filters.category) list = list.filter(m => m.category === filters.category);
+    if (activeCategory) list = list.filter(m => m.category === activeCategory);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(m =>
@@ -50,11 +59,10 @@ export default function MasterLibrary() {
         (m.tags || []).some(t => t.toLowerCase().includes(q))
       );
     }
-    // Most recently updated first
-    return [...list].sort((a, b) => new Date(b.updatedAt || b.created_date) - new Date(a.updatedAt || a.created_date));
-  }, [masters, filters, search]);
+    return sortItems(list, sort);
+  }, [masters, filters, search, activeCategory, sort]);
 
-  const hasActiveFilters = search.trim() || Object.values(filters).some(Boolean);
+  const hasActiveFilters = search.trim() || Object.values(filters).some(Boolean) || !!activeCategory;
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
@@ -134,6 +142,32 @@ export default function MasterLibrary() {
         </button>
       </div>
 
+      {/* Sort + Category controls — same approach as the Jobs screen */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => setShowSortSheet(true)}
+          className="flex-1 flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
+          aria-label="Sort by"
+        >
+          <span className="flex items-center gap-1.5 min-w-0">
+            <ArrowUpDown size={14} className="text-app-text-muted flex-shrink-0" />
+            <span className="truncate"><span className="text-app-text-muted">Sort:</span> {SORT_OPTIONS.find(o => o.value === sort)?.label || 'Name: A–Z'}</span>
+          </span>
+          <ChevronDown size={16} className="text-app-text-muted flex-shrink-0" />
+        </button>
+        <button
+          onClick={() => setShowCategorySheet(true)}
+          className="flex-1 flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text no-select touch-active"
+          aria-label="Category"
+        >
+          <span className="flex items-center gap-1.5 min-w-0">
+            <Tag size={14} className="text-app-text-muted flex-shrink-0" />
+            <span className="truncate"><span className="text-app-text-muted">Category:</span> {activeCategory || 'All Categories'}</span>
+          </span>
+          <ChevronDown size={16} className="text-app-text-muted flex-shrink-0" />
+        </button>
+      </div>
+
       {/* Result count when searching / filtering */}
       {hasActiveFilters && (
         <p className="text-xs text-app-text-muted mb-3">
@@ -191,7 +225,23 @@ export default function MasterLibrary() {
         filters={filters}
         setFilters={setFilters}
         trades={trades}
-        categories={categories}
+      />
+
+      <SelectSheet
+        open={showSortSheet}
+        title="Sort by"
+        value={sort}
+        options={SORT_OPTIONS}
+        onSelect={(v) => updatePreferences({ defaultSort: v })}
+        onClose={() => setShowSortSheet(false)}
+      />
+      <SelectSheet
+        open={showCategorySheet}
+        title="Category"
+        value={activeCategory}
+        options={[{ value: '', label: 'All Categories' }, ...categories.map(c => ({ value: c, label: c }))]}
+        onSelect={(v) => updatePreferences({ mastersCategory: v || '' })}
+        onClose={() => setShowCategorySheet(false)}
       />
 
 

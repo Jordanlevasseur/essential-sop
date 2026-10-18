@@ -1,23 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { base44 } from '@/api/base44Client';
 import { ensureSeeded } from './seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import { usePlatform } from '@/lib/PlatformContext';
 import { useCompanySync } from '@/lib/useCompanySync';
+import { migrateSort } from '@/lib/jobsSort';
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
 
 const STORAGE_KEYS = {
   mode: 'esop_mode',
-  favorites: 'esop_favorites',
   recent: 'esop_recent',
   prefs: 'esop_prefs',
   session: 'esop_session',
   user: 'esop_user',
 };
 
-const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'updated' };
+const DEFAULT_PREFS = { textSize: 'medium', darkMode: false, defaultSort: 'name_az', jobsCategory: '', mastersCategory: '' };
 
 // ── Company capability builder ────────────────────────────────────────────────
 function buildCompanyCapabilities(membership) {
@@ -44,15 +43,15 @@ export function AppProvider({ children }) {
   const [isReady, setIsReady] = useState(false);
   const [seedError, setSeedError] = useState(null);
   const [userMode, setUserMode] = useState(() => localStorage.getItem(STORAGE_KEYS.mode) || 'technician');
-  const [favorites, setFavorites] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.favorites) || '[]'); } catch { return []; }
-  });
-  const [favoritesInitialized, setFavoritesInitialized] = useState(() => localStorage.getItem('esop_fav_init') === '1');
   const [recentlyViewed, setRecentlyViewed] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.recent) || '[]'); } catch { return []; }
   });
   const [preferences, setPreferences] = useState(() => {
-    try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(STORAGE_KEYS.prefs) || '{}') }; } catch { return DEFAULT_PREFS; }
+    try {
+      const merged = { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(STORAGE_KEYS.prefs) || '{}') };
+      merged.defaultSort = migrateSort(merged.defaultSort);
+      return merged;
+    } catch { return DEFAULT_PREFS; }
   });
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.session) || '{}'); } catch { return {}; }
@@ -70,25 +69,10 @@ export function AppProvider({ children }) {
 
     // Clear stale localStorage IDs whenever companyId changes
     localStorage.removeItem(STORAGE_KEYS.recent);
-    localStorage.removeItem(STORAGE_KEYS.favorites);
-    localStorage.removeItem('esop_fav_init');
-    setFavorites([]);
     setRecentlyViewed([]);
 
     ensureSeeded(companyId)
-      .then(async () => {
-        try {
-          const jobs = await base44.entities.Job.filter({ companyId }, '-updated_date', 200);
-          const defaultFavTitles = ['Water Heater Replacement', 'Exterior Door Replacement', 'Crawlspace Inspection'];
-          const favIds = (jobs || []).filter(j => defaultFavTitles.includes(j.title)).map(j => j.id);
-          if (favIds.length > 0) {
-            setFavorites(favIds);
-            setFavoritesInitialized(true);
-            localStorage.setItem('esop_fav_init', '1');
-          }
-        } catch {}
-        setIsReady(true);
-      })
+      .then(() => { setIsReady(true); })
       .catch((err) => { setSeedError(err?.message || 'Failed to initialize'); setIsReady(true); });
   }, [companyId]);
 
@@ -97,16 +81,9 @@ export function AppProvider({ children }) {
   // Renamed from 'admin'/'technician' modes to avoid implying role authority.
 
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.mode, userMode); }, [userMode]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.favorites, JSON.stringify(favorites)); }, [favorites]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.recent, JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.prefs, JSON.stringify(preferences)); }, [preferences]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session)); }, [session]);
-
-  const toggleFavorite = useCallback((jobId) => {
-    setFavorites(prev => prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId]);
-  }, []);
-
-  const isFavorite = useCallback((jobId) => favorites.includes(jobId), [favorites]);
 
   const addRecentlyViewed = useCallback((jobId, jobTitle) => {
     setRecentlyViewed(prev => {
@@ -164,7 +141,6 @@ export function AppProvider({ children }) {
       // Prototype presentation mode — NOT an authorization signal
       technicianViewMode,
       isGeneralManager,
-      favorites, toggleFavorite, isFavorite,
       recentlyViewed, addRecentlyViewed,
       preferences, updatePreferences, textSizeClass,
       session, setSessionItem, clearSessionForJob,

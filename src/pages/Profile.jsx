@@ -7,7 +7,7 @@ import { resetDemoData } from '@/lib/seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
 import {
-  Star, Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw,
+  Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw,
   Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2,
   AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
@@ -17,7 +17,7 @@ import {
 import { getPlan, formatPrice } from '@/lib/plans';
 import { getRoleLabel } from '@/lib/roleLabels';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
-import { SORT_OPTIONS } from '@/lib/constants';
+import { SORT_OPTIONS } from '@/lib/jobsSort';
 import { resolveLegalLink } from '@/lib/appSettings';
 import {
   APP_VERSION_DISPLAY,
@@ -27,7 +27,7 @@ import SelectSheet from '@/components/ui/SelectSheet';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, favorites, isPlatformSuperAdmin, companyId } = useApp();
+  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, isPlatformSuperAdmin, companyId } = useApp();
   const { activeCompany, activeMembership, companies, isGeneralManager } = useCompany();
   const { appearance, setAppearance } = useTheme();
   const currentPlan = getPlan(activeCompany?.subscriptionPlanCode);
@@ -164,8 +164,6 @@ export default function Profile() {
       )}
 
       <Section title="Saved Content">
-        <Row icon={Star} label="Favorite Jobs" value={favorites.length} onClick={() => navigate('/')} />
-        <Divider />
         <Row icon={Clock} label="Recently Viewed" value={recentlyViewed.length} onClick={() => navigate('/')} />
       </Section>
 
@@ -214,7 +212,7 @@ export default function Profile() {
             className="w-full flex items-center justify-between px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text text-left no-select touch-active"
             aria-label="Default job sort"
           >
-            <span>{SORT_OPTIONS.find(o => o.value === preferences.defaultSort)?.label || 'Last Updated'}</span>
+            <span>{SORT_OPTIONS.find(o => o.value === preferences.defaultSort)?.label || 'Name: A–Z'}</span>
             <ChevronDown size={16} className="text-app-text-muted" />
           </button>
         </div>
@@ -243,7 +241,7 @@ export default function Profile() {
         <Divider />
         <Row icon={LogOut} label="Sign Out" onClick={() => {
           // Only clear this app's known keys — do not wipe origin-wide localStorage
-          ['esop_mode','esop_favorites','esop_recent','esop_prefs','esop_session','esop_user','esop_fav_init'].forEach(k => localStorage.removeItem(k));
+          ['esop_mode','esop_recent','esop_prefs','esop_session','esop_user'].forEach(k => localStorage.removeItem(k));
           base44.auth.logout('/');
         }} />
       </Section>

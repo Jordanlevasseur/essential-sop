@@ -19,7 +19,6 @@
  *   Workspace configuration object supplied by the wrapper:
  *   {
  *     label         — workspace label shown beneath title in header (string)
- *     showFavorite  — boolean: render the favorite toggle
  *     editMode      — boolean: section add buttons and item action bars are active
  *   }
  *

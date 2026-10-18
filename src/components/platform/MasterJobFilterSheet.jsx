@@ -7,16 +7,15 @@ const STATUSES = [
   { value: 'archived', label: 'Archived' },
 ];
 
-export default function MasterJobFilterSheet({ open, onClose, filters, setFilters, trades, categories }) {
+export default function MasterJobFilterSheet({ open, onClose, filters, setFilters, trades }) {
   if (!open) return null;
 
   const update = (key, value) =>
     setFilters(prev => ({ ...prev, [key]: prev[key] === value ? '' : value }));
 
   const groups = [
-    { label: 'Status',   key: 'status',   items: STATUSES.map(s => s.label), values: STATUSES.map(s => s.value) },
-    { label: 'Trade',    key: 'trade',    items: trades,      values: trades },
-    { label: 'Category', key: 'category', items: categories,  values: categories },
+    { label: 'Status', key: 'status', items: STATUSES.map(s => s.label), values: STATUSES.map(s => s.value) },
+    { label: 'Trade',  key: 'trade',  items: trades, values: trades },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -63,7 +62,7 @@ export default function MasterJobFilterSheet({ open, onClose, filters, setFilter
           style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
           <button
-            onClick={() => setFilters({ status: '', trade: '', category: '' })}
+            onClick={() => setFilters({ status: '', trade: '' })}
             className="flex-1 py-2.5 border border-app-border rounded-lg text-sm font-medium text-app-text-2"
           >
             Clear All
