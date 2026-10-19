@@ -45,14 +45,19 @@ export default function TeamMembers() {
 
   const loadData = async () => {
     setLoading(true);
-    const [allMembers, allInvites, allUsers] = await Promise.all([
-      base44.entities.CompanyMembership.filter({ companyId }),
-      base44.entities.CompanyInvitation.filter({ companyId }),
-      base44.entities.User.list(),
-    ]);
-    setMembers(allMembers || []);
-    setInvitations(allInvites || []);
-    setUsers(allUsers || []);
+    try {
+      // Membership & invitation records are RLS-restricted; the team roster is
+      // resolved server-side (caller must be an active member). User details
+      // are scoped to team members only — no platform-wide User.list() fetch.
+      const res = await base44.functions.invoke('resolveTeamRoster', { companyId });
+      const data = res.data || {};
+      if (data.error) throw new Error(data.error);
+      setMembers(data.members || []);
+      setInvitations(data.invitations || []);
+      setUsers(data.users || []);
+    } catch (e) {
+      setError(e.message || 'Failed to load team.');
+    }
     setLoading(false);
   };
 
@@ -88,7 +93,10 @@ export default function TeamMembers() {
     const nowIso = new Date().toISOString();
     setInvitations(prev => prev.map(i => i.id === inviteId ? { ...i, status: 'cancelled', cancelledAt: nowIso } : i));
     try {
-      await base44.entities.CompanyInvitation.update(inviteId, { status: 'cancelled', cancelledAt: nowIso });
+      // CompanyInvitation is RLS-closed to direct client writes; cancellation
+      // is performed server-side with GM authorization.
+      const res = await base44.functions.invoke('cancelInvitation', { invitationId: inviteId });
+      if (!res.data?.success) throw new Error(res.data?.error || 'Failed to cancel');
     } catch (_) {
       loadData();
     }

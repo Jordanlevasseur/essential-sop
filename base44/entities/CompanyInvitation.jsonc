@@ -1,6 +1,13 @@
 {
   "name": "CompanyInvitation",
   "type": "object",
+  "description": "A pending company invitation. All direct client access (read/create/update/delete) is blocked at the entity level. Invitation preview for a recipient is via previewInvitation (invitationId-gated, name-only). Company invitation lists and cancellation are via resolveTeamRoster and cancelInvitation (GM-authorized, service role). Acceptance is via acceptInvitation (token-verified, service role). The tokenHash is never returned by any endpoint.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "companyId": {
       "type": "string"

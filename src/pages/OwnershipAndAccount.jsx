@@ -24,17 +24,20 @@ export default function OwnershipAndAccount() {
 
   useEffect(() => {
     if (!companyId || !isGeneralManager) return;
-    Promise.all([
-      base44.entities.CompanyMembership.filter({ companyId, role: 'general_manager', status: 'active' }),
-      base44.entities.User.list(),
-    ]).then(([gmMemberships, allUsers]) => {
-      setGms(gmMemberships || []);
-      setUsers(allUsers || []);
+    // Membership records are RLS-restricted; the roster is resolved server-side
+    // (caller must be an active member). User details are scoped to members.
+    base44.functions.invoke('resolveTeamRoster', { companyId }).then(res => {
+      const data = res.data || {};
+      if (data.error) { setLoading(false); return; }
+      const allMembers = data.members || [];
+      const allUsers = data.users || [];
+      setGms(allMembers.filter(m => m.role === 'general_manager' && m.status === 'active'));
+      setUsers(allUsers);
       if (activeCompany?.ownerUserId) {
         setOwner(allUsers.find(u => u.id === activeCompany.ownerUserId) || null);
       }
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [companyId, isGeneralManager]);
 
   if (!isGeneralManager) {

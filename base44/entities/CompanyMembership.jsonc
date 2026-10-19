@@ -1,6 +1,15 @@
 {
   "name": "CompanyMembership",
   "type": "object",
+  "description": "Grants a user membership in a company. Reads are scoped to the user's OWN records only (data.userId === user.id); all writes are blocked at the entity level. Team-roster reads for managers go through resolveTeamRoster (service role); mutations go through manageMember / acceptInvitation / createCompany / migrateToCompany (service role). Direct client reads of another company's memberships are blocked.",
+  "rls": {
+    "read": {
+      "data.userId": "{{user.id}}"
+    },
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "companyId": {
       "type": "string"
