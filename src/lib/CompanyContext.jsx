@@ -33,12 +33,11 @@ export function CompanyProvider({ children }) {
       const user = await base44.auth.me();
       if (!user) { setLoadingCompany(false); return; }
 
-      // Fetch only active memberships for this user
-      const allMemberships = await base44.entities.CompanyMembership.filter({
-        userId: user.id,
-        status: 'active',
-      });
-      const activeMemberships = (allMemberships || []).filter(m => m.status === 'active');
+      // Companies are resolved server-side. The Company entity is RLS-closed
+      // to direct client access; resolveUserCompanies derives the caller's
+      // companies from their own memberships and strips billing identifiers.
+      const resp = await base44.functions.invoke('resolveUserCompanies', {});
+      const activeMemberships = (resp.data?.memberships || []).filter(m => m.status === 'active');
       setMemberships(activeMemberships);
 
       if (activeMemberships.length === 0) {
@@ -50,12 +49,7 @@ export function CompanyProvider({ children }) {
         return;
       }
 
-      // Fetch all associated companies
-      const companyIds = [...new Set(activeMemberships.map(m => m.companyId))];
-      const companyRecords = await Promise.all(
-        companyIds.map(id => base44.entities.Company.get(id).catch(() => null))
-      );
-      const validCompanies = companyRecords.filter(c => c && c.status === 'active');
+      const validCompanies = resp.data?.companies || [];
       setCompanies(validCompanies);
 
       // Resolve preferred active company

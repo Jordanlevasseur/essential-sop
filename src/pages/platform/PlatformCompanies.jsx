@@ -28,8 +28,10 @@ export default function PlatformCompanies() {
     setLoading(true);
     setError(null);
     try {
-      const res = await base44.entities.Company.list('-created_date', 200);
-      setCompanies(res || []);
+      // Company entity is RLS-closed; the platform company list is resolved
+      // server-side and requires an active Platform Super Admin membership.
+      const res = await base44.functions.invoke('resolvePlatformCompanies', {});
+      setCompanies(res.data?.companies || []);
     } catch (e) {
       setError('Failed to load companies.');
     }

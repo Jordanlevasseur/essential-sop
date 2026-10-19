@@ -20,14 +20,19 @@ export default function AcceptInvitation() {
 
   useEffect(() => {
     if (!invitationId) { setError('Invalid invitation link.'); setLoading(false); return; }
-    base44.entities.CompanyInvitation.get(invitationId)
-      .then(async inv => {
+    // Invitation preview is resolved server-side: the Company entity is
+    // RLS-closed to direct client access, and only the invited company NAME
+    // (never billing fields) is returned for a valid invitation.
+    base44.functions.invoke('previewInvitation', { invitationId })
+      .then(r => {
+        const data = r.data || {};
+        if (data.error) { setError(data.error === 'Invitation not found.' ? 'Invitation not found.' : 'Could not load invitation.'); setLoading(false); return; }
+        const inv = data.invitation;
         if (!inv) { setError('Invitation not found.'); setLoading(false); return; }
         if (inv.status !== 'pending') { setError(`This invitation has already been ${inv.status}.`); setLoading(false); return; }
         if (new Date(inv.expiresAt) < new Date()) { setError('This invitation has expired.'); setLoading(false); return; }
         setInvitation(inv);
-        const comp = await base44.entities.Company.get(inv.companyId).catch(() => null);
-        setCompany(comp);
+        setCompany({ name: data.companyName });
         setLoading(false);
       }).catch(() => { setError('Could not load invitation.'); setLoading(false); });
   }, [invitationId]);

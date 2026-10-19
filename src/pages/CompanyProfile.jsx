@@ -45,26 +45,22 @@ export default function CompanyProfile() {
     if (!form.name.trim()) { setError('Company name is required.'); return; }
     setSaving(true); setError('');
     try {
-      await base44.entities.Company.update(activeCompany.id, {
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        website: form.website.trim(),
-        location: form.location.trim(),
-        description: form.description.trim(),
-        tradeSpecialties: form.tradeSpecialties,
+      // Company entity is RLS-closed to direct client writes; the update is
+      // performed server-side with GM authorization and a field whitelist
+      // (subscription/billing fields are never accepted).
+      const resp = await base44.functions.invoke('updateCompanySettings', {
+        companyId: activeCompany.id,
+        profile: {
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim(),
+          website: form.website.trim(),
+          location: form.location.trim(),
+          description: form.description.trim(),
+          tradeSpecialties: form.tradeSpecialties,
+        },
       });
-      // Log activity
-      const user = await base44.auth.me().catch(() => null);
-      if (user) {
-        await base44.entities.ActivityLog.create({
-          companyId: activeCompany.id,
-          actingUserId: user.id,
-          actionType: 'job_edited', // closest available — company settings change
-          summary: `${user.full_name || user.email} updated company profile for ${form.name.trim()}`,
-          timestamp: new Date().toISOString(),
-        }).catch(() => {});
-      }
+      if (!resp.data?.success) throw new Error(resp.data?.error || 'Failed to save.');
       refreshCompanies();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

@@ -60,7 +60,16 @@ export default function RoleLabels() {
       const val = labels[r].trim();
       if (val !== DEFAULT_ROLE_LABELS[r]) customRoleLabels[r] = val;
     }
-    await base44.entities.Company.update(activeCompany.id, { customRoleLabels });
+    // Company entity is RLS-closed to direct client writes; role labels are
+    // persisted server-side with GM authorization and a key whitelist.
+    const resp = await base44.functions.invoke('updateCompanySettings', {
+      companyId: activeCompany.id,
+      customRoleLabels,
+    });
+    if (!resp.data?.success) {
+      setSaving(false);
+      throw new Error(resp.data?.error || 'Failed to save role labels.');
+    }
     refreshCompanies();
     setSaving(false);
     setSaved(true);
