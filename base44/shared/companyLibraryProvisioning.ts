@@ -445,14 +445,38 @@ export async function provisionCompanyLibraryCore(
     });
   } catch (_) {}
 
-  // ── Step 1: Load eligible Masters ─────────────────────────────────────────
+  // ── Step 1: Load candidate Masters ──────────────────────────────────────────
+  // COMPANY_CREATION performs a UNIVERSAL INITIAL SEED: every active, published,
+  // non-retired Master is provisioned to the new company as "available" (an ACTIVE
+  // ProvisioningRecord with NO linked Job). This populates the company's Master
+  // Library on first login so managers can preview and deliberately adopt —
+  // without manual platform-admin provisioning and WITHOUT auto-adopting
+  // (provisioned != adopted; only company-published Jobs inform the Assistant).
+  //
+  // The distribution policy (MANUAL / SELECTED / FUTURE / ALL) gates PUSH events
+  // (new-SOP / new-version distribution to EXISTING companies), NOT the initial
+  // library seed. MANUAL_PLATFORM_ADMIN and FUTURE_DISTRIBUTION_EVENT keep the
+  // stricter customer_available + policy eligibility, unchanged.
+  const isCompanyCreationSeed = source === 'COMPANY_CREATION';
   let allMasters: any[] = [];
   try {
-    allMasters = await SR.entities.EssentialSOPMaster.filter(
-      { status: 'active', distributionStatus: 'customer_available' },
-      '-updatedAt',
-      500
-    ) || [];
+    if (isCompanyCreationSeed) {
+      allMasters = await SR.entities.EssentialSOPMaster.filter(
+        { status: 'active' },
+        '-updatedAt',
+        500
+      ) || [];
+      // Exclude retired (revoked) masters only. Both 'internal' and
+      // 'customer_available' are seeded — eligibility is active + published +
+      // not-revoked. Archived masters are already excluded by the status filter.
+      allMasters = allMasters.filter((m: any) => m.distributionStatus !== 'retired');
+    } else {
+      allMasters = await SR.entities.EssentialSOPMaster.filter(
+        { status: 'active', distributionStatus: 'customer_available' },
+        '-updatedAt',
+        500
+      ) || [];
+    }
   } catch (_) {
     const failResult = _buildFailResult(runRecord?.id || null);
     await _finalizeRun(SR, runRecord, failResult, startedAt);
@@ -473,6 +497,14 @@ export async function provisionCompanyLibraryCore(
         provisioningRecordId: null,
         provisioningKey: buildProvisioningKey(companyId, m.id),
       });
+      continue;
+    }
+
+    // Universal initial seed (company creation): every active, published,
+    // non-retired Master is eligible. The distribution policy does NOT gate the
+    // initial seed — it governs push events for EXISTING companies.
+    if (isCompanyCreationSeed) {
+      eligibleMasters.push(m);
       continue;
     }
 
