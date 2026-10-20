@@ -113,7 +113,7 @@ export default function DeletionRequests() {
   if (!isPlatformSuperAdmin) return null;
 
   return (
-    <div className="min-h-screen bg-app-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+    <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5 max-w-2xl mx-auto">
           <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
@@ -129,7 +129,7 @@ export default function DeletionRequests() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-5 pb-16">
+      <div className="max-w-2xl mx-auto px-4 py-5">
 
         {actionError && (
           <div className="flex items-start gap-2 p-3 mb-4 bg-app-danger-bg border border-app-danger rounded-lg">
@@ -188,6 +188,8 @@ export default function DeletionRequests() {
           </>
         )}
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }

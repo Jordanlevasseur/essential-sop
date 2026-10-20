@@ -37,7 +37,6 @@ function LayoutInner() {
     <div
       className="min-h-screen bg-app-bg flex flex-col relative"
       style={{
-        paddingTop: 'env(safe-area-inset-top)',
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',
       }}

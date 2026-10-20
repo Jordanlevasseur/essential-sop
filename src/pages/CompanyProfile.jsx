@@ -85,7 +85,7 @@ export default function CompanyProfile() {
         </div>
       </div>
 
-      <div className="px-3 pt-4 pb-6 max-w-lg mx-auto space-y-4">
+      <div className="px-3 pt-4 pb-3 max-w-lg mx-auto space-y-4">
         {/* Logo placeholder */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-app-info-bg flex items-center justify-center">
@@ -147,6 +147,8 @@ export default function CompanyProfile() {
           </div>
         </div>
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }

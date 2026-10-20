@@ -78,7 +78,7 @@ export default function Subscription() {
         </div>
       </div>
 
-      <div className="px-3 pt-4 pb-6 space-y-4">
+      <div className="px-3 pt-4 pb-3 space-y-4">
 
         {/* Free beta notice — shown for ALL companies while global beta billing is active */}
         {BETA_BILLING_ACTIVE && (
@@ -214,6 +214,8 @@ export default function Subscription() {
         </button>
 
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
 
       {/* Plan change confirmation modal */}
       {planAction && (

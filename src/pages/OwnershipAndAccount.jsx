@@ -116,7 +116,7 @@ export default function OwnershipAndAccount() {
         </div>
       </div>
 
-      <div className="px-3 pt-4 pb-6 max-w-lg mx-auto space-y-4">
+      <div className="px-3 pt-4 pb-3 max-w-lg mx-auto space-y-4">
         {error && <div className="p-3 bg-app-danger-bg border border-app-danger rounded-lg text-sm text-app-danger">{error}</div>}
 
         {/* Current owner */}
@@ -211,6 +211,8 @@ export default function OwnershipAndAccount() {
           </div>
         </div>
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }

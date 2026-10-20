@@ -147,7 +147,7 @@ export default function Jobs() {
   }
 
   return (
-    <div className="px-3 pt-4 pb-3">
+    <div className="px-3 pb-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 1rem)' }}>
       <PullToRefresh onRefresh={fetchJobs} disabled={showFilters}>
         <h1 className="text-2xl font-bold text-app-heading mb-1">Company Procedures</h1>
       {activeCompany && <p className="text-xs text-app-text-muted mb-3">{activeCompany.name}</p>}

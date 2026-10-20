@@ -89,7 +89,7 @@ export default function RoleLabels() {
         </div>
       </div>
 
-      <div className="px-3 pt-4 pb-6 max-w-lg mx-auto">
+      <div className="px-3 pt-4 pb-3 max-w-lg mx-auto">
         <div className="bg-app-info-bg border border-app-info/20 rounded-xl p-3.5 mb-6">
           <p className="text-xs text-app-info leading-relaxed">
             Role labels change how positions are named in this workspace. They do not change permissions.
@@ -133,6 +133,8 @@ export default function RoleLabels() {
           Example: Project Manager → Production Manager, Technician → Field Technician
         </p>
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }

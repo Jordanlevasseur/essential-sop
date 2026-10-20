@@ -134,7 +134,7 @@ export default function SectionDetail() {
 
   return (
     <div className="min-h-screen bg-app-bg">
-      <div className="bg-app-surface border-b border-app-border sticky top-0 z-40">
+      <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5">
           <button onClick={() => navigate(-1)}>
             <ArrowLeft size={22} className="text-app-text-2" />

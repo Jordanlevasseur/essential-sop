@@ -22,7 +22,7 @@ export default function Plans() {
         </div>
       </div>
 
-      <div className="px-3 pt-4 pb-6 space-y-3">
+      <div className="px-3 pt-4 pb-3 space-y-3">
         <p className="text-sm text-app-text-2 mb-4">All plans include full job editing, uploads, and Assistant access. Free during beta — no payment method required.</p>
 
         {PLANS.map(plan => {
@@ -90,6 +90,8 @@ export default function Plans() {
           </p>
         </div>
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }

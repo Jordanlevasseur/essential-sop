@@ -118,7 +118,7 @@ export default function SyncSettings() {
         </div>
       </div>
 
-      <div className="px-3 py-3 space-y-4 pb-12">
+      <div className="px-3 py-3 space-y-4">
         {/* Sync error */}
         {syncError && (
           <div className="flex items-start gap-2 px-4 py-3 bg-app-danger-bg border border-app-danger/30 rounded-xl text-sm text-app-danger">
@@ -251,6 +251,8 @@ export default function SyncSettings() {
           </div>
         </div>
       </div>
+
+      <div style={{ height: 'calc(16px + env(safe-area-inset-bottom))' }} />
     </div>
   );
 }
