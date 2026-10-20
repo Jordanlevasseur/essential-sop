@@ -9,6 +9,7 @@ import { Sparkles } from 'lucide-react';
 import SelectSheet from '@/components/ui/SelectSheet';
 import AiSopGeneratorDialog from '@/components/jobs/AiSopGeneratorDialog';
 import ImportSopDialog from '@/components/jobs/ImportSopDialog';
+import AiSopEditor from '@/components/jobs/AiSopEditor';
 
 const fieldCls = 'w-full px-3 py-2.5 bg-app-input border border-app-border rounded-lg text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent';
 
@@ -224,6 +225,9 @@ export default function CreateJob() {
             <div className="bg-app-info-bg rounded-lg p-3 border border-app-border">
               <p className="text-sm text-app-info">Six sections have been created for <strong>{form.title}</strong>. Tap any section to add content.</p>
             </div>
+            {isCompanyAdmin && jobId && (
+              <AiSopEditor jobId={jobId} onApplied={(secs) => setSections(secs)} />
+            )}
             <div className="space-y-2">
               {SECTION_DEFINITIONS.map(def => {
                 const status = sectionStatus(def.sectionType);

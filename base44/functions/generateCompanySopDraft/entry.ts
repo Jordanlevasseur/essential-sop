@@ -249,6 +249,145 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ sectionType, items: v.items });
     }
 
+    // ── Action: edit existing draft with AI (no publish, no metadata change) ──
+    if (action === 'edit_with_ai') {
+      const jobId = typeof body?.jobId === 'string' ? body.jobId : '';
+      const instruction = typeof body?.instruction === 'string' ? body.instruction.trim() : '';
+      if (!jobId) {
+        return Response.json({ error: 'jobId is required' }, { status: 400 });
+      }
+      if (!instruction) {
+        return Response.json({ code: 'INVALID_PROMPT', error: 'A non-empty edit instruction is required.' }, { status: 400 });
+      }
+      if (instruction.length > 4000) {
+        return Response.json({ code: 'INVALID_PROMPT', error: 'Edit instruction is too long (max 4000 characters).' }, { status: 400 });
+      }
+
+      // Load the job and verify it belongs to this company and is company-owned.
+      // Provisioned Essential SOP jobs are NEVER editable here (override system).
+      const job: any = await SR.entities.Job.get(jobId).catch(() => null);
+      if (!job) return Response.json({ error: 'Job not found' }, { status: 404 });
+      if (job.companyId !== companyId) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      if (job.sourceType === 'essential_sop') {
+        return Response.json({ error: 'Essential SOP jobs cannot be edited through company AI authoring.' }, { status: 403 });
+      }
+
+      // Load existing sections + content for context.
+      const sections: any[] = await SR.entities.JobSection.filter({ jobId }, 'sortOrder', 10);
+      const existingContent: any[] = await SR.entities.SectionContent.filter({ jobId }, 'sortOrder', 500).catch(() => []);
+
+      // Build a representation of the existing SOP for the AI prompt.
+      const existingSop: any = {
+        title: job.title,
+        description: job.shortDescription || '',
+        trade: job.trade || '',
+        category: job.category || '',
+        tags: job.tags || [],
+        sections: {} as Record<string, any[]>,
+      };
+      for (const st of SECTION_TYPES) {
+        existingSop.sections[st] = (existingContent || [])
+          .filter((c: any) => c.sectionType === st)
+          .map((c: any) => ({
+            contentType: c.contentType,
+            title: c.title,
+            body: c.body || '',
+            isRequired: c.isRequired,
+            isCritical: c.isCritical,
+            metadata: c.metadata || {},
+          }));
+      }
+
+      const editPrompt =
+        `${SYSTEM_PROMPT}\n\n` +
+        `You are EDITING an existing SOP. Below is the current SOP as JSON. Apply the user's requested modifications and return the COMPLETE modified SOP with ALL six section keys.\n\n` +
+        `EXISTING SOP (JSON):\n${JSON.stringify(existingSop, null, 2)}\n\n` +
+        `RULES:\n` +
+        `- Preserve the existing title, description, trade, category, and tags UNLESS the instruction explicitly asks to change them.\n` +
+        `- Apply the requested modifications to the relevant sections.\n` +
+        `- Include ALL six section keys (tools, materials, scope, procedure, safety, quality) in the output, even unchanged sections.\n` +
+        `- Return the complete content for every section, not just the changed parts.\n\n` +
+        `EDIT INSTRUCTION:\n${instruction}\n\n` +
+        `Return ONLY the JSON object matching the schema.`;
+
+      let aiRaw: any;
+      try {
+        aiRaw = await base44.integrations.Core.InvokeLLM({
+          prompt: editPrompt,
+          response_json_schema: RESPONSE_SCHEMA,
+        });
+      } catch (e: any) {
+        return Response.json(
+          { code: 'AI_ERROR', error: 'AI generation failed. Please try again.', detail: e?.message || 'unknown_error' },
+          { status: 502 }
+        );
+      }
+      if (typeof aiRaw === 'string') {
+        try { aiRaw = JSON.parse(aiRaw); } catch (_) {
+          return Response.json({ code: 'AI_OUTPUT_INVALID', error: 'AI returned a non-JSON response.' }, { status: 422 });
+        }
+      }
+
+      const validation = validateAndCleanAiSop(aiRaw);
+      if (!validation.ok) {
+        return Response.json(
+          { code: 'AI_OUTPUT_INVALID', error: 'AI output did not match the expected structure. No changes were made.', details: validation.errors },
+          { status: 422 }
+        );
+      }
+      const sop = validation.sop;
+
+      // Replace all SectionContent for this draft (delete then create). The job
+      // stays a Draft — never published by AI. Job metadata is NOT changed here;
+      // the user controls title/trade/category via the form.
+      try {
+        await SR.entities.SectionContent.deleteMany({ jobId });
+      } catch (_) { /* best-effort; continue to create */ }
+      const allContent: any[] = [];
+      for (const sec of sections) {
+        const items = sop.sections[sec.sectionType] || [];
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          allContent.push({
+            companyId,
+            sectionId: sec.id,
+            jobId: job.id,
+            sectionType: sec.sectionType,
+            contentType: it.contentType,
+            title: it.title,
+            body: it.body || '',
+            sortOrder: i,
+            isRequired: !!it.isRequired,
+            isCritical: !!it.isCritical,
+            metadata: it.metadata || {},
+          });
+        }
+      }
+      if (allContent.length > 0) {
+        try {
+          await SR.entities.SectionContent.bulkCreate(allContent);
+        } catch (e: any) {
+          return Response.json(
+            { code: 'CONTENT_PERSIST_FAILED', error: 'AI content could not be saved. Please try again.', detail: e?.message || '' },
+            { status: 500 }
+          );
+        }
+      }
+
+      // Refresh section completion statuses so the section list reflects the
+      // new content. 0 items = Empty, >0 = In Progress.
+      for (const sec of sections) {
+        const count = (sop.sections[sec.sectionType] || []).length;
+        const newStatus = count > 0 ? 'In Progress' : 'Empty';
+        if (sec.completionStatus !== newStatus) {
+          try { await SR.entities.JobSection.update(sec.id, { completionStatus: newStatus }); } catch (_) {}
+        }
+      }
+
+      const refreshedSections = await SR.entities.JobSection.filter({ jobId }, 'sortOrder', 10);
+      return Response.json({ jobId, sections: refreshedSections });
+    }
+
     return Response.json({ error: 'Unknown action' }, { status: 400 });
   } catch (error: any) {
     return Response.json({ code: 'UNEXPECTED', error: error?.message || 'Unexpected error during AI generation.' }, { status: 500 });
