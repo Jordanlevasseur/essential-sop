@@ -4,12 +4,12 @@
  * WHAT THIS FUNCTION DOES:
  *   1. Validates the caller is authenticated.
  *   2. Prevents sole-admin deletion.
- *   3. Deletes all app-controlled user-specific data (favorites, preferences, etc.
- *      stored as SectionContent records created_by this user that are personal,
- *      not shared company templates — we leave Job/JobSection/SectionContent company
- *      data intact per policy).
- *   4. Creates a DeletionRequest record (status: Pending) so an administrator can
- *      complete the final step manually.
+ *   3. Creates a DeletionRequest record (status: Pending) so an administrator can
+ *      complete the final step manually. Associated personal data (notifications,
+ *      memberships) is removed by the manageDeletionRequest completion action,
+ *      NOT at request time — so submitting a request does not disrupt a company
+ *      and is not misrepresented as a completed deletion. Company-owned Jobs,
+ *      JobSections, and SectionContent are never deleted here (company-owned).
  *   5. Returns success so the client can clear localStorage and call auth.logout().
  *
  * WHAT THIS FUNCTION CANNOT DO:
@@ -81,26 +81,32 @@ export default async function(req) {
     // If the app is extended to store personal records (e.g., personal notes,
     // saved drafts), add deleteMany calls here using { created_by_id: userId }.
 
-    // ── 4. Create DeletionRequest record ─────────────────────────────────────
+    // ── 4. Create DeletionRequest record (status: Pending) ──────────────────
+    // NOTE: a submitted request is NOT a completed deletion. appDataDeletedAt
+    // and authIdentityDeletedAt remain null until an administrator completes
+    // the deletion via manageDeletionRequest (action=complete), which removes
+    // associated personal data (notifications, memberships) and records the
+    // timestamps. See the lifecycle note in the header below.
     await base44.asServiceRole.entities.DeletionRequest.create({
       userId,
       userEmail,
       userName,
       requestedAt: now,
       status: 'Pending',
-      appDataDeletedAt: now,
-      // authIdentityDeletedAt: null — must be set manually after Base44 dashboard removal
-      adminNotes: 'App data cleared. Auth identity removal pending — complete via Base44 Dashboard → Users → Remove User.',
+      // appDataDeletedAt / authIdentityDeletedAt: intentionally null at request.
+      adminNotes: 'Request received. To complete: (1) remove the user in Base44 Dashboard → Users → Remove User, then (2) run manageDeletionRequest action=complete to remove associated personal data and mark the request Completed.',
     });
 
     console.log(`DeletionRequest created for userId=${userId} email=${userEmail} at ${now}`);
 
     // ── 5. Return success ─────────────────────────────────────────────────────
     // Client will: localStorage.clear() → auth.logout('/') → redirect to login.
+    // The message accurately states the request was RECEIVED — it does NOT claim
+    // the deletion is complete (Apple: submitting a request ≠ completed deletion).
     return Response.json({
       success: true,
       authIdentityDeleted: false, // ← always false; Base44 has no programmatic API for this
-      message: 'Your Essential SOP account data has been removed and you have been signed out. Permanent deletion of the authentication record has been submitted for processing.'
+      message: 'Your account deletion request has been received and you have been signed out. An administrator will complete removal of your account data and login identity.'
     });
 
   } catch (error: any) {

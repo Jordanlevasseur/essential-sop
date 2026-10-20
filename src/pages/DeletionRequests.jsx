@@ -12,47 +12,75 @@ const STATUS_STYLES = {
 
 export default function DeletionRequests() {
   const navigate = useNavigate();
-  const { isAdmin } = useApp();
+  const { isPlatformSuperAdmin } = useApp();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(null); // id of record being saved
   const [editNotes, setEditNotes] = useState({});
+  const [actionError, setActionError] = useState('');
 
+  // Direct client access to DeletionRequest is blocked by RLS. The admin panel
+  // reads/processed exclusively through these backend-verified functions
+  // (resolveDeletionRequests / manageDeletionRequest), which check an active
+  // PlatformMembership(SUPER_ADMIN) on the backend — not a client flag.
   useEffect(() => {
-    if (!isAdmin) { navigate('/'); return; }
-    base44.entities.DeletionRequest.list('-requestedAt', 200)
-      .then(r => { setRequests(r || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [isAdmin]);
+    if (!isPlatformSuperAdmin) { navigate('/'); return; }
+    base44.functions.invoke('resolveDeletionRequests', {})
+      .then(res => { setRequests(res.data?.requests || []); setLoading(false); })
+      .catch(() => { setActionError('Failed to load deletion requests.'); setLoading(false); });
+  }, [isPlatformSuperAdmin]);
 
   const handleStatusChange = async (req, newStatus) => {
     setSaving(req.id);
-    const update = {
-      status: newStatus,
-      adminNotes: editNotes[req.id] ?? req.adminNotes ?? '',
-    };
-    if (newStatus === 'Completed' && !req.authIdentityDeletedAt) {
-      update.authIdentityDeletedAt = new Date().toISOString();
-      update.completedAt = new Date().toISOString();
+    setActionError('');
+    try {
+      const action = newStatus === 'Completed' ? 'complete' : 'cancel';
+      const res = await base44.functions.invoke('manageDeletionRequest', {
+        action,
+        requestId: req.id,
+        adminNotes: editNotes[req.id] ?? req.adminNotes ?? '',
+      });
+      const data = res.data || {};
+      if (!data.success) {
+        setActionError(data.error || 'Failed to update request.');
+      } else if (data.request) {
+        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
+      }
+    } catch (e) {
+      const data = e?.response?.data || e?.data || {};
+      setActionError(data.error || e?.message || 'Failed to update request.');
+    } finally {
+      setSaving(null);
     }
-    const updated = await base44.entities.DeletionRequest.update(req.id, update);
-    setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
-    setSaving(null);
   };
 
   const handleNotesChange = (id, value) => setEditNotes(prev => ({ ...prev, [id]: value }));
 
   const handleSaveNotes = async (req) => {
     setSaving(req.id);
-    const updated = await base44.entities.DeletionRequest.update(req.id, { adminNotes: editNotes[req.id] ?? req.adminNotes ?? '' });
-    setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
-    setSaving(null);
+    setActionError('');
+    try {
+      const res = await base44.functions.invoke('manageDeletionRequest', {
+        action: 'save_notes',
+        requestId: req.id,
+        adminNotes: editNotes[req.id] ?? req.adminNotes ?? '',
+      });
+      const data = res.data || {};
+      if (data.request) {
+        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
+      }
+    } catch (e) {
+      const data = e?.response?.data || e?.data || {};
+      setActionError(data.error || 'Failed to save notes.');
+    } finally {
+      setSaving(null);
+    }
   };
 
   const pending = requests.filter(r => r.status === 'Pending');
   const completed = requests.filter(r => r.status !== 'Pending');
 
-  if (!isAdmin) return null;
+  if (!isPlatformSuperAdmin) return null;
 
   return (
     <div className="min-h-screen bg-app-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -74,6 +102,13 @@ export default function DeletionRequests() {
 
       <div className="max-w-2xl mx-auto px-4 py-5 pb-16">
 
+        {actionError && (
+          <div className="flex items-start gap-2 p-3 mb-4 bg-app-danger-bg border border-app-danger rounded-lg">
+            <AlertTriangle size={16} className="text-app-danger flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-app-danger">{actionError}</p>
+          </div>
+        )}
+
         {/* How-to banner */}
         <div className="flex items-start gap-3 p-4 mb-5 bg-app-info-bg border border-app-border rounded-xl">
           <Info size={16} className="text-app-info flex-shrink-0 mt-0.5" />
@@ -82,8 +117,8 @@ export default function DeletionRequests() {
             <ol className="text-xs text-app-text-2 space-y-0.5 list-decimal pl-4">
               <li>Go to <strong>Base44 Dashboard → Your App → Users</strong></li>
               <li>Search for the user by their email address listed below</li>
-              <li>Click <strong>Remove User</strong> and confirm</li>
-              <li>Return here and mark the request as <strong>Completed</strong></li>
+              <li>Click <strong>Remove User</strong> and confirm (removes the login identity)</li>
+              <li>Return here and click <strong>Mark Completed</strong> — this removes the user's personal data (notifications, memberships) and records the deletion as complete</li>
             </ol>
             <p className="text-xs text-app-text-muted mt-1.5">
               Base44 does not expose a server-side API to delete auth identities programmatically.

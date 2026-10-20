@@ -23,27 +23,35 @@ export default function DeleteAccountModal({ onClose }) {
     setStep(3);
   };
 
-  const handleDelete = async () => {
-    if (!password.trim()) {
-      setError('Please enter your password to confirm your identity.');
-      return;
-    }
-    setLoading(true);
+  const handleDelete = async (method) => {
     setError('');
+    setLoading(true);
 
     try {
-      // Reauthenticate: attempt login with current credentials to verify identity
+      // Reauthenticate / verify identity before deleting.
+      // - Password accounts: verify the current password (reauthentication).
+      // - Google/OAuth-only accounts: no password exists, so the authenticated
+      //   session IS the identity verification. The typed DELETE word in the
+      //   previous step is the deliberate confirmation for BOTH methods.
+      //   An unauthenticated user can never reach this step (auth.me() required).
       const userResp = await base44.auth.me();
       if (!userResp) throw new Error('Not authenticated.');
 
-      // Attempt login to verify password (reauthentication)
-      try {
-        await base44.auth.loginViaEmailPassword(userResp.email, password);
-      } catch {
-        setError('Incorrect password. Please try again.');
-        setLoading(false);
-        return;
+      if (method === 'password') {
+        if (!password.trim()) {
+          setError('Please enter your password to confirm your identity.');
+          setLoading(false);
+          return;
+        }
+        try {
+          await base44.auth.loginViaEmailPassword(userResp.email, password);
+        } catch {
+          setError('Incorrect password. Please try again, or use the Google sign-in option below.');
+          setLoading(false);
+          return;
+        }
       }
+      // method === 'google': authenticated session is the verification; proceed.
 
       // Call backend deletion function
       const resp = await base44.functions.invoke('deleteAccount', {});
@@ -178,7 +186,7 @@ export default function DeleteAccountModal({ onClose }) {
         {step === 3 && (
           <div className="p-5">
             <p className="text-sm text-app-text-2 mb-5 leading-relaxed">
-              For your security, enter your current password to verify your identity before deleting your account.
+              For your security, verify your identity before deleting your account. Enter your password, or use the Google option below if you sign in with Google.
             </p>
             <div className="relative mb-2">
               <input
@@ -205,7 +213,7 @@ export default function DeleteAccountModal({ onClose }) {
             <div className="flex gap-3 mt-4">
               <button onClick={onClose} disabled={loading} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
               <button
-                onClick={handleDelete}
+                onClick={() => handleDelete('password')}
                 disabled={loading || !password.trim()}
                 className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
               >
@@ -216,6 +224,18 @@ export default function DeleteAccountModal({ onClose }) {
                 )}
               </button>
             </div>
+            <div className="flex items-center gap-3 my-3">
+              <div className="flex-1 h-px bg-app-divider" />
+              <span className="text-xs text-app-text-muted">or</span>
+              <div className="flex-1 h-px bg-app-divider" />
+            </div>
+            <button
+              onClick={() => handleDelete('google')}
+              disabled={loading}
+              className="w-full py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 flex items-center justify-center gap-2 disabled:opacity-50 no-select touch-active"
+            >
+              I sign in with Google — continue deletion
+            </button>
           </div>
         )}
 
@@ -225,15 +245,16 @@ export default function DeleteAccountModal({ onClose }) {
             <div className="w-14 h-14 bg-app-success-bg rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">✓</span>
             </div>
-            <h3 className="font-bold text-app-text text-lg mb-3">Data Removed</h3>
+            <h3 className="font-bold text-app-text text-lg mb-3">Deletion Request Received</h3>
             <p className="text-sm text-app-text-2 leading-relaxed mb-4">
-              Your Essential SOP account data has been removed and you have been signed out.
-              Permanent deletion of the authentication record has been submitted for processing.
+              Your account deletion request has been received and you have been signed out.
+              An administrator will complete removal of your account data and login identity.
             </p>
             <div className="bg-app-info-bg border border-app-border rounded-xl p-3 text-left mb-2">
               <p className="text-xs text-app-text-muted leading-relaxed">
-                A deletion request has been logged. An administrator will complete removal of your
-                login identity via the Base44 dashboard. You will not be able to sign in again.
+                Your request is now pending administrator review. Removal of your account data and
+                login identity will be completed via the Base44 dashboard. You will not be able to
+                sign in again.
               </p>
             </div>
           </div>

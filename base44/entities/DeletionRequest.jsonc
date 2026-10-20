@@ -1,6 +1,13 @@
 {
   "name": "DeletionRequest",
   "type": "object",
+  "description": "Account-deletion request record. Holds the requesting user's personal data (email, name, id). ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by the deleteAccount backend function (service role, for the authenticated requesting user) and read/processed ONLY by the resolveDeletionRequests and manageDeletionRequest backend functions, which verify an active PlatformMembership(SUPER_ADMIN) on the backend before any access. No frontend SDK call may list, read, modify, or delete these records. Existing records are preserved; only the authorized backend functions mutate them.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "userId": {
       "type": "string"
@@ -33,11 +40,13 @@
     },
     "appDataDeletedAt": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Set only when an administrator completes the deletion via manageDeletionRequest (action=complete), at which point associated personal data (notifications, memberships) is removed. Null while the request is Pending \u2014 a submitted request is not a completed deletion."
     },
     "authIdentityDeletedAt": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "Set when an administrator completes the deletion via manageDeletionRequest, after removing the Base44 authentication identity via the Base44 Dashboard (manual, no API). Null while Pending."
     }
   },
   "required": [
