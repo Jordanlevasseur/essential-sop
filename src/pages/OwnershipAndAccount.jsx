@@ -71,15 +71,12 @@ export default function OwnershipAndAccount() {
     if (confirmClose.toLowerCase() !== 'close') return;
     setCloseRequesting(true); setError('');
     try {
-      const user = await base44.auth.me();
-      await base44.entities.ActivityLog.create({
-        companyId,
-        actingUserId: user.id,
-        actionType: 'account_deletion_requested',
-        summary: `${user.full_name || user.email} requested closure of ${activeCompany.name}`,
-        timestamp: new Date().toISOString(),
-      });
-      alert('Workspace closure request submitted. Contact support to complete the process.');
+      const res = await base44.functions.invoke('requestCompanyClosure', { companyId });
+      if (res?.data?.success) {
+        alert('Workspace closure request submitted. Contact support to complete the process.');
+      } else {
+        setError(res?.data?.error || 'Failed to submit closure request.');
+      }
     } catch (e) {
       setError(e.message || 'Failed to submit closure request.');
     }

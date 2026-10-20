@@ -18,23 +18,14 @@ export default function VersionHistory({ job }) {
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const logs = await base44.entities.ActivityLog.filter(
-        { companyId: job.companyId, targetId: job.id, actionType: 'job_edited' },
-        '-timestamp',
-        50
-      );
-      // Filter to adoption events only
-      const adoptions = (logs || []).filter(l =>
-        l.metadata?.event === 'COMPANY_MASTER_VERSION_ADOPTED_FROM_ANALYSIS' ||
-        l.metadata?.event === 'COMPANY_MASTER_VERSION_ADOPTED'
-      );
-      setRecords(adoptions);
+      const res = await base44.functions.invoke('resolveJobAdoptionHistory', { jobId: job.id });
+      setRecords(res?.data?.records || []);
     } catch (_) {
       setRecords([]);
     } finally {
       setLoading(false);
     }
-  }, [job.companyId, job.id]);
+  }, [job.id]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 

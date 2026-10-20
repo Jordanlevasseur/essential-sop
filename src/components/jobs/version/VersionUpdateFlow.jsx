@@ -185,26 +185,9 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
       const data = res?.data;
       if (data?.success) {
         clearDraft();
-        // Audit — use previousVersionId from the adoption response, not from the resolved job
-        // (resolved job has sourceVersionId stripped for public consumption)
-        try {
-          await base44.entities.ActivityLog.create({
-            companyId: job.companyId,
-            actingUserId: userId,
-            actionType: 'job_edited',
-            targetType: 'Job',
-            targetId: job.id,
-            summary: `Version adopted: v${currentVersion?.versionNumber} → v${newVersion?.versionNumber}. ${Object.keys(reviewDecisions).length} conflict resolution(s) selected.`,
-            metadata: {
-              event: 'version_adopted',
-              previousVersionId: data.previousVersionId,
-              newVersionId: data.newVersionId,
-              resolutionCount: Object.keys(reviewDecisions).length,
-              autoAdopted: canAutoAdopt && Object.keys(reviewDecisions).length === 0,
-            },
-            timestamp: new Date().toISOString(),
-          });
-        } catch (_) { /* audit failure must not block success */ }
+        // Audit record is written server-side by the adoption engine
+        // (adoptionEngine.ts::_writeAudit) with event COMPANY_MASTER_VERSION_ADOPTED_FROM_ANALYSIS.
+        // No client-side audit write needed — it would duplicate the server record.
         setStep('success');
         setTimeout(() => onAdopted(data.resolvedJob), 1500);
       } else {
@@ -244,18 +227,9 @@ export default function VersionUpdateFlow({ job, overrideMeta, targetVersionId, 
       const data = res?.data;
       if (data?.success) {
         clearDraft();
-        try {
-          await base44.entities.ActivityLog.create({
-            companyId: job.companyId,
-            actingUserId: userId,
-            actionType: 'job_edited',
-            targetType: 'Job',
-            targetId: job.id,
-            summary: `Safe update applied automatically: v${currentVersion?.versionNumber} → v${newVersion?.versionNumber}. All customizations preserved.`,
-            metadata: { event: 'safe_update_applied', previousVersionId: data.previousVersionId, newVersionId: data.newVersionId, autoAdopted: true },
-            timestamp: new Date().toISOString(),
-          });
-        } catch (_) {}
+        // Audit record is written server-side by the adoption engine
+        // (adoptionEngine.ts::_writeAudit) with event COMPANY_MASTER_VERSION_ADOPTED_FROM_ANALYSIS.
+        // No client-side audit write needed — it would duplicate the server record.
         setStep('success');
         setTimeout(() => onAdopted(data.resolvedJob), 1500);
       } else {
