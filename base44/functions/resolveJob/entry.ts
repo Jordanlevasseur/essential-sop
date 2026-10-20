@@ -4,6 +4,7 @@ import {
   buildResolvedItems,
   VALID_SECTION_TYPES,
 } from '../../shared/overrideSchema.js';
+import { isMasterAssignedActive } from '../../shared/activeCompanyContent.ts';
 
 /**
  * resolveJob — Centralized Job resolver for the Essential SOP Master Library architecture.
@@ -117,6 +118,17 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
   }
   if (!sourceMaster || sourceMaster.status !== 'active') {
     return Response.json({ error: 'This job is no longer available.', code: 'SOURCE_MASTER_UNAVAILABLE' }, { status: 410 });
+  }
+
+  // ── Phase 5: require an ACTIVE platform assignment for this company ────────
+  // A platform-unassigned Master (assignmentStatus REMOVED) must NOT remain
+  // accessible as an active company procedure via a stale deep link, even if
+  // the adopted published Job still exists. Return a controlled unavailable
+  // response instead of leaking the SOP content. Company data (Job, overrides,
+  // history) is preserved — only visibility is revoked. See activeCompanyContent.ts.
+  const assignmentActive = await isMasterAssignedActive(SR, job.companyId, job.sourceMasterId);
+  if (!assignmentActive) {
+    return Response.json({ error: 'This procedure is no longer available to your company.', code: 'ASSIGNMENT_REVOKED' }, { status: 410 });
   }
 
   const masterSections = await SR.entities.EssentialSOPSection.filter(

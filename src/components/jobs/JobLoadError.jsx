@@ -63,6 +63,14 @@ const ERROR_COPY = {
     body: 'We received an unexpected response while loading this Job.',
     footer: 'Your work has not been changed.\n\nPlease try again. If the problem continues, contact your administrator.',
   },
+  UNAVAILABLE: {
+    icon: FileWarning,
+    iconCls: 'text-app-text-muted',
+    bgCls: 'bg-app-elevated',
+    title: 'Procedure no longer available',
+    body: 'This procedure is no longer available to your company. It may have been removed from your library or is no longer provisioned to your company.',
+    footer: 'Your customized copy and history are preserved. If you believe this is a mistake, contact your administrator.',
+  },
   UNKNOWN_ERROR: {
     icon: AlertTriangle,
     iconCls: 'text-app-danger',
@@ -81,6 +89,7 @@ function getCopy(errorCode) {
   if (errorCode === 'NETWORK_ERROR') return ERROR_COPY.NETWORK_ERROR;
   if (errorCode === 'TIMEOUT') return ERROR_COPY.TIMEOUT;
   if (errorCode?.startsWith('HTTP_5') || errorCode === 'SERVER_ERROR') return ERROR_COPY.SERVER_ERROR;
+  if (errorCode === 'HTTP_410' || errorCode === 'SOURCE_MASTER_UNAVAILABLE' || errorCode === 'ASSIGNMENT_REVOKED') return ERROR_COPY.UNAVAILABLE;
   if (errorCode === 'INVALID_RESPONSE') return ERROR_COPY.INVALID_RESPONSE;
   return ERROR_COPY.UNKNOWN_ERROR;
 }

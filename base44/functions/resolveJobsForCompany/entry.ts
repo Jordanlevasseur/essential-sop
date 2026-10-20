@@ -4,6 +4,7 @@ import {
   sanitizeStoredOverride,
   buildResolvedItems,
 } from '../../shared/overrideSchema.js';
+import { loadActiveAssignmentMasterIds } from '../../shared/activeCompanyContent.ts';
 
 /**
  * resolveJobsForCompany — Resolver-backed Jobs list and search service.
@@ -64,17 +65,21 @@ export default async function(req: Request): Promise<Response> {
     const _rawSopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
     const companyJobs = publishedJobs.filter((j: any) => j.sourceType !== 'essential_sop');
 
-    // ── Defense-in-depth: drop SOP jobs whose source Master is gone or not active ──
-    // The deletion cascade hard-deletes the master + archives derived jobs; this
-    // resolver check is a second gate so an orphaned/derived job never reaches the
-    // company. Requires an existing, active (published) source Master.
+    // ── Phase 5 active-company-content eligibility ──────────────────────────────
+    // An essential_sop Job is active company content ONLY if its platform
+    // assignment (ProvisioningRecord) is ACTIVE AND its source Master is active.
+    // This excludes platform-unassigned Masters even when an adopted published
+    // Job still exists, and excludes orphaned/derived jobs whose Master was
+    // deleted. See activeCompanyContent.ts for the authoritative rule.
+    const activeMasterIds = await loadActiveAssignmentMasterIds(SR, companyId);
     const _sopMasterIds = Array.from(new Set(_rawSopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
     const _masterCache: Record<string, any> = {};
     await Promise.all(_sopMasterIds.map(async (mid: string) => {
       try { _masterCache[mid] = await SR.entities.EssentialSOPMaster.get(mid); } catch { _masterCache[mid] = null; }
     }));
     const sopJobs = _rawSopJobs.filter((j: any) => {
-      const m = j.sourceMasterId ? _masterCache[j.sourceMasterId] : null;
+      if (!j.sourceMasterId || !activeMasterIds.has(j.sourceMasterId)) return false;
+      const m = _masterCache[j.sourceMasterId];
       return !!m && m.status === 'active';
     });
 

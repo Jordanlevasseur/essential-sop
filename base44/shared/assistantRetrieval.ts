@@ -3,6 +3,7 @@ import {
   sanitizeStoredOverride,
   buildResolvedItems,
 } from './overrideSchema.js';
+import { loadActiveAssignmentMasterIds } from './activeCompanyContent.ts';
 
 /**
  * resolveAssistantContext — shared retrieval for the Assistant.
@@ -26,6 +27,25 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   const sopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
   const companyJobs = publishedJobs.filter((j: any) => j.sourceType !== 'essential_sop');
 
+  // ── Phase 5: filter sopJobs to active-company-content eligible ───────────────
+  // An essential_sop Job is active company content ONLY if its platform
+  // assignment is ACTIVE and its source Master is active. This excludes
+  // platform-unassigned Masters (even with an adopted published Job) and
+  // orphaned jobs whose Master was deleted/archived. This is the EXCLUSIVE
+  // source for the AI Assistant — there is no Master Library fallback.
+  // See activeCompanyContent.ts for the authoritative rule.
+  const activeMasterIds = await loadActiveAssignmentMasterIds(SR, companyId);
+  const _masterIds = Array.from(new Set(sopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
+  const _masterCache: Record<string, any> = {};
+  await Promise.all(_masterIds.map(async (mid: string) => {
+    try { _masterCache[mid] = await SR.entities.EssentialSOPMaster.get(mid); } catch { _masterCache[mid] = null; }
+  }));
+  const eligibleSopJobs = sopJobs.filter((j: any) => {
+    if (!j.sourceMasterId || !activeMasterIds.has(j.sourceMasterId)) return false;
+    const m = _masterCache[j.sourceMasterId];
+    return !!m && m.status === 'active';
+  });
+
   const allOverrides = await SR.entities.JobOverride.filter({ companyId }, '-updatedAt', 500);
   const overrideByJobId: Record<string, any> = {};
   for (const o of (allOverrides || [])) {
@@ -33,7 +53,7 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   }
 
   const versionSectionCache: Record<string, any[]> = {};
-  for (const job of sopJobs) {
+  for (const job of eligibleSopJobs) {
     const vk = `${job.sourceMasterId}__${job.sourceVersionId}`;
     if (versionSectionCache[vk] !== undefined) continue;
     try {
@@ -57,7 +77,7 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   const jobs: any[] = [];
   const contentIndex: any[] = [];
 
-  for (const job of sopJobs) {
+  for (const job of eligibleSopJobs) {
     const vk = `${job.sourceMasterId}__${job.sourceVersionId}`;
     const masterSections = versionSectionCache[vk] || [];
     const override = overrideByJobId[job.id] || null;
