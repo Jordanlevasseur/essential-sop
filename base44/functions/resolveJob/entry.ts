@@ -64,17 +64,23 @@ export default async function(req: Request): Promise<Response> {
       canCustomize:           isCompanyAdmin && isProvisionedSOP,
     };
 
+    // ── Load active temporary edit grant (for JobDetail banner) ──────────────
+    // Replaces the direct TemporaryEditGrant.filter call from JobDetail.jsx.
+    // Service role is required because TemporaryEditGrant is RLS-locked.
+    const grants = await SR.entities.TemporaryEditGrant.filter({ jobId: job.id, userId: user.id, status: 'active' });
+    const activeGrant = (grants || []).find((g: any) => new Date(g.expiresAt) > new Date()) || null;
+
     if (!isProvisionedSOP) {
-      return await resolveCompanyJob(job, SR, capabilities);
+      return await resolveCompanyJob(job, SR, capabilities, activeGrant);
     }
-    return await resolveEssentialSOPJob(job, SR, capabilities);
+    return await resolveEssentialSOPJob(job, SR, capabilities, activeGrant);
 
   } catch (error: any) {
     return Response.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }
 
-async function resolveCompanyJob(job: any, SR: any, capabilities: any): Promise<Response> {
+async function resolveCompanyJob(job: any, SR: any, capabilities: any, activeGrant: any): Promise<Response> {
   const [sections, rawContent] = await Promise.all([
     SR.entities.JobSection.filter({ jobId: job.id }, 'sortOrder', 10),
     SR.entities.SectionContent.filter({ jobId: job.id }, 'sortOrder', 500),
@@ -93,10 +99,11 @@ async function resolveCompanyJob(job: any, SR: any, capabilities: any): Promise<
     sections: (sections || []).filter((s: any) => s.sectionType !== 'documentation'),
     contentBySection,
     capabilities,
+    activeGrant,
   });
 }
 
-async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Promise<Response> {
+async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any, activeGrant: any): Promise<Response> {
   // ── Removed/archived Master-derived Job gate ──────────────────────────────
   // A company-removed Master SOP archives its linked Job and sets status=Draft.
   // The Company Library list and Assistant exclude it; the direct deep link
@@ -219,5 +226,6 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Pro
     contentBySection,
     capabilities,
     override: overrideMeta,
+    activeGrant,
   });
 }
