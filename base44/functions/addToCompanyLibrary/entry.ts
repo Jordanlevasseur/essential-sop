@@ -104,12 +104,16 @@ export default async function(req: Request): Promise<Response> {
         // Already adopted — idempotent, zero writes.
         return Response.json({ success: true, alreadyAdopted: true, jobId: existingJob.id });
       }
-      // Re-adopt: un-archive the existing linked Job. Never create a duplicate.
+      // Re-adopt: restore the existing linked Job to active, published state.
+      // Never create a duplicate. Preserve the existing sourceVersionId — do NOT
+      // force-upgrade on re-adoption. The company's overrides were built against
+      // this version; a newer version, if any, is adopted separately via the
+      // version-adoption flow (which reconciles overrides properly). This
+      // preserves identity, source-version relationship, overrides,
+      // customization, and version history.
       const updated = await SR.entities.Job.update(existingJob.id, {
         isArchived: false,
         status: 'Published',
-        // Re-pin to the current published version on re-adoption
-        sourceVersionId: publishedVersion.id,
       });
       await _audit(SR, companyId, user.id, existingJob.id, masterId, publishedVersion.id, 're_adopted', master.title);
       return Response.json({ success: true, reAdopted: true, jobId: updated.id });

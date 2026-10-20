@@ -27,6 +27,7 @@ import VersionUpdateBanner from '@/components/jobs/VersionUpdateBanner';
 import VersionAdoptionIncomplete from '@/components/jobs/version/VersionAdoptionIncomplete';
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
+import RemoveFromLibraryButton from '@/components/jobs/RemoveFromLibraryButton';
 import NotificationBell from '@/components/NotificationBell';
 import JobLoadError, { parseJobLoadError } from '@/components/jobs/JobLoadError';
 import { useJobsListState } from '@/lib/useJobsListState';
@@ -227,6 +228,9 @@ export default function JobDetail() {
         >
           <Sliders size={14} /> {overrideMeta ? 'Edit Custom' : 'Customize'}
         </button>
+      )}
+      {capabilities?.canCustomize && !editMode && (
+        <RemoveFromLibraryButton job={job} onRemoved={() => navigateBackToJobs(navigate)} />
       )}
       {isProjectLead && job?.status === 'Published' && !activeGrant && !editMode && (
         <button

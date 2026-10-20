@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
-import { ArrowLeft, AlertTriangle, ExternalLink } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, ExternalLink, Plus, Loader2, CheckCircle2 } from 'lucide-react';
 import MasterSectionView from '@/components/company-master/MasterSectionView';
 
 const STATUS_INFO = {
@@ -22,22 +22,44 @@ export default function CompanyMasterPreview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [actionMsg, setActionMsg] = useState(null);
 
-  useEffect(() => {
+  const loadPreview = useCallback(() => {
     if (!isCompanyAdmin || !companyId || !masterId) return;
     setLoading(true);
     base44.functions.invoke('resolveCompanyMasterPreview', { companyId, masterId })
       .then(res => {
         const d = res?.data || {};
-        if (d.error) {
-          setError(d.code === 'NOT_PROVISIONED' ? 'not_provisioned' : d.error);
-          return;
-        }
+        if (d.error) { setError(d.code === 'NOT_PROVISIONED' ? 'not_provisioned' : d.error); return; }
         setData(d);
+        setError('');
       })
       .catch(() => setError('Failed to load this Master SOP.'))
       .finally(() => setLoading(false));
   }, [companyId, masterId, isCompanyAdmin]);
+
+  useEffect(() => { loadPreview(); }, [loadPreview]);
+
+  const handleAdd = async () => {
+    setAdding(true);
+    setActionMsg(null);
+    try {
+      const res = await base44.functions.invoke('addToCompanyLibrary', { companyId, masterId });
+      const d = res?.data || {};
+      if (!d.success) {
+        setActionMsg({ type: 'error', text: d.error || 'Failed to add.' });
+        setAdding(false);
+        return;
+      }
+      setActionMsg({ type: 'success', text: 'Added to your company library.' });
+      setAdding(false);
+      loadPreview();
+    } catch (e) {
+      setActionMsg({ type: 'error', text: e?.message || 'Failed to add.' });
+      setAdding(false);
+    }
+  };
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-app-bg">
@@ -67,6 +89,8 @@ export default function CompanyMasterPreview() {
   if (!data) return null;
 
   const s = STATUS_INFO[data.adoptionState] || STATUS_INFO.available;
+  const isAdopted = data.adoptionState === 'adopted';
+  const canAdd = data.adoptionState === 'available' || data.adoptionState === 'removed';
 
   return (
     <div className="min-h-screen bg-app-bg">
@@ -86,7 +110,8 @@ export default function CompanyMasterPreview() {
           <h2 className="text-lg font-bold text-app-heading">{data.master.title}</h2>
           {data.master.changeNotes && <p className="text-xs text-app-text-2 mt-1.5">{data.master.changeNotes}</p>}
           <div className={`mt-3 text-xs px-2.5 py-1.5 rounded-lg border font-medium inline-block ${s.cls}`}>{s.label}</div>
-          {data.adoptionState === 'adopted' && data.jobId && (
+
+          {isAdopted && data.jobId && (
             <button
               onClick={() => navigate(`/jobs/${data.jobId}`)}
               className="mt-3 w-full py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 touch-active no-select"
@@ -94,19 +119,31 @@ export default function CompanyMasterPreview() {
               <ExternalLink size={14} /> View in Company Library
             </button>
           )}
+          {canAdd && (
+            <button
+              onClick={handleAdd}
+              disabled={adding}
+              className="mt-3 w-full py-2.5 bg-app-accent text-app-accent-text rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 touch-active no-select disabled:opacity-60"
+            >
+              {adding ? <><Loader2 size={14} className="animate-spin" /> Adding…</> : <><Plus size={14} /> {data.adoptionState === 'removed' ? 'Add back to Company Library' : 'Add to Company Library'}</>}
+            </button>
+          )}
+          {actionMsg && (
+            <p className={`mt-2 text-xs flex items-center gap-1 ${actionMsg.type === 'success' ? 'text-app-success' : 'text-app-danger'}`}>
+              {actionMsg.type === 'success' && <CheckCircle2 size={12} />} {actionMsg.text}
+            </p>
+          )}
         </div>
 
         <p className="text-xs text-app-text-muted px-1 pt-1">
-          This is the platform-published Master SOP content (read-only). Your company's customized version, if any, lives in the Company Library.
+          This is the platform-published Master SOP content (read-only). Your company&rsquo;s customized version, if any, lives in the Company Library.
         </p>
 
         {data.sections.length === 0 ? (
           <p className="text-sm text-app-text-muted text-center py-8">This Master SOP has no published content yet.</p>
         ) : (
           <div className="space-y-2">
-            {data.sections.map(sec => (
-              <MasterSectionView key={sec.sectionType} section={sec} />
-            ))}
+            {data.sections.map(sec => <MasterSectionView key={sec.sectionType} section={sec} />)}
           </div>
         )}
       </div>

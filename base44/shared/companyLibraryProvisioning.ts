@@ -343,61 +343,33 @@ export async function provisionMasterToOneCompany(
     };
   }
 
-  // ── Create Company Job ─────────────────────────────────────────────────────
-  let createdJob: any = null;
-  try {
-    createdJob = await SR.entities.Job.create({
-      companyId,
-      title: master.title,
-      shortDescription: master.description || '',
-      trade: master.trade || '',
-      category: master.category || '',
-      status: 'Published',
-      isArchived: false,
-      sourceType: 'essential_sop',
-      sourceMasterId: masterId,
-      sourceVersionId: publishedVersion.id,
-      isCustomized: false,
-      customizedAt: null,
-      customizedBy: null,
-    });
-  } catch (_) {}
-
-  if (!createdJob) {
-    const failedRec = await _upsertProvisioningRecord(SR, {
-      existingRecord,
-      provisioningKey, companyId, masterId, versionId,
-      distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
-      provisioningStatus: 'FAILED', assignmentSource, assignedBy,
-      companyJobId: null,
-      errorCode: 'JOB_CREATE_FAILED',
-      errorMessage: 'Failed to create company job record.',
-      now,
-    });
-
-    return {
-      masterId, masterTitle: master.title,
-      result: 'FAILED', companyJobId: null, versionId,
-      provisioningRecordId: failedRec?.id || null, provisioningKey,
-      errorCode: 'JOB_CREATE_FAILED',
-      errorMessage: 'Failed to create company job record.',
-    };
-  }
-
-  // ── Write COMPLETED ProvisioningRecord ────────────────────────────────────
-  const completedRec = await _upsertProvisioningRecord(SR, {
+  // ── Phase 4: provision AVAILABILITY only — no auto-Job creation ─────────────
+  // Platform provisioning now makes the Master AVAILABLE to the company by
+  // ensuring an ACTIVE ProvisioningRecord exists. It does NOT create a company
+  // Job — deliberate company adoption (addToCompanyLibrary) creates/restores the
+  // linked Job. This separates platform provisioning (assignment) from company
+  // adoption (operational Job).
+  //
+  // The existing beta Jobs are preserved: any pair with an existing linked Job
+  // returns SKIPPED in the existingJob branch above before reaching here. New
+  // company-master pairs get an ACTIVE record with companyJobId=null (available).
+  const provisionedRec = await _upsertProvisioningRecord(SR, {
     existingRecord,
     provisioningKey, companyId, masterId, versionId: publishedVersion.id,
     distributionEventId, operationType: 'INITIAL_COMPANY_LIBRARY',
     provisioningStatus: 'COMPLETED', assignmentSource, assignedBy,
-    companyJobId: createdJob.id, errorCode: null, errorMessage: null, now,
+    companyJobId: null, errorCode: null, errorMessage: null, now,
   });
 
   return {
     masterId, masterTitle: master.title,
-    result: 'COMPLETED', companyJobId: createdJob.id,
+    // COMPLETED for a brand-new assignment; SKIPPED when an ACTIVE record already
+    // existed (re-provisioning / distribution replay / sync repair of a FAILED record).
+    result: existingRecord ? 'SKIPPED' : 'COMPLETED',
+    skipReason: existingRecord ? 'ALREADY_PROVISIONED' : undefined,
+    companyJobId: null,
     versionId: publishedVersion.id,
-    provisioningRecordId: completedRec?.id || null,
+    provisioningRecordId: provisionedRec?.id || null,
     provisioningKey,
   };
 }
@@ -629,7 +601,7 @@ export async function provisionCompanyLibraryCore(
       items.push(itemResult);
 
       if (itemResult.result === 'COMPLETED') {
-        companyJobIds.push(itemResult.companyJobId!);
+        if (itemResult.companyJobId) companyJobIds.push(itemResult.companyJobId);
         // Track in-memory for intra-loop duplicate prevention
         if (itemResult.companyJobId) {
           existingJobByMasterId.set(master.id, { id: itemResult.companyJobId, sourceMasterId: master.id });

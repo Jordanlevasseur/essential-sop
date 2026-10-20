@@ -22,7 +22,8 @@
  *  1. Load all ACTIVE ProvisioningRecords for this company → assigned masters.
  *  2. Load company's existing essential_sop Jobs.
  *  3. For each ACTIVE assigned master:
- *     a. If Company Job is missing → provision it via provisionMasterToOneCompany().
+ *     a. If Company Job is missing → available for adoption (skip; Phase 4: sync
+ *        no longer auto-provisions Jobs — the company adopts via addToCompanyLibrary).
  *     b. If Company Job exists but is on an older version → create CompanyVersionDecision.
  *     c. If Company Job exists and is current → skip (no write).
  *  4. Persist sync result in CompanyLibraryProvisioningRun (server-side history).
@@ -36,7 +37,6 @@
 
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import {
-  provisionMasterToOneCompany,
   buildProvisioningKey,
 } from '../../shared/companyLibraryProvisioning.ts';
 
@@ -242,39 +242,12 @@ export default async function(req: Request): Promise<Response> {
 
       try {
         if (!existingJob) {
-          // ── Case A: Assignment exists but Company Job is missing — provision ─
-          const result = await provisionMasterToOneCompany({
-            SR,
-            company,
-            master,
-            publishedVersion,
-            source: 'COMPANY_CREATION',
-            distributionEventId: assignmentRecord?.distributionEventId || null,
-            assignedBy: assignmentRecord?.assignedBy || 'system',
-            existingJob: null,
-            // Pass existing ACTIVE record so _upsertProvisioningRecord updates it, not creates a duplicate
-            existingRecord: assignmentRecord || null,
-            now,
-          });
-
-          if (result.result === 'COMPLETED') {
-            added++;
-            existingJobByMasterId.set(masterId, {
-              id: result.companyJobId,
-              sourceMasterId: masterId,
-              sourceVersionId: currentPublishedVersionId,
-            });
-          } else if (result.result === 'SKIPPED') {
-            skipped++;
-          } else {
-            failed++;
-            failedItems.push({
-              masterId,
-              masterTitle: master.title,
-              errorCode: result.errorCode || 'PROVISION_FAILED',
-              errorMessage: result.errorMessage || 'Provision failed.',
-            });
-          }
+          // ── Case A (Phase 4): assignment exists but no linked Job — available ─
+          // Platform provisioning no longer auto-creates a company Job. The Master
+          // is AVAILABLE for the company to adopt via addToCompanyLibrary. Sync
+          // maintains assignments and version decisions only; it does not create
+          // Jobs. The ProvisioningRecord (assignment) already exists.
+          skipped++;
 
         } else if (existingJob.sourceVersionId && existingJob.sourceVersionId !== currentPublishedVersionId) {
           // ── Case B: Job exists but is on an older version ─────────────────
