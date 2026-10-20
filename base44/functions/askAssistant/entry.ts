@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { resolveCompanyKnowledge } from '../../shared/companyKnowledgeEngine.ts';
-import { routeAssistantRequest } from '../../shared/assistantRouter.ts';
+import { resolveCompanyKnowledge, getResourcesForJob } from '../../shared/companyKnowledgeEngine.ts';
+import { routeAssistantRequest, detectResourceRequest } from '../../shared/assistantRouter.ts';
 import { buildDirectAnswer } from '../../shared/directAnswerBuilder.ts';
 import { selectAiContext, ConversationMessage } from '../../shared/aiContextSelector.ts';
 
@@ -60,6 +60,7 @@ RULES:
 - NEVER invent company-specific requirements, specs, torque values, codes, or steps that are not in the provided SOPs. Do not attribute general knowledge to a company SOP.
 - If the provided SOPs do not cover the question, say plainly that no relevant company SOP was found, then give only brief, clearly-labeled general guidance that is safe and non-company-specific.
 - If the context includes a NOTE about incomplete retrieval or size reduction, do not claim that a procedure or requirement definitively does not exist; say the available SOPs do not establish it.
+- If the context was reduced to fit size limits, do not present the answer as a complete or exhaustive procedure or comparison. Acknowledge that some details may have been omitted and suggest the user ask a more specific question or open the full SOP directly.
 - For follow-up questions, use the CONVERSATION history to resolve references like "it", "that SOP", or "the other one". If the user has clearly changed the subject, do not force previous context into the answer.
 - Only cite SOPs whose content you actually used. Return their identifiers (e.g. "src-<jobId>") in "sourceIds". Never cite an SOP that was not provided in the context. Never fabricate item references.
 
@@ -151,9 +152,9 @@ export default async function (req: Request): Promise<Response> {
 
     // ── Direct / clarification routes: structured answer, no AI call ──
     if (decision.route === 'direct' || decision.route === 'clarification') {
-      const { answer, sources } = buildDirectAnswer(knowledge, decision);
+      const { answer, sources, resources } = buildDirectAnswer(knowledge, decision);
       return Response.json({
-        answer, sources, route: decision.route,
+        answer, sources, resources, route: decision.route,
         _routingMetrics: makeRoutingMetrics(
           decision.route, knowledge, _routeDurationMs, _totalStartTime,
           sources.length, 0, decision.confidence, decision.directKind
@@ -166,7 +167,7 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({
         answer:
           "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.",
-        sources: [], route: 'no_match',
+        sources: [], resources: [], route: 'no_match',
         _routingMetrics: makeRoutingMetrics(
           'no_match', knowledge, _routeDurationMs, _totalStartTime,
           0, 0, decision.confidence, null
@@ -190,7 +191,7 @@ export default async function (req: Request): Promise<Response> {
         ? "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it."
         : "I couldn't find an approved company SOP covering that in the available records. Some procedures may not be shown due to system limits.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.";
       return Response.json({
-        answer: noMatchAnswer, sources: [], route: 'no_match',
+        answer: noMatchAnswer, sources: [], resources: [], route: 'no_match',
         _routingMetrics: makeRoutingMetrics(
           'no_match', knowledge, _routeDurationMs, _totalStartTime,
           0, 0, decision.confidence, null
@@ -240,10 +241,11 @@ export default async function (req: Request): Promise<Response> {
       : [];
     // De-duplicate, preserve order.
     cited = Array.from(new Set(cited));
-    if (cited.length === 0) {
-      // Fallback: cite the single most relevant included SOP.
-      cited = [includedSopIds[0]];
-    }
+    // Stage 5: NO fabricated fallback. If the model provided no valid
+    // sourceIds, return the answer without sources rather than attaching a
+    // highly-ranked SOP the model did not cite. The answer may still be
+    // useful (general guidance), but we do not present it as verified
+    // company guidance backed by a specific SOP.
 
     const qTokens = tokenize(question);
     const sources = cited.map((jobId: string) => {
@@ -255,12 +257,37 @@ export default async function (req: Request): Promise<Response> {
         jobTitle: job ? job.title : 'Company SOP',
         sectionType,
         section: SECTION_LABEL[sectionType] || sectionType,
-        item: best?.title || (job ? job.title : 'Procedure'),
+        item: best?.title || SECTION_LABEL[sectionType] || sectionType,
       };
     });
 
+    // ── Stage 5: collect authorized resources when the question asks about them ──
+    // Resources are supplementary metadata from eligible SOPs — not citations.
+    // Included only when the question has resource keywords, and only from
+    // SOPs included in the AI context. Reuses the same eligibility-verified
+    // knowledge — no re-fetching, no external URL content retrieval.
+    let resources: any[] = [];
+    if (detectResourceRequest(question)) {
+      for (const jobId of includedSopIds) {
+        const job = jobs.find((j: any) => j.id === jobId);
+        if (!job) continue;
+        const jobResources = getResourcesForJob(knowledge, jobId);
+        for (const r of jobResources) {
+          resources.push({
+            id: r.id,
+            title: r.title,
+            resourceType: r.resourceType,
+            description: r.description || '',
+            url: r.url,
+            parentJobId: jobId,
+            parentJobTitle: job.title,
+          });
+        }
+      }
+    }
+
     return Response.json({
-      answer, sources, route: 'generative',
+      answer, sources, resources, route: 'generative',
       _routingMetrics: makeRoutingMetrics(
         'generative', knowledge, _routeDurationMs, _totalStartTime,
         sources.length, 1, decision.confidence, null

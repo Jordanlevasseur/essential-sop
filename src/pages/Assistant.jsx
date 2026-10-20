@@ -5,6 +5,7 @@ import { Send, ExternalLink } from 'lucide-react';
 import { useCompany } from '@/lib/CompanyContext';
 import { useAssistantViewport } from '@/lib/assistantViewport';
 import AssistantMessage from '@/components/assistant/AssistantMessage';
+import AssistantResourceCard from '@/components/assistant/AssistantResourceCard';
 
 const SUGGESTED_QUESTIONS = [
   'Which jobs require a respirator?',
@@ -102,7 +103,8 @@ export default function Assistant() {
       const data = res?.data || {};
       const answer = data.answer || 'I could not generate an answer. Please try again.';
       const sources = Array.isArray(data.sources) ? data.sources : [];
-      setMessages(prev => [...prev, { role: 'assistant', text: answer, sources }]);
+      const resources = Array.isArray(data.resources) ? data.resources : [];
+      setMessages(prev => [...prev, { role: 'assistant', text: answer, sources, resources }]);
       lastJobIdsRef.current = sources.map(s => s.jobId).filter(Boolean);
     } catch (e) {
       setMessages(prev => [...prev, {
@@ -171,6 +173,16 @@ export default function Assistant() {
                             Open <ExternalLink size={11} />
                           </button>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {msg.resources && msg.resources.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold text-app-text-muted uppercase mb-2">Resources</p>
+                    <div className="space-y-2">
+                      {msg.resources.map((r, j) => (
+                        <AssistantResourceCard key={j} resource={r} />
                       ))}
                     </div>
                   </div>

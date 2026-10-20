@@ -38,16 +38,16 @@ const NO_MATCH_ANSWER =
 export function buildDirectAnswer(
   knowledge: CompanyKnowledge,
   decision: RoutingDecision
-): { answer: string; sources: any[] } {
+): { answer: string; sources: any[]; resources: any[] } {
   switch (decision.route) {
     case 'direct':
       return buildDirect(knowledge, decision);
     case 'clarification':
-      return buildClarification(knowledge, decision);
+      return { ...buildClarification(knowledge, decision), resources: [] };
     case 'no_match':
-      return { answer: NO_MATCH_ANSWER, sources: [] };
+      return { answer: NO_MATCH_ANSWER, sources: [], resources: [] };
     default:
-      return { answer: NO_MATCH_ANSWER, sources: [] };
+      return { answer: NO_MATCH_ANSWER, sources: [], resources: [] };
   }
 }
 
@@ -56,23 +56,27 @@ export function buildDirectAnswer(
 function buildDirect(
   knowledge: CompanyKnowledge,
   decision: RoutingDecision
-): { answer: string; sources: any[] } {
+): { answer: string; sources: any[]; resources: any[] } {
+  // resource_request returns its own resources; all others default to [].
+  if (decision.directKind === 'resource_request') {
+    return buildResourceRequest(knowledge, decision);
+  }
+  let result: { answer: string; sources: any[] };
   switch (decision.directKind) {
     case 'section_listing':
-      return buildSectionListing(knowledge, decision);
+      result = buildSectionListing(knowledge, decision); break;
     case 'specific_step':
-      return buildSpecificStep(knowledge, decision);
-    case 'resource_request':
-      return buildResourceRequest(knowledge, decision);
+      result = buildSpecificStep(knowledge, decision); break;
     case 'trade_listing':
-      return buildTradeListing(knowledge, decision);
+      result = buildTradeListing(knowledge, decision); break;
     case 'count':
-      return buildCount(knowledge, decision);
+      result = buildCount(knowledge, decision); break;
     case 'sop_discovery':
-      return buildSopDiscovery(knowledge, decision);
+      result = buildSopDiscovery(knowledge, decision); break;
     default:
-      return { answer: NO_MATCH_ANSWER, sources: [] };
+      return { answer: NO_MATCH_ANSWER, sources: [], resources: [] };
   }
+  return { ...result, resources: [] };
 }
 
 // ── Section listing ──────────────────────────────────────────────────────────
@@ -239,38 +243,53 @@ const RESOURCE_TYPE_LABEL: Record<string, string> = {
 function buildResourceRequest(
   knowledge: CompanyKnowledge,
   decision: RoutingDecision
-): { answer: string; sources: any[] } {
+): { answer: string; sources: any[]; resources: any[] } {
   const job = findSopByJobId(knowledge, decision.targetJobId!);
-  if (!job) return { answer: NO_MATCH_ANSWER, sources: [] };
+  if (!job) return { answer: NO_MATCH_ANSWER, sources: [], resources: [] };
 
-  const resources = getResourcesForJob(knowledge, job.id);
+  const jobResources = getResourcesForJob(knowledge, job.id);
 
-  if (resources.length === 0) {
+  if (jobResources.length === 0) {
     const answer = `No authorized resources are linked to **${job.title}**.`;
     return {
       answer,
       sources: [{
         jobId: job.id, jobTitle: job.title, sectionType: 'scope',
-        section: 'Resources', item: 'Resources',
+        section: 'Scope', item: job.title,
       }],
+      resources: [],
     };
   }
 
+  // Markdown answer lists titles, types, and descriptions. The actual
+  // tappable links are rendered as distinct resource cards in the frontend
+  // (visually distinguishable from internal SOP source cards). No raw URLs
+  // are dumped into the answer text — the cards provide the links.
   const lines: string[] = [`Here are the authorized resources for **${job.title}**:\n`];
-  resources.forEach((r, i) => {
+  jobResources.forEach((r, i) => {
     const typeLabel = RESOURCE_TYPE_LABEL[r.resourceType] || 'Resource';
     lines.push(`${i + 1}. **${r.title}** (${typeLabel})`);
     if (r.description) lines.push(`   ${r.description}`);
-    lines.push(`   [${r.url}](${r.url})`);
   });
   lines.push('\n_A resource link does not mean its contents have been verified or approved as procedural authority._');
+
+  const resourceCards = jobResources.map(r => ({
+    id: r.id,
+    title: r.title,
+    resourceType: r.resourceType,
+    description: r.description || '',
+    url: r.url,
+    parentJobId: job.id,
+    parentJobTitle: job.title,
+  }));
 
   return {
     answer: lines.join('\n'),
     sources: [{
       jobId: job.id, jobTitle: job.title, sectionType: 'scope',
-      section: 'Resources', item: resources[0].title,
+      section: 'Scope', item: job.title,
     }],
+    resources: resourceCards,
   };
 }
 
