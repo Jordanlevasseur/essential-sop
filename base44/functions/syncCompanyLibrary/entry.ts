@@ -228,6 +228,18 @@ export default async function(req: Request): Promise<Response> {
       const existingJob = existingJobByMasterId.get(masterId) || null;
       const provisioningKey = buildProvisioningKey(companyId, masterId);
 
+      // ── Company-level removal guard (Phase 2) ───────────────────────────────
+      // If a linked essential_sop Job exists but is archived, the company
+      // intentionally removed it from its library via removeFromCompanyLibrary.
+      // Sync must NOT recreate it (no new Job) and must NOT surface a version
+      // decision for it. The platform assignment (ProvisioningRecord) is left
+      // untouched — only a Platform Super Admin can revoke provisioning.
+      // Re-adoption is via addToCompanyLibrary, which un-archives this same Job.
+      if (existingJob?.isArchived) {
+        skipped++;
+        continue;
+      }
+
       try {
         if (!existingJob) {
           // ── Case A: Assignment exists but Company Job is missing — provision ─
