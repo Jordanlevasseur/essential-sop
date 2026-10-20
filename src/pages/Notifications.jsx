@@ -13,9 +13,6 @@ const FILTERS = [
   { id: 'account', label: 'Account' },
 ];
 
-// Notification types that are sensitive — only GM and owner see them
-const ACCOUNT_RESTRICTED_TYPES = ['subscription_status_changed', 'plan_limit_reached'];
-
 // Map type → route
 function resolveDestination(n) {
   if (!n.targetId) return null;
@@ -41,10 +38,8 @@ function relativeTime(dateStr) {
 
 export default function Notifications() {
   const navigate = useNavigate();
-  const { activeCompany, activeMembership } = useCompany();
+  const { activeCompany } = useCompany();
   const companyId = activeCompany?.id;
-  const role = activeMembership?.role;
-  const isGM = role === 'general_manager';
 
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,15 +51,13 @@ export default function Notifications() {
   }, [companyId]);
 
   const loadNotifications = async () => {
-    const user = await base44.auth.me().catch(() => null);
-    if (!user) return;
-    const data = await base44.entities.Notification.filter({ companyId, userId: user.id }, '-created_date', 50);
-    // Restrict sensitive account notifications to GM
-    const filtered = (data || []).filter(n => {
-      if (ACCOUNT_RESTRICTED_TYPES.includes(n.type) && !isGM) return false;
-      return true;
-    });
-    setNotifications(filtered);
+    try {
+      const res = await base44.functions.invoke('resolveNotifications', { action: 'list', companyId });
+      // Server already filters sensitive account notifications for non-GM.
+      setNotifications(res.data?.notifications || []);
+    } catch (_) {
+      setNotifications([]);
+    }
     setLoading(false);
   };
 
@@ -78,7 +71,7 @@ export default function Notifications() {
     const nowIso = new Date().toISOString();
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true, readAt: nowIso } : n));
     try {
-      await base44.entities.Notification.update(id, { isRead: true, readAt: nowIso });
+      await base44.functions.invoke('resolveNotifications', { action: 'mark_read', companyId, notificationId: id });
     } catch (_) {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: original.isRead, readAt: original.readAt } : n));
     }
@@ -91,7 +84,7 @@ export default function Notifications() {
     // Optimistic: mark everything read immediately.
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true, readAt: n.readAt || nowIso })));
     try {
-      await Promise.all(unread.map(n => base44.entities.Notification.update(n.id, { isRead: true, readAt: nowIso })));
+      await base44.functions.invoke('resolveNotifications', { action: 'mark_all_read', companyId });
     } catch (_) {
       // Partial failure possible — re-read the authoritative state to reconcile.
       loadNotifications();

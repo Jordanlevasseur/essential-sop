@@ -12,10 +12,12 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!activeCompany?.id) return;
     const load = async () => {
-      const user = await base44.auth.me().catch(() => null);
-      if (!user) return;
-      const data = await base44.entities.Notification.filter({ companyId: activeCompany.id, userId: user.id, isRead: false }).catch(() => []);
-      setUnread((data || []).length);
+      try {
+        const res = await base44.functions.invoke('resolveNotifications', { action: 'unread_count', companyId: activeCompany.id });
+        setUnread(res.data?.count ?? 0);
+      } catch (_) {
+        setUnread(0);
+      }
     };
     load();
     const interval = setInterval(load, 30000);
