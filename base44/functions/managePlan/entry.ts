@@ -119,7 +119,7 @@ export default async function(req) {
       companyId, actingUserId: user.id, actionType,
       previousPlan: currentPlanCode, newPlan: targetPlanCode,
       activeSeatCount: newUsage.activeSeatCount, seatLimit: newUsage.seatLimit,
-      summary: `Plan changed from ${currentPlan?.displayName || currentPlanCode} to ${targetPlan.displayName} (prototype mode, no charge).`,
+      summary: `Plan changed from ${currentPlan?.displayName || currentPlanCode} to ${targetPlan.displayName} (free beta, no charge).`,
     });
 
     console.log(`Plan changed: company=${companyId} from=${currentPlanCode} to=${targetPlanCode} by=${user.id}`);

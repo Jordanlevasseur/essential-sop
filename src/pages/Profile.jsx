@@ -155,7 +155,7 @@ export default function Profile() {
             <div className="flex-1 min-w-0">
               <p className="text-sm text-app-text">{currentPlan?.displayName || 'Subscription'}</p>
               <p className="text-xs text-app-text-muted">
-                {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Prototype' : ''}
+                {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Free during beta' : ''}
               </p>
             </div>
             <ChevronRight size={16} className="text-app-text-disabled" />

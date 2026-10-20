@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
-import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions, seatLimitLabel } from '@/lib/plans';
+import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions, seatLimitLabel, isBetaCompany } from '@/lib/plans';
 import { ArrowLeft, CreditCard, Users, ArrowUp, ArrowDown, AlertTriangle, CheckCircle2, Loader2, Info } from 'lucide-react';
 
 export default function Subscription() {
@@ -29,7 +29,7 @@ export default function Subscription() {
   const currentPlan = getPlan(currentPlanCode);
   const upgradeOptions = getUpgradeOptions(currentPlanCode);
   const downgradeOptions = getDowngradeOptions(currentPlanCode);
-  const isPrototype = activeCompany?.subscriptionStatus === 'prototype';
+  const isBeta = isBetaCompany(activeCompany);
 
   const handlePlanChange = async () => {
     if (!planAction) return;
@@ -76,12 +76,12 @@ export default function Subscription() {
 
       <div className="px-3 pt-4 pb-6 space-y-4">
 
-        {/* Prototype notice */}
-        {isPrototype && (
-          <div className="bg-app-warning-bg border border-app-warning/40 rounded-xl px-4 py-3 flex items-start gap-2">
-            <Info size={15} className="text-app-warning flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-app-warning">
-              <span className="font-semibold">Prototype billing is active.</span> No payment is currently being processed. Apple IAP and web billing are not connected.
+        {/* Free beta notice */}
+        {isBeta && (
+          <div className="bg-app-success-bg border border-app-success/30 rounded-xl px-4 py-3 flex items-start gap-2">
+            <Info size={15} className="text-app-success flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-app-success">
+              <span className="font-semibold">Free during beta.</span> No payment method required. Standard pricing applies after beta ends.
             </p>
           </div>
         )}
@@ -102,7 +102,14 @@ export default function Subscription() {
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="font-bold text-lg text-app-text">{currentPlan?.displayName || currentPlanCode}</p>
-                <p className="text-app-accent font-semibold">{formatPrice(currentPlan)}</p>
+                {isBeta ? (
+                  <>
+                    <p className="text-app-success font-semibold">$0 due during beta</p>
+                    <p className="text-xs text-app-text-muted">Standard: {formatPrice(currentPlan)} after beta</p>
+                  </>
+                ) : (
+                  <p className="text-app-accent font-semibold">{formatPrice(currentPlan)}</p>
+                )}
               </div>
               <StatusBadge status={activeCompany?.subscriptionStatus} />
             </div>
@@ -128,7 +135,7 @@ export default function Subscription() {
           <div className="h-px bg-app-divider mx-4" />
           <div className="px-4 py-3">
             <p className="text-xs text-app-text-muted">
-              <span className="font-medium">Billing source:</span> {activeCompany?.subscriptionSource === 'prototype' ? 'Prototype (no charge)' : activeCompany?.subscriptionSource || 'None'}
+              <span className="font-medium">Billing status:</span> {isBeta ? 'Free during beta — no charge' : activeCompany?.subscriptionSource || 'None'}
             </p>
           </div>
         </Section>
@@ -179,23 +186,23 @@ export default function Subscription() {
           </Section>
         )}
 
-        {/* Cancel placeholder */}
-        <Section title="Manage">
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active">
-            <CreditCard size={16} className="text-app-text-muted flex-shrink-0" />
+        {/* Billing status — informational only, no fake action buttons */}
+        <Section title="Billing Status">
+          <div className="px-4 py-3.5 flex items-start gap-3">
+            <CreditCard size={16} className="text-app-text-muted flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm text-app-text">Cancel Subscription</p>
-              <p className="text-xs text-app-text-muted">Not available in prototype mode</p>
+              <p className="text-sm text-app-text">No payment method on file</p>
+              <p className="text-xs text-app-text-muted">All plans are free during beta. No charges will be applied.</p>
             </div>
-          </button>
+          </div>
           <div className="h-px bg-app-divider mx-4" />
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-left no-select touch-active" disabled>
-            <Users size={16} className="text-app-text-disabled flex-shrink-0" />
+          <div className="px-4 py-3.5 flex items-start gap-3">
+            <Users size={16} className="text-app-text-muted flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm text-app-text-disabled">Restore Purchases</p>
-              <p className="text-xs text-app-text-muted">Apple billing not yet configured</p>
+              <p className="text-sm text-app-text">Paid billing not yet available</p>
+              <p className="text-xs text-app-text-muted">When billing is activated, you will be notified and can choose whether to subscribe.</p>
             </div>
-          </button>
+          </div>
         </Section>
 
         <button onClick={() => navigate('/plans')} className="w-full py-3 border border-app-border rounded-xl text-sm text-app-text-2 font-medium no-select touch-active">
@@ -213,7 +220,7 @@ export default function Subscription() {
               {planAction.type === 'upgrade' ? 'Upgrade to' : 'Downgrade to'} {planAction.plan.displayName}?
             </h3>
             <p className="text-sm text-app-text-2 mb-3">
-              You are changing this workspace to the <span className="font-semibold">{planAction.plan.displayName}</span> prototype plan. No payment will be processed in this test environment.
+              You are changing this workspace to the <span className="font-semibold">{planAction.plan.displayName}</span> plan. This is free during beta — no payment will be processed.
             </p>
             <div className="bg-app-elevated rounded-xl px-3 py-2 mb-4 space-y-1 text-xs text-app-text-muted">
               <p><span className="font-medium">New plan:</span> {planAction.plan.displayName}</p>
@@ -262,7 +269,7 @@ function StatBox({ label, value }) {
 
 function StatusBadge({ status }) {
   const styles = {
-    prototype: 'bg-app-warning-bg text-app-warning',
+    prototype: 'bg-app-success-bg text-app-success',
     active: 'bg-app-success-bg text-app-success',
     trialing: 'bg-app-info-bg text-app-info',
     past_due: 'bg-app-danger-bg text-app-danger',
@@ -270,7 +277,7 @@ function StatusBadge({ status }) {
     suspended: 'bg-app-danger-bg text-app-danger',
   };
   const labels = {
-    prototype: 'Prototype',
+    prototype: 'Free Beta',
     active: 'Active',
     trialing: 'Trial',
     past_due: 'Past Due',

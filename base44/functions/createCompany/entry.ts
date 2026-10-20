@@ -80,7 +80,7 @@ export default async function(req: Request): Promise<Response> {
       newPlan: planCode,
       activeSeatCount: 1,
       seatLimit: plan.seatLimit,
-      summary: `Company "${name}" created on ${plan.displayName} plan (prototype mode).`,
+      summary: `Company "${name}" created on ${plan.displayName} plan (free beta, no charge).`,
     });
 
     console.log(`Company created: id=${company.id} name="${name}" plan=${planCode} owner=${user.id}`);

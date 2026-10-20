@@ -58,7 +58,7 @@ export default function Onboarding() {
 
           <h1 className="text-2xl font-bold text-app-heading mb-1">Name your workspace</h1>
           <p className="text-sm text-app-text-2 mb-2">
-            Selected plan: <span className="font-semibold text-app-accent">{selectedPlan.displayName}</span> — {formatPrice(selectedPlan)}
+            Selected plan: <span className="font-semibold text-app-accent">{selectedPlan.displayName}</span> — Free during beta
           </p>
           <p className="text-xs text-app-text-muted mb-6">
             {seatLimitLabel(selectedPlan)}
@@ -76,9 +76,9 @@ export default function Onboarding() {
             />
             {error && <p className="text-xs text-app-danger mb-3">{error}</p>}
 
-            <div className="bg-app-warning-bg border border-app-warning/40 rounded-xl px-3 py-2 mb-4">
-              <p className="text-xs text-app-warning">
-                <span className="font-semibold">Prototype mode:</span> No payment is processed during testing.
+            <div className="bg-app-success-bg border border-app-success/30 rounded-xl px-3 py-2 mb-4">
+              <p className="text-xs text-app-success">
+                <span className="font-semibold">Free during beta.</span> No payment method required.
               </p>
             </div>
 
@@ -116,7 +116,7 @@ export default function Onboarding() {
             <Building2 size={32} className="text-app-accent" />
           </div>
           <h1 className="text-2xl font-bold text-app-heading mb-2">Choose your plan</h1>
-          <p className="text-sm text-app-text-2">Select the plan that fits your team size.</p>
+          <p className="text-sm text-app-text-2">All plans are free during beta. No payment method required.</p>
         </div>
 
         <div className="space-y-3">
@@ -137,7 +137,7 @@ export default function Onboarding() {
         )}
 
         <p className="text-xs text-app-text-muted text-center mt-6">
-          All plans run in test mode — no charges apply.
+          All plans are free during beta. Standard pricing applies after beta ends.
         </p>
 
         <button
@@ -170,7 +170,8 @@ function PlanCard({ plan, onSelect }) {
               </span>
             )}
           </div>
-          <span className="text-lg font-bold text-app-accent">{formatPrice(plan)}</span>
+          <span className="text-lg font-bold text-app-success">Free during beta</span>
+          <span className="text-xs text-app-text-muted ml-2">Standard: {formatPrice(plan)}</span>
         </div>
         <div className="text-right flex-shrink-0 ml-3">
           <div className="text-sm font-semibold text-app-text">

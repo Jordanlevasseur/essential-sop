@@ -21,7 +21,7 @@ export default function Plans() {
       </div>
 
       <div className="px-3 pt-4 pb-6 space-y-3">
-        <p className="text-sm text-app-text-2 mb-4">All plans include full job editing, uploads, and Assistant access.</p>
+        <p className="text-sm text-app-text-2 mb-4">All plans include full job editing, uploads, and Assistant access. Free during beta — no payment method required.</p>
 
         {PLANS.map(plan => {
           const isCurrent = plan.code === currentPlanCode;
@@ -47,9 +47,9 @@ export default function Plans() {
               </div>
 
               <div className="flex items-baseline gap-3 mb-2">
-                <span className="text-xl font-bold text-app-accent">{formatPrice(plan)}</span>
+                <span className="text-xl font-bold text-app-success">Free during beta</span>
                 <span className="text-sm text-app-text-muted">
-                  {seatLimitLabel(plan)}
+                  Standard: {formatPrice(plan)} · {seatLimitLabel(plan)}
                 </span>
               </div>
 
@@ -82,9 +82,9 @@ export default function Plans() {
           );
         })}
 
-        <div className="bg-app-warning-bg border border-app-warning/30 rounded-xl px-4 py-3 mt-2">
-          <p className="text-xs text-app-warning">
-            <span className="font-semibold">Prototype mode:</span> No payment is currently being processed. Billing will be connected in a future release.
+        <div className="bg-app-success-bg border border-app-success/30 rounded-xl px-4 py-3 mt-2">
+          <p className="text-xs text-app-success">
+            <span className="font-semibold">Free during beta.</span> No payment method required. Standard pricing shown above applies after beta ends.
           </p>
         </div>
       </div>
