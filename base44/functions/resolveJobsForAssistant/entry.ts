@@ -34,8 +34,8 @@ export default async function(req: Request): Promise<Response> {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { jobs, contentIndex } = await resolveAssistantContext(base44.asServiceRole, companyId);
-    return Response.json({ jobs, contentIndex });
+    const { jobs, contentIndex, resources, metrics } = await resolveAssistantContext(base44.asServiceRole, companyId);
+    return Response.json({ jobs, contentIndex, resources, metrics });
   } catch (error: any) {
     return Response.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
