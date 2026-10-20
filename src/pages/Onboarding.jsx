@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useAuth } from '@/lib/AuthContext';
@@ -9,20 +9,52 @@ import { Check, Star, Building2, Loader2, ChevronRight } from 'lucide-react';
 export default function Onboarding() {
   const { refreshCompanies } = useCompany();
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [step, setStep] = useState('plan'); // 'plan' | 'name'
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [companyName, setCompanyName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // A brand-new customer must register/sign in BEFORE creating a workspace.
+  // When an unauthenticated visitor selects a plan, we persist it and send them
+  // to /register; after auth they return here (via NoCompanyScreen) and resume
+  // at the "name" step with their plan pre-selected.
+  const PENDING_PLAN_KEY = 'esop_pending_plan';
+
+  useEffect(() => {
+    const pendingCode = sessionStorage.getItem(PENDING_PLAN_KEY);
+    if (!pendingCode) return;
+    const plan = PLANS.find(p => p.code === pendingCode);
+    if (plan) {
+      setSelectedPlan(plan);
+      setStep('name');
+    }
+  }, []);
+
   const handleSelectPlan = (plan) => {
     setSelectedPlan(plan);
+    if (!isAuthenticated) {
+      // No account yet — register/sign in first, then return to name the workspace.
+      sessionStorage.setItem(PENDING_PLAN_KEY, plan.code);
+      navigate('/register');
+      return;
+    }
     setStep('name');
   };
 
   const handleCreate = async () => {
     const trimmed = companyName.trim();
     if (!trimmed) { setError('Please enter a workspace name.'); return; }
+    // Safety net: the plan-select gate sends an unauthenticated user to /register.
+    // If we ever reach here without a session, do NOT call the backend (it
+    // requires auth and returns 401) — send the user to register instead.
+    if (!isAuthenticated) {
+      sessionStorage.setItem(PENDING_PLAN_KEY, selectedPlan.code);
+      setError('Please sign in or create an account to continue.');
+      navigate('/register');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -30,10 +62,14 @@ export default function Onboarding() {
         name: trimmed,
         planCode: selectedPlan.code,
       });
-      if (!resp.data?.success) throw new Error(resp.data?.error || 'Failed to create workspace.');
+      if (!resp.data?.success) throw new Error(resp.data?.error || 'We could not create your workspace right now.');
+      sessionStorage.removeItem(PENDING_PLAN_KEY);
       refreshCompanies();
     } catch (err) {
-      setError(err.message || 'Failed to create workspace.');
+      // Surface the backend's safe error message (err.response.data.error)
+      // instead of Axios's generic "Request failed with status code 500".
+      const backendMsg = err?.response?.data?.error || err?.data?.error;
+      setError(backendMsg || 'We could not create your workspace right now. Please try again.');
       setLoading(false);
     }
   };
@@ -42,7 +78,7 @@ export default function Onboarding() {
     return (
       <div className="min-h-screen bg-app-bg flex flex-col items-center justify-center px-4 py-8">
         <div className="w-full max-w-sm">
-          <button onClick={() => setStep('plan')} className="text-xs text-app-text-muted mb-6 flex items-center gap-1">
+          <button onClick={() => { sessionStorage.removeItem(PENDING_PLAN_KEY); setStep('plan'); }} className="text-xs text-app-text-muted mb-6 flex items-center gap-1">
             ← Back to plans
           </button>
           {!isAuthenticated && (
