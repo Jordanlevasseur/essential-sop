@@ -13,8 +13,30 @@ import { provisionCompanyLibraryCore } from '../../shared/companyLibraryProvisio
  * This function is a thin auth-and-dispatch wrapper. All provisioning logic lives
  * in the canonical provisionCompanyLibraryCore service (base44/shared/companyLibraryProvisioning.ts).
  *
- * Request payload: { companyId: string }
+ * Request payload: { companyId: string, retryInitialProvisioning?: boolean }
  * Response: ProvisionCompanyLibraryCoreResult shape with HTTP-compatible envelope.
+ *
+ * ── RETRY MODE (retryInitialProvisioning: true) ───────────────────────────────
+ * Recovers from a PARTIAL initial-provisioning failure: re-runs the COMPANY_CREATION
+ * universal seed for an EXISTING company. This is the ONLY safe recovery path when
+ * createCompany provisioned only some eligible Masters, because:
+ *   - createCompany's same-name idempotency guard returns the existing workspace
+ *     with provisioning=null (it never re-provisions).
+ *   - The default MANUAL_PLATFORM_ADMIN source uses strict customer_available
+ *     eligibility, which excludes 'internal' Masters — so it cannot recover
+ *     COMPANY_CREATION assignments.
+ *   - syncCompanyLibrary only maintains EXISTING assignments; it cannot create
+ *     missing ones.
+ *
+ * Retry guarantees (inherited from provisionCompanyLibraryCore + the canonical
+ * provisionMasterToOneCompany):
+ *   - Preserves the existing Company and GM membership (no create/delete).
+ *   - Provisions ONLY missing eligible assignments (COMPLETED records are skipped
+ *     via the deterministic-key existingRecord lookup).
+ *   - Never duplicates successful records (deterministic ESOP_PROVISION key).
+ *   - Never auto-adopts Masters into company Jobs (Phase 4: availability only).
+ *   - Reports unsuccessful assignments accurately via failedItems.
+ *   - Independent of the createCompany same-name idempotency guard.
  */
 export default async function(req: Request): Promise<Response> {
   try {
@@ -25,7 +47,7 @@ export default async function(req: Request): Promise<Response> {
 
     // ── Input validation ─────────────────────────────────────────────────────
     const body = await req.json().catch(() => ({}));
-    const { companyId } = body;
+    const { companyId, retryInitialProvisioning } = body;
 
     if (!companyId || typeof companyId !== 'string' || !companyId.trim()) {
       return Response.json({ error: 'companyId is required' }, { status: 400 });
@@ -38,10 +60,14 @@ export default async function(req: Request): Promise<Response> {
     if (!company) return Response.json({ error: 'Company not found' }, { status: 404 });
 
     // ── Delegate to canonical provisioning service ───────────────────────────
+    // retryInitialProvisioning: re-run the COMPANY_CREATION universal seed to
+    // recover missing assignments from a partial initial-provisioning failure.
+    // Default (no flag): strict MANUAL_PLATFORM_ADMIN eligibility as before.
+    const source = retryInitialProvisioning === true ? 'COMPANY_CREATION' : 'MANUAL_PLATFORM_ADMIN';
     const result = await provisionCompanyLibraryCore({
       companyId,
       initiatedByUserId: user.id,
-      source: 'MANUAL_PLATFORM_ADMIN',
+      source,
       SR,
     });
 
