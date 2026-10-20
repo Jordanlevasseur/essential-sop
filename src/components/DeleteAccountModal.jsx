@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { AlertTriangle, X, Trash2, ShieldAlert, Eye, EyeOff } from 'lucide-react';
+import { AlertTriangle, X, Trash2, ShieldAlert } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 
 const CONFIRM_WORD = 'DELETE';
 
 export default function DeleteAccountModal({ onClose }) {
-  const [step, setStep] = useState(1); // 1=info, 2=confirm, 3=reauth, 4=done
+  const [step, setStep] = useState(1); // 1=info, 2=confirm, 3=done
   const [confirmText, setConfirmText] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -17,43 +15,19 @@ export default function DeleteAccountModal({ onClose }) {
     setStep(2);
   };
 
-  const handleContinueToReauth = () => {
-    if (confirmText !== CONFIRM_WORD) return;
-    setError('');
-    setStep(3);
-  };
-
-  const handleDelete = async (method) => {
+  // ONE consistent confirmation flow for ALL users (password AND Google-only):
+  // a currently authenticated session (base44.auth.me() is required inside
+  // deleteAccount → 401 if unauthenticated) PLUS the deliberate typed DELETE
+  // word. There is NO password reentry and NO self-selected auth-provider
+  // button — a user's chosen provider label cannot reliably prove their
+  // actual login method, and offering one would let a password user bypass
+  // reauthentication by claiming "Google". This avoids the bypass, does not
+  // strand Google-only users (no password is required), and guarantees
+  // initiation requires a currently authenticated session.
+  const handleDelete = async () => {
     setError('');
     setLoading(true);
-
     try {
-      // Reauthenticate / verify identity before deleting.
-      // - Password accounts: verify the current password (reauthentication).
-      // - Google/OAuth-only accounts: no password exists, so the authenticated
-      //   session IS the identity verification. The typed DELETE word in the
-      //   previous step is the deliberate confirmation for BOTH methods.
-      //   An unauthenticated user can never reach this step (auth.me() required).
-      const userResp = await base44.auth.me();
-      if (!userResp) throw new Error('Not authenticated.');
-
-      if (method === 'password') {
-        if (!password.trim()) {
-          setError('Please enter your password to confirm your identity.');
-          setLoading(false);
-          return;
-        }
-        try {
-          await base44.auth.loginViaEmailPassword(userResp.email, password);
-        } catch {
-          setError('Incorrect password. Please try again, or use the Google sign-in option below.');
-          setLoading(false);
-          return;
-        }
-      }
-      // method === 'google': authenticated session is the verification; proceed.
-
-      // Call backend deletion function
       const resp = await base44.functions.invoke('deleteAccount', {});
 
       if (resp.data?.error === 'sole_admin' || resp.data?.error === 'already_pending') {
@@ -69,7 +43,7 @@ export default function DeleteAccountModal({ onClose }) {
       // Clear all personal localStorage data
       localStorage.clear();
 
-      setStep(4);
+      setStep(3);
 
       // Sign out after brief success display
       setTimeout(() => {
@@ -84,7 +58,7 @@ export default function DeleteAccountModal({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4" onClick={step < 4 ? onClose : undefined}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4" onClick={step < 3 ? onClose : undefined}>
       <div className="absolute inset-0 bg-black/60" />
       <div
         role="dialog"
@@ -95,7 +69,7 @@ export default function DeleteAccountModal({ onClose }) {
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        {step < 4 && (
+        {step < 3 && (
           <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-app-divider">
             <div className="flex items-center gap-2">
               <Trash2 size={18} className="text-app-danger" />
@@ -150,7 +124,7 @@ export default function DeleteAccountModal({ onClose }) {
           </div>
         )}
 
-        {/* Step 2 — Confirmation */}
+        {/* Step 2 — Confirmation (typed DELETE + delete) */}
         {step === 2 && (
           <div className="p-5">
             <div className="flex items-center gap-2 mb-4">
@@ -158,7 +132,7 @@ export default function DeleteAccountModal({ onClose }) {
               <p className="text-sm font-semibold text-app-text">Final confirmation required</p>
             </div>
             <p className="text-sm text-app-text-2 mb-5 leading-relaxed">
-              To confirm, type <span className="font-bold text-app-danger font-mono">{CONFIRM_WORD}</span> in the box below.
+              To confirm, type <span className="font-bold text-app-danger font-mono">{CONFIRM_WORD}</span> in the box below, then tap Delete My Account. Your current signed-in session is used to verify your identity.
             </p>
             <input
               value={confirmText}
@@ -169,53 +143,18 @@ export default function DeleteAccountModal({ onClose }) {
             <p className="text-xs text-app-danger mb-5 flex items-center gap-1">
               <AlertTriangle size={11} /> This action is permanent and cannot be undone.
             </p>
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2">Cancel</button>
-              <button
-                onClick={handleContinueToReauth}
-                disabled={confirmText !== CONFIRM_WORD}
-                className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3 — Reauthentication */}
-        {step === 3 && (
-          <div className="p-5">
-            <p className="text-sm text-app-text-2 mb-5 leading-relaxed">
-              For your security, verify your identity before deleting your account. Enter your password, or use the Google option below if you sign in with Google.
-            </p>
-            <div className="relative mb-2">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleDelete()}
-                placeholder="Current password"
-                className="w-full px-4 py-3 pr-11 bg-app-input border border-app-border rounded-xl text-sm text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-danger focus:ring-1 focus:ring-app-danger"
-              />
-              <button
-                onClick={() => setShowPassword(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-app-text-muted"
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
             {error && (
               <div className="flex items-start gap-2 bg-app-danger-bg border border-app-danger rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle size={14} className="text-app-danger flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-app-danger">{error}</p>
               </div>
             )}
-            <div className="flex gap-3 mt-4">
+            <div className="flex gap-3">
               <button onClick={onClose} disabled={loading} className="flex-1 py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
               <button
-                onClick={() => handleDelete('password')}
-                disabled={loading || !password.trim()}
-                className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
+                onClick={handleDelete}
+                disabled={loading || confirmText !== CONFIRM_WORD}
+                className="flex-1 py-2.5 bg-app-danger text-white rounded-xl text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Deleting...</>
@@ -224,23 +163,11 @@ export default function DeleteAccountModal({ onClose }) {
                 )}
               </button>
             </div>
-            <div className="flex items-center gap-3 my-3">
-              <div className="flex-1 h-px bg-app-divider" />
-              <span className="text-xs text-app-text-muted">or</span>
-              <div className="flex-1 h-px bg-app-divider" />
-            </div>
-            <button
-              onClick={() => handleDelete('google')}
-              disabled={loading}
-              className="w-full py-2.5 border border-app-border rounded-xl text-sm font-medium text-app-text-2 flex items-center justify-center gap-2 disabled:opacity-50 no-select touch-active"
-            >
-              I sign in with Google — continue deletion
-            </button>
           </div>
         )}
 
-        {/* Step 4 — Success */}
-        {step === 4 && (
+        {/* Step 3 — Success */}
+        {step === 3 && (
           <div className="p-6 text-center">
             <div className="w-14 h-14 bg-app-success-bg rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">✓</span>

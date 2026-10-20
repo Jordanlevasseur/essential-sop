@@ -36,8 +36,12 @@
  *     1. Go to Base44 Dashboard → Your App → Users
  *     2. Search for the user by email (stored in DeletionRequest.userEmail)
  *     3. Click "Remove User"
- *     4. Return to the DeletionRequest admin panel and mark status "Completed",
- *        set authIdentityDeletedAt to now, and add any admin notes.
+ *     4. In the DeletionRequest admin panel, click "Check Prerequisites". If it
+ *        passes, click "Mark Completed" and attest that the login identity was
+ *        removed. manageDeletionRequest (action=complete) then deletes personal
+ *        data (notifications, memberships, pending invitations) and records
+ *        authIdentityDeletedAt as the administrator's manual attestation
+ *        (Base44 exposes no API to verify identity removal).
  */
 
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';

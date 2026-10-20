@@ -83,12 +83,28 @@ export default function PrivacyPolicy() {
           <p className="mt-2 text-app-text-muted text-sm">[List specific third-party processors here after legal review.]</p>
         </Section>
 
-        <Section title="5. Data Retention">
+        <Section title="5. Data Retention & Account Deletion">
           <p>
-            We retain your personal information for as long as your account is active or as needed
-            to provide services. You may request deletion of your account and associated data at
-            any time via the App's Profile settings.
+            You may request deletion of your account at any time via Profile → Delete Account.
+            When you submit a deletion request, your session is revoked immediately and the request
+            is placed in a Pending state for administrator review.
           </p>
+          <p className="mt-2">When an administrator completes your request, Essential SOP:</p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li>Deletes your personal in-app notifications.</li>
+            <li>Revokes your company and platform memberships (your access is removed; the membership records are retained for roster and audit history).</li>
+            <li>Cancels any pending invitations sent to your email address.</li>
+            <li>Removes your login (authentication) identity via the Base44 dashboard.</li>
+          </ul>
+          <p className="mt-2">
+            Company-owned standard operating procedures, job templates, section content, resources,
+            and audit logs (activity history, edit requests, and revision records that reference your
+            account) are shared operational data and are <strong>retained</strong> as part of normal
+            business operations; they are not personal data and are not deleted with your account.
+            A completion-confirmation email is sent to your registered email address once deletion is
+            complete, because in-app notifications are no longer available.
+          </p>
+          <p className="mt-2 text-app-text-muted text-sm">[Finalize retention periods with legal counsel before publishing.]</p>
         </Section>
 
         <Section title="6. Security">
