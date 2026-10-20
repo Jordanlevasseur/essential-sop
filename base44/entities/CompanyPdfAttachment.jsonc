@@ -1,0 +1,56 @@
+{
+  "name": "CompanyPdfAttachment",
+  "type": "object",
+  "description": "Company-authorized Reference PDF attachment on a company Job. All direct client access (read/create/update/delete) is blocked via RLS \u2014 attachments are read and mutated exclusively through the resolveCompanyPdfs, manageCompanyPdf, and resolveCompanyPdfFile backend functions, which verify authenticated identity, company membership, role, parent Job ownership, and SOP visibility (not archived; for essential_sop Jobs: Published + active Master + ACTIVE platform assignment). Attachments belong to the company Job (NOT the immutable platform Master) so they survive version adoption, customization, archiving, and re-adoption. PDFs are stored privately via UploadPrivateFile; access is through short-lived signed URLs only.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "Company that owns this attachment. Derived server-side from the parent Job \u2014 never accepted from the client."
+    },
+    "jobId": {
+      "type": "string",
+      "description": "The stable company Job ID (Job.id) this PDF is attached to. For Master-derived Jobs, this is the company-owned provisioned Job, not the platform Master."
+    },
+    "title": {
+      "type": "string",
+      "description": "User-assigned display title. Defaults to a readable version of the original filename at upload time."
+    },
+    "fileUri": {
+      "type": "string",
+      "description": "Private file_uri returned by UploadPrivateFile. Used by resolveCompanyPdfFile to generate a time-limited signed URL for authorized viewing. Never exposed to the client directly."
+    },
+    "fileName": {
+      "type": "string",
+      "description": "Original filename of the uploaded PDF. Stored for reference and fallback display."
+    },
+    "fileSize": {
+      "type": "number",
+      "description": "Size of the uploaded PDF in bytes. Enforced against the documented upload-size limit."
+    },
+    "displayOrder": {
+      "type": "number",
+      "default": 0,
+      "description": "Sort order for display."
+    },
+    "createdByUserId": {
+      "type": "string",
+      "description": "userId of the GM/PM who uploaded this PDF. Set server-side from the authenticated session \u2014 never accepted from the client."
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "title",
+    "fileUri",
+    "fileName",
+    "fileSize",
+    "displayOrder",
+    "createdByUserId"
+  ]
+}

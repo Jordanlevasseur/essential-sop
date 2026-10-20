@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Plus, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import ResourceCard from './ResourceCard';
 import ResourceFormDialog from './ResourceFormDialog';
+import PdfAttachmentsSubsection from './PdfAttachmentsSubsection';
 
 /**
  * CompanyResourcesSection — company-authorized external resource links
@@ -150,6 +151,13 @@ export default function CompanyResourcesSection({ jobId }) {
             />
           ))}
         </div>
+      )}
+
+      {/* Reference PDFs — supporting PDF attachments beneath the external links.
+          Independent authorized load (resolveCompanyPdfs). canManage is shared
+          from the parent's resolveCompanyResources access check (same role gate). */}
+      {!loading && !error && (
+        <PdfAttachmentsSubsection jobId={jobId} canManage={canManage} />
       )}
 
       {showForm && (
