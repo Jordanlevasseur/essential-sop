@@ -90,6 +90,14 @@
     "lastAdoptionMutationKey": {
       "type": "string",
       "description": "Idempotency key of the last successfully completed adoptMasterVersionWithResolutions call. Stored on the Job so it survives override deletion (empty rebase scenario). Used to detect and safely replay duplicate adoption requests."
+    },
+    "sourceDocumentUri": {
+      "type": "string",
+      "description": "Private file_uri of the original document imported to create this SOP. Null for manually created or Master-derived jobs. Used by resolveSourceDocument to generate a time-limited signed URL for authorized viewing."
+    },
+    "sourceDocumentName": {
+      "type": "string",
+      "description": "Original filename of the imported source document. Null for manually created or Master-derived jobs."
     }
   },
   "required": [

@@ -19,7 +19,7 @@ import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
 import {
   Pencil, Plus, Trash2, ArrowUp, ArrowDown,
-  AlertTriangle, Sliders, Edit3,
+  AlertTriangle, Sliders, Edit3, FileText,
 } from 'lucide-react';
 import JobWorkspacePresentation from '@/components/job-workspace/JobWorkspacePresentation';
 import JobCustomizeEditor from '@/components/jobs/JobCustomizeEditor';
@@ -141,6 +141,17 @@ export default function JobDetail() {
     }));
   };
 
+  const handleViewOriginal = async () => {
+    try {
+      const res = await base44.functions.invoke('resolveSourceDocument', { jobId });
+      if (res.data?.signed_url) {
+        window.open(res.data.signed_url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      // Silently ignore — the button only appears when a source document exists
+    }
+  };
+
   const handleReorder = async (sectionType, index, dir) => {
     const items = [...(contentBySection[sectionType] || [])];
     const swap = index + dir;
@@ -206,6 +217,14 @@ export default function JobDetail() {
   const headerActions = (
     <>
       <NotificationBell />
+      {job?.sourceDocumentUri && (
+        <button
+          onClick={handleViewOriginal}
+          className="px-3 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated"
+        >
+          <FileText size={14} /> Original
+        </button>
+      )}
       {canEdit && (
         <button
           onClick={() => setEditMode(e => !e)}
