@@ -59,6 +59,8 @@ const MasterJobDetail = lazy(() => import('@/pages/platform/MasterJobDetail'));
 const CreateMasterJob = lazy(() => import('@/pages/platform/CreateMasterJob'));
 const NewMasterSopChooser = lazy(() => import('@/pages/platform/NewMasterSopChooser'));
 const AiMasterSopBuilder = lazy(() => import('@/pages/platform/AiMasterSopBuilder'));
+const CompanyMasterLibrary = lazy(() => import('@/pages/CompanyMasterLibrary'));
+const CompanyMasterPreview = lazy(() => import('@/pages/CompanyMasterPreview'));
 
 // Public authentication pages — lazy-loaded, rendered at the AuthenticatedApp
 // shell level (before the seeding/company gate) so logged-out visitors can
@@ -182,6 +184,8 @@ const SeededApp = () => {
         <Route path="/jobs/:jobId" element={<JobDetail />} />
         <Route path="/jobs/:jobId/:sectionType" element={<SectionDetail />} />
         <Route path="/create-job" element={<CreateJob />} />
+        <Route path="/company-master-library" element={<CompanyMasterLibrary />} />
+        <Route path="/company-master-library/:masterId" element={<CompanyMasterPreview />} />
       </Route>
       {/* Legal pages — accessible without the bottom nav wrapper.
           These standalone routes render outside Layout/PlatformLayout, so they

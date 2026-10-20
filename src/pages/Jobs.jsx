@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
-import { Search, SlidersHorizontal, Plus, X, ArrowUpDown, ChevronDown, Tag } from 'lucide-react';
+import { Search, SlidersHorizontal, Plus, X, ArrowUpDown, ChevronDown, Tag, Library, ChevronRight } from 'lucide-react';
 import JobCard from '@/components/jobs/JobCard';
 import FilterSheet from '@/components/jobs/FilterSheet';
 import SelectSheet from '@/components/ui/SelectSheet';
@@ -151,6 +151,22 @@ export default function Jobs() {
       <PullToRefresh onRefresh={fetchJobs} disabled={showFilters}>
         <h1 className="text-2xl font-bold text-app-heading mb-1">Company Procedures</h1>
       {activeCompany && <p className="text-xs text-app-text-muted mb-3">{activeCompany.name}</p>}
+
+      {isCompanyAdmin && (
+        <Link
+          to="/company-master-library"
+          className="flex items-center gap-3 w-full mb-3 px-3 py-3 bg-app-card border border-app-border rounded-xl no-select touch-active"
+        >
+          <div className="w-9 h-9 rounded-lg bg-app-info-bg flex items-center justify-center flex-shrink-0">
+            <Library size={18} className="text-app-accent" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold text-app-text">Master Library</p>
+            <p className="text-xs text-app-text-muted">Procedures provisioned to {activeCompany?.name}</p>
+          </div>
+          <ChevronRight size={18} className="text-app-text-muted flex-shrink-0" />
+        </Link>
+      )}
 
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1 min-w-0">
