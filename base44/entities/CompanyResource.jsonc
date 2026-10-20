@@ -1,0 +1,64 @@
+{
+  "name": "CompanyResource",
+  "type": "object",
+  "description": "Company-authorized external resource links attached to a company Job. All direct client access is blocked via RLS \u2014 resources are read and mutated exclusively through the resolveCompanyResources and manageCompanyResource backend functions, which verify authenticated identity, company membership, role, parent Job ownership, and SOP visibility. For Master-derived Jobs, resources attach to the company Job (not the immutable platform Master) so they survive version adoption, customization, archiving, and re-adoption.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "description": "Company that owns this resource. Derived server-side from the parent Job \u2014 never accepted from the client."
+    },
+    "jobId": {
+      "type": "string",
+      "description": "The stable company Job ID (Job.id) this resource is attached to. For Master-derived Jobs, this is the company-owned provisioned Job, not the platform Master."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable resource title."
+    },
+    "url": {
+      "type": "string",
+      "description": "Validated HTTPS URL. Non-HTTPS schemes (javascript:, data:, vbscript:, file:) are rejected server-side. The server never retrieves or executes the linked content."
+    },
+    "resourceType": {
+      "type": "string",
+      "enum": [
+        "youtube",
+        "manual",
+        "pdf",
+        "documentation",
+        "training",
+        "website",
+        "other"
+      ],
+      "description": "Display category for the resource link."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional human-readable description shown beneath the title."
+    },
+    "displayOrder": {
+      "type": "number",
+      "default": 0,
+      "description": "Sort order for display. Managed by the reorder action."
+    },
+    "createdByUserId": {
+      "type": "string",
+      "description": "userId of the GM/PM who created this resource. Set server-side from the authenticated session \u2014 never accepted from the client."
+    }
+  },
+  "required": [
+    "companyId",
+    "jobId",
+    "title",
+    "url",
+    "resourceType",
+    "displayOrder",
+    "createdByUserId"
+  ]
+}

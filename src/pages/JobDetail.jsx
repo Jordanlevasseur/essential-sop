@@ -30,6 +30,7 @@ import EditRequestForm from '@/components/EditRequestForm';
 import RemoveFromLibraryButton from '@/components/jobs/RemoveFromLibraryButton';
 import NotificationBell from '@/components/NotificationBell';
 import JobLoadError, { parseJobLoadError } from '@/components/jobs/JobLoadError';
+import CompanyResourcesSection from '@/components/resources/CompanyResourcesSection';
 import { useJobsListState } from '@/lib/useJobsListState';
 
 export default function JobDetail() {
@@ -299,6 +300,7 @@ export default function JobDetail() {
         renderSectionAction={renderSectionAction}
         renderItemActions={renderItemActions}
         onBack={() => navigateBackToJobs(navigate)}
+        footerSlot={<CompanyResourcesSection jobId={job.id} />}
       />
 
       {showRequestForm && job && (
