@@ -4,56 +4,86 @@ import { verifyResourceJobAccess } from '../../shared/companyResourceAuth.ts';
 /**
  * manageCompanyPdf — Authorized Reference PDF mutations (GM/PM only).
  *
+ * SECURITY MODEL (v2 — server-side upload):
+ *   The PDF file is uploaded by THIS backend function via UploadPrivateFile.
+ *   The client sends the File via multipart/form-data; the backend validates
+ *   it (PDF magic bytes, extension, size), uploads it, and stores the resulting
+ *   file_uri. The file_uri is NEVER accepted from the client — a caller cannot
+ *   attach an arbitrary private-file URI belonging to another company/context.
+ *
  * Actions:
- *   "create"  — Attach a new PDF. Client uploads via UploadPrivateFile first,
- *               then sends { fileUri, fileName, fileSize, title? }.
- *   "update"  — Edit the display title only.
- *   "replace" — Replace the underlying file (new fileUri/fileName/fileSize).
- *               Title is preserved unless a new one is provided.
- *   "delete"  — Remove the attachment.
+ *   "create"  — Attach a new PDF. Requires a File in multipart form-data.
+ *   "update"  — Edit the display title only. JSON, no file.
+ *   "replace" — Replace the underlying file. Requires a File in multipart.
+ *   "delete"  — Remove the attachment. JSON, no file.
  *
  * Authorization (server-side, on EVERY call):
  *   - Authenticated user with an ACTIVE CompanyMembership for the job's company.
  *   - Role MUST be general_manager or project_manager (verifyResourceJobAccess
  *     with requireAdmin=true).
- *   - The Job must belong to the caller's company, not be archived, and for
+ *   - Job must belong to the caller's company, not be archived, and for
  *     essential_sop jobs must be Published + active Master + ACTIVE assignment.
  *   - For update/replace/delete: the PDF must belong to the specified jobId
  *     (parent-child verification).
  *
- * companyId, jobId, createdByUserId, displayOrder are derived server-side —
- * never accepted from the client. Only title, fileUri, fileName, fileSize are
- * client-settable, and fileUri/fileName/fileSize are validated.
+ * File validation (server-side, on the actual File object — never trusting
+ * client-supplied metadata alone):
+ *   - Extension: filename must end with .pdf.
+ *   - Magic bytes: first 5 bytes must be "%PDF" (verifies actual PDF identity).
+ *   - MIME type: application/pdf when provided.
+ *   - Size: > 0 and ≤ MAX_PDF_SIZE_BYTES (25 MB), read from the File object.
  *
- * Upload limits:
- *   - File extension MUST be .pdf.
- *   - File size MUST be > 0 and ≤ MAX_PDF_SIZE_BYTES (25 MB).
+ * companyId, jobId, createdByUserId, displayOrder, fileUri, fileName, fileSize
+ * are ALL derived server-side — none are accepted from the client.
  *
- * A Reference PDF is a supporting attachment only. Uploading one does NOT
- * import it as a new SOP, change the parent SOP's instructions, trigger AI
- * processing, or create an approval workflow. Assistant 2.0 is unchanged.
+ * A Reference PDF is a supporting attachment only. It is never imported as a
+ * new SOP, does not change the parent SOP's instructions, does not trigger AI
+ * processing, and does not create an approval workflow. Assistant 2.0 unchanged.
  */
-const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB — documented upload limit
+const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
 
-const ALLOWED_PDF_FIELDS = ['title', 'fileUri', 'fileName', 'fileSize'];
-
-function sanitizePdfData(raw: any): any {
-  const out: any = {};
-  if (!raw || typeof raw !== 'object') return out;
-  for (const k of ALLOWED_PDF_FIELDS) {
-    if (raw[k] !== undefined) out[k] = raw[k];
+async function parseRequest(req: Request): Promise<any> {
+  const contentType = req.headers.get('content-type') || '';
+  if (contentType.includes('multipart/form-data')) {
+    const fd = await req.formData();
+    return {
+      action: fd.get('action'),
+      jobId: fd.get('jobId'),
+      pdfId: fd.get('pdfId'),
+      title: fd.get('title'),
+      file: fd.get('file'),
+      isMultipart: true,
+    };
   }
-  return out;
+  const body = await req.json().catch(() => ({}));
+  return { ...body, isMultipart: false };
 }
 
-function isValidPdfFile(fileName: any, fileSize: any, fileUri: any): string | null {
-  if (typeof fileUri !== 'string' || !fileUri.trim()) return 'Missing file reference.';
-  if (typeof fileName !== 'string' || !fileName.trim()) return 'Missing file name.';
-  if (!/\.pdf$/i.test(fileName.trim())) return 'Only PDF files are allowed.';
-  const size = Number(fileSize);
-  if (!Number.isFinite(size) || size <= 0) return 'Invalid file size.';
-  if (size > MAX_PDF_SIZE_BYTES) return 'PDF is larger than 25 MB.';
-  return null;
+async function validatePdfFile(file: any): Promise<{ ok: boolean; error?: string; fileName?: string; fileSize?: number }> {
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    return { ok: false, error: 'A PDF file is required.' };
+  }
+  const fileName = typeof file.name === 'string' ? file.name : '';
+  if (!fileName || !/\.pdf$/i.test(fileName)) {
+    return { ok: false, error: 'Only PDF files are allowed.' };
+  }
+  const size = typeof file.size === 'number' ? file.size : 0;
+  if (!Number.isFinite(size) || size <= 0) {
+    return { ok: false, error: 'This file is empty.' };
+  }
+  if (size > MAX_PDF_SIZE_BYTES) {
+    return { ok: false, error: 'This PDF is larger than 25 MB.' };
+  }
+  // Magic-byte check: verify the actual content is a PDF, not just the extension.
+  try {
+    const header = await file.slice(0, 5).text();
+    if (!header.startsWith('%PDF')) {
+      return { ok: false, error: 'This file is not a valid PDF.' };
+    }
+  } catch (_) {
+    return { ok: false, error: 'Could not verify this file is a PDF.' };
+  }
+  return { ok: true, fileName, fileSize: size };
 }
 
 function readableTitleFromFileName(fileName: string): string {
@@ -67,8 +97,8 @@ export default async function (req: Request): Promise<Response> {
     const user = await base44.auth.me().catch(() => null);
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const body = await req.json().catch(() => ({}));
-    const { action, jobId, pdfId, data } = body;
+    const parsed = await parseRequest(req);
+    const { action, jobId, pdfId, title, file, isMultipart } = parsed;
 
     if (!action || !jobId) {
       return Response.json({ error: 'action and jobId are required' }, { status: 400 });
@@ -82,13 +112,22 @@ export default async function (req: Request): Promise<Response> {
 
     switch (action) {
       case 'create': {
-        const sanitized = sanitizePdfData(data);
-        const fileErr = isValidPdfFile(sanitized.fileName, sanitized.fileSize, sanitized.fileUri);
-        if (fileErr) return Response.json({ error: fileErr }, { status: 400 });
+        const f = await validatePdfFile(file);
+        if (!f.ok) return Response.json({ error: f.error }, { status: 400 });
 
-        const title = (typeof sanitized.title === 'string' && sanitized.title.trim())
-          ? sanitized.title.trim()
-          : readableTitleFromFileName(sanitized.fileName);
+        // Server-side upload: the file_uri is generated here, never client-supplied.
+        let fileUri: string | null = null;
+        try {
+          const upRes = await base44.integrations.Core.UploadPrivateFile({ file });
+          fileUri = upRes?.file_uri || null;
+        } catch (_) {
+          return Response.json({ error: 'Upload failed. Please try again.' }, { status: 500 });
+        }
+        if (!fileUri) return Response.json({ error: 'Upload failed. Please try again.' }, { status: 500 });
+
+        const finalTitle = (typeof title === 'string' && title.trim())
+          ? title.trim()
+          : readableTitleFromFileName(f.fileName!);
 
         const existing = await SR.entities.CompanyPdfAttachment.filter(
           { companyId: job.companyId, jobId }, 'displayOrder', 200
@@ -96,10 +135,10 @@ export default async function (req: Request): Promise<Response> {
         const created = await SR.entities.CompanyPdfAttachment.create({
           companyId: job.companyId,
           jobId,
-          title,
-          fileUri: sanitized.fileUri,
-          fileName: sanitized.fileName.trim(),
-          fileSize: Number(sanitized.fileSize),
+          title: finalTitle,
+          fileUri,
+          fileName: f.fileName,
+          fileSize: f.fileSize,
           displayOrder: (existing || []).length,
           createdByUserId: user.id,
         });
@@ -120,14 +159,9 @@ export default async function (req: Request): Promise<Response> {
         if (!existing || existing.jobId !== jobId || existing.companyId !== job.companyId) {
           return Response.json({ error: 'PDF not found for this procedure' }, { status: 404 });
         }
-        const sanitized = sanitizePdfData(data);
-        const update: any = {};
-        if (sanitized.title !== undefined) {
-          const t = sanitized.title.toString().trim();
-          if (!t) return Response.json({ error: 'Title cannot be empty' }, { status: 400 });
-          update.title = t;
-        }
-        const updated = await SR.entities.CompanyPdfAttachment.update(pdfId, update);
+        const t = (typeof title === 'string' ? title : '').toString().trim();
+        if (!t) return Response.json({ error: 'Title cannot be empty' }, { status: 400 });
+        const updated = await SR.entities.CompanyPdfAttachment.update(pdfId, { title: t });
         return Response.json({ pdf: {
           id: updated.id,
           title: updated.title,
@@ -145,17 +179,25 @@ export default async function (req: Request): Promise<Response> {
         if (!existing || existing.jobId !== jobId || existing.companyId !== job.companyId) {
           return Response.json({ error: 'PDF not found for this procedure' }, { status: 404 });
         }
-        const sanitized = sanitizePdfData(data);
-        const fileErr = isValidPdfFile(sanitized.fileName, sanitized.fileSize, sanitized.fileUri);
-        if (fileErr) return Response.json({ error: fileErr }, { status: 400 });
+        const f = await validatePdfFile(file);
+        if (!f.ok) return Response.json({ error: f.error }, { status: 400 });
+
+        let fileUri: string | null = null;
+        try {
+          const upRes = await base44.integrations.Core.UploadPrivateFile({ file });
+          fileUri = upRes?.file_uri || null;
+        } catch (_) {
+          return Response.json({ error: 'Upload failed. Please try again.' }, { status: 500 });
+        }
+        if (!fileUri) return Response.json({ error: 'Upload failed. Please try again.' }, { status: 500 });
 
         const update: any = {
-          fileUri: sanitized.fileUri,
-          fileName: sanitized.fileName.trim(),
-          fileSize: Number(sanitized.fileSize),
+          fileUri,
+          fileName: f.fileName,
+          fileSize: f.fileSize,
         };
-        if (typeof sanitized.title === 'string' && sanitized.title.trim()) {
-          update.title = sanitized.title.trim();
+        if (typeof title === 'string' && title.trim()) {
+          update.title = title.trim();
         }
         const updated = await SR.entities.CompanyPdfAttachment.update(pdfId, update);
         return Response.json({ pdf: {

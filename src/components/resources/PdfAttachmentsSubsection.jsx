@@ -51,19 +51,28 @@ export default function PdfAttachmentsSubsection({ jobId, canManage }) {
     setSaving(true);
     setFormError('');
     try {
+      // The File (if present) is sent via multipart by the SDK. The backend
+      // validates and uploads it server-side — no client-supplied file_uri.
+      let res;
       if (editingPdf) {
-        // If a new file was provided → replace; otherwise title-only update.
-        const action = formData.fileUri ? 'replace' : 'update';
-        const res = await base44.functions.invoke('manageCompanyPdf', {
-          action, jobId, pdfId: editingPdf.id, data: formData,
+        // New file → replace; no file → title-only update.
+        const action = formData.file ? 'replace' : 'update';
+        res = await base44.functions.invoke('manageCompanyPdf', {
+          action, jobId, pdfId: editingPdf.id,
+          title: formData.title,
+          ...(formData.file ? { file: formData.file } : {}),
         });
-        if (!res.data?.pdf) throw new Error(res.data?.error || 'Save failed');
+      } else {
+        res = await base44.functions.invoke('manageCompanyPdf', {
+          action: 'create', jobId,
+          title: formData.title,
+          file: formData.file,
+        });
+      }
+      if (!res.data?.pdf) throw new Error(res.data?.error || 'Save failed');
+      if (editingPdf) {
         setPdfs(prev => prev.map(p => p.id === editingPdf.id ? res.data.pdf : p));
       } else {
-        const res = await base44.functions.invoke('manageCompanyPdf', {
-          action: 'create', jobId, data: formData,
-        });
-        if (!res.data?.pdf) throw new Error(res.data?.error || 'Upload failed');
         setPdfs(prev => [...prev, res.data.pdf]);
       }
       setShowForm(false);

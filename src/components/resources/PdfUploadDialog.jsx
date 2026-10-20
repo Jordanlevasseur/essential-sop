@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { base44 } from '@/api/base44Client';
 import { X, Loader2, Upload, FileText, AlertCircle } from 'lucide-react';
 
 /**
- * PdfUploadDialog — Upload or Replace a Reference PDF, with an editable title.
+ * PdfUploadDialog — Upload or Edit a Reference PDF, with an editable title.
  *
- * Flow:
- *   1. User picks a PDF (accept="application/pdf"). Client validates type +
- *      size (≤25 MB) before any upload.
- *   2. Upload via UploadPrivateFile (stored privately) → returns file_uri.
- *   3. Title defaults to a readable version of the filename; user may edit it.
- *   4. Save calls manageCompanyPdf (create or replace) with the file_uri.
+ * The File is sent directly to manageCompanyPdf via multipart (the SDK auto-
+ * sends multipart when a File is in the payload). The backend performs the
+ * private upload server-side — no client-supplied file_uri is ever accepted,
+ * so a caller cannot attach an arbitrary private file belonging to another
+ * context. The title defaults to a readable version of the filename and may
+ * be edited before saving.
  *
- * Shows clear uploading / saving / success / error feedback. The private
- * file_uri is sent only to the authorized manageCompanyPdf backend function.
+ * In edit (replace) mode the file is optional: picking a new file replaces the
+ * document; leaving it out keeps the existing file and edits only the title.
  */
 const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024;
 
@@ -22,12 +21,10 @@ function readableTitleFromFileName(fileName) {
   return base || 'Reference PDF';
 }
 
-export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onClose }) {
+export default function PdfUploadDialog({ pdf, saving, error, onSave, onClose }) {
   const isReplace = !!pdf;
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState(pdf?.title || '');
-  const [uploading, setUploading] = useState(false);
-  const [fileUri, setFileUri] = useState(null);
   const [localError, setLocalError] = useState('');
   const inputRef = useRef(null);
 
@@ -50,67 +47,21 @@ export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onC
     if (!title) setTitle(readableTitleFromFileName(f.name));
   };
 
-  const handleUpload = async () => {
-    if (!file) { setLocalError('Choose a PDF file first.'); return; }
-    setUploading(true);
-    setLocalError('');
-    try {
-      const res = await base44.integrations.Core.UploadPrivateFile({ file });
-      if (!res?.file_uri) throw new Error('Upload failed. Please try again.');
-      setFileUri(res.file_uri);
-    } catch (err) {
-      setLocalError(err.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // In edit (replace) mode the file is optional: picking a new file replaces
-  // the document; leaving it out keeps the existing file and edits only the
-  // title. In create mode a file is required.
   const handleSave = async () => {
     setLocalError('');
     const trimmedTitle = title.trim();
     if (!trimmedTitle) { setLocalError('Title is required.'); return; }
     if (!file && !isReplace) { setLocalError('Choose a PDF file first.'); return; }
-
-    if (file) {
-      let uri = fileUri;
-      if (!uri) {
-        setUploading(true);
-        try {
-          const res = await base44.integrations.Core.UploadPrivateFile({ file });
-          uri = res?.file_uri || null;
-          setFileUri(uri);
-        } catch (err) {
-          setUploading(false);
-          setLocalError(err.message || 'Upload failed. Please try again.');
-          return;
-        }
-        setUploading(false);
-      }
-      if (!uri) { setLocalError('Upload failed. Please try again.'); return; }
-      try {
-        await onSave({
-          fileUri: uri,
-          fileName: file.name,
-          fileSize: file.size,
-          title: trimmedTitle,
-        });
-      } catch {
-        /* parent surfaces error via prop */
-      }
-    } else {
-      // Edit mode, no new file → title-only update.
-      try {
-        await onSave({ title: trimmedTitle });
-      } catch {
-        /* parent surfaces error via prop */
-      }
+    try {
+      // Send the File (if any) + title. The backend validates and uploads.
+      // For title-only edits, no file is sent (JSON request).
+      await onSave(file ? { title: trimmedTitle, file } : { title: trimmedTitle });
+    } catch {
+      /* parent surfaces error via prop */
     }
   };
 
-  const busy = uploading || saving;
+  const busy = saving;
   const displayError = localError || error;
   const sizeText = file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : '';
   const canSubmit = isReplace || file;
@@ -131,7 +82,6 @@ export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onC
         </div>
 
         <div className="px-4 py-4 space-y-4">
-          {/* File picker */}
           <div>
             <label className="block text-sm font-medium text-app-text mb-1.5">
               PDF file{isReplace ? ' (optional — leave empty to keep current file)' : ''}
@@ -168,7 +118,6 @@ export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onC
             </button>
           </div>
 
-          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-app-text mb-1.5">Title</label>
             <input
@@ -181,12 +130,6 @@ export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onC
             <p className="text-xs text-app-text-muted mt-1">Shown beneath the PDF tile.</p>
           </div>
 
-          {/* Status / error */}
-          {uploading && (
-            <div className="flex items-center gap-2 text-sm text-app-accent">
-              <Loader2 size={14} className="animate-spin" /> Uploading...
-            </div>
-          )}
           {displayError && (
             <div className="bg-app-danger-bg border border-app-danger/30 rounded-xl px-3 py-2.5 flex items-start gap-2">
               <AlertCircle size={14} className="text-app-danger flex-shrink-0 mt-0.5" />
@@ -207,7 +150,7 @@ export default function PdfUploadDialog({ jobId, pdf, saving, error, onSave, onC
               disabled={busy || !canSubmit}
               className="flex-1 py-2.5 bg-app-accent text-app-accent-text rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {busy ? <><Loader2 size={14} className="animate-spin" /> {uploading ? 'Uploading...' : 'Saving...'}</> : 'Save'}
+              {busy ? <><Loader2 size={14} className="animate-spin" /> Uploading...</> : 'Save'}
             </button>
           </div>
         </div>
