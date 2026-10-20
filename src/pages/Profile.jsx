@@ -14,7 +14,7 @@ import {
   RefreshCw,
   ChevronDown,
 } from 'lucide-react';
-import { getPlan, formatPrice } from '@/lib/plans';
+import { getPlan, formatPrice, BETA_BILLING_ACTIVE } from '@/lib/plans';
 import { getRoleLabel } from '@/lib/roleLabels';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/jobsSort';
@@ -155,7 +155,7 @@ export default function Profile() {
             <div className="flex-1 min-w-0">
               <p className="text-sm text-app-text">{currentPlan?.displayName || 'Subscription'}</p>
               <p className="text-xs text-app-text-muted">
-                {currentPlan ? formatPrice(currentPlan) : ''}{activeCompany?.subscriptionStatus === 'prototype' ? ' · Free during beta' : ''}
+                {BETA_BILLING_ACTIVE ? 'Free during beta · No charge' : (currentPlan ? formatPrice(currentPlan) : '')}
               </p>
             </div>
             <ChevronRight size={16} className="text-app-text-disabled" />

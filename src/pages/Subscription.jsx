@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
-import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions, seatLimitLabel, isBetaCompany } from '@/lib/plans';
+import { getPlan, PLANS, formatPrice, getUpgradeOptions, getDowngradeOptions, seatLimitLabel, BETA_BILLING_ACTIVE } from '@/lib/plans';
 import { ArrowLeft, CreditCard, Users, ArrowUp, ArrowDown, AlertTriangle, CheckCircle2, Loader2, Info } from 'lucide-react';
 
 export default function Subscription() {
@@ -31,7 +31,9 @@ export default function Subscription() {
   const currentPlan = getPlan(currentPlanCode);
   const upgradeOptions = getUpgradeOptions(currentPlanCode);
   const downgradeOptions = getDowngradeOptions(currentPlanCode);
-  const isBeta = isBetaCompany(activeCompany);
+  // Global free-beta mode drives the $0 pricing display for ALL companies,
+  // including legacy ones with unset subscription fields — distinct from the
+  // company's persisted subscription status.
 
   const handlePlanChange = async () => {
     if (!planAction) return;
@@ -78,8 +80,8 @@ export default function Subscription() {
 
       <div className="px-3 pt-4 pb-6 space-y-4">
 
-        {/* Free beta notice */}
-        {isBeta && (
+        {/* Free beta notice — shown for ALL companies while global beta billing is active */}
+        {BETA_BILLING_ACTIVE && (
           <div className="bg-app-success-bg border border-app-success/30 rounded-xl px-4 py-3 flex items-start gap-2">
             <Info size={15} className="text-app-success flex-shrink-0 mt-0.5" />
             <p className="text-xs text-app-success">
@@ -104,7 +106,7 @@ export default function Subscription() {
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="font-bold text-lg text-app-text">{currentPlan?.displayName || currentPlanCode}</p>
-                {isBeta ? (
+                {BETA_BILLING_ACTIVE ? (
                   <>
                     <p className="text-app-success font-semibold">$0 due during beta</p>
                     <p className="text-xs text-app-text-muted">Standard: {formatPrice(currentPlan)} after beta</p>
@@ -137,7 +139,7 @@ export default function Subscription() {
           <div className="h-px bg-app-divider mx-4" />
           <div className="px-4 py-3">
             <p className="text-xs text-app-text-muted">
-              <span className="font-medium">Billing status:</span> {isBeta ? 'Free during beta — no charge' : activeCompany?.subscriptionSource || 'None'}
+              <span className="font-medium">Billing status:</span> {BETA_BILLING_ACTIVE ? 'Free during beta — no charge' : activeCompany?.subscriptionSource || 'None'}
             </p>
           </div>
         </Section>
