@@ -486,13 +486,14 @@ export function selectAiContext(
   const scoredSops = selectSops(knowledge, question, decision, focusJobIds, mode);
 
   if (scoredSops.length === 0) {
+    const _historyText0 = buildHistoryText(history, question);
     return {
       contextText: '(No relevant approved company SOPs were found for this question.)',
-      historyText: buildHistoryText(history, question),
+      historyText: _historyText0,
       includedSopIds: [],
       stats: {
         sopCount: 0, sectionCount: 0, itemCount: 0,
-        contextChars: 0, historyChars: 0,
+        contextChars: 0, historyChars: _historyText0.length,
         truncated: false, queryMode: mode,
         knowledgeComplete,
       },
@@ -510,13 +511,14 @@ export function selectAiContext(
   const withContent = sopContexts.filter(c => c.sections.length > 0);
 
   if (withContent.length === 0) {
+    const _historyText1 = buildHistoryText(history, question);
     return {
       contextText: '(No relevant approved company SOPs were found for this question.)',
-      historyText: buildHistoryText(history, question),
+      historyText: _historyText1,
       includedSopIds: [],
       stats: {
         sopCount: 0, sectionCount: 0, itemCount: 0,
-        contextChars: 0, historyChars: 0,
+        contextChars: 0, historyChars: _historyText1.length,
         truncated: false, queryMode: mode,
         knowledgeComplete,
       },
