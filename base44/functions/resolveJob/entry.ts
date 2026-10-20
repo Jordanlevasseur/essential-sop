@@ -97,6 +97,16 @@ async function resolveCompanyJob(job: any, SR: any, capabilities: any): Promise<
 }
 
 async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any): Promise<Response> {
+  // ── Removed/archived Master-derived Job gate ──────────────────────────────
+  // A company-removed Master SOP archives its linked Job and sets status=Draft.
+  // The Company Library list and Assistant exclude it; the direct deep link
+  // must not serve its procedural content either. Return a controlled 410
+  // before loading any Master content, sections, or overrides. Company data
+  // (Job, overrides, history) is preserved — only visibility is revoked.
+  if (job.isArchived === true || job.status !== 'Published') {
+    return Response.json({ error: 'This procedure is no longer in your active company library.', code: 'JOB_NOT_ACTIVE' }, { status: 410 });
+  }
+
   const versionId = job.sourceVersionId;
   if (!versionId) {
     return Response.json({ error: 'Provisioned job is missing a version reference.' }, { status: 409 });

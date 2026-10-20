@@ -89,7 +89,7 @@ function getCopy(errorCode) {
   if (errorCode === 'NETWORK_ERROR') return ERROR_COPY.NETWORK_ERROR;
   if (errorCode === 'TIMEOUT') return ERROR_COPY.TIMEOUT;
   if (errorCode?.startsWith('HTTP_5') || errorCode === 'SERVER_ERROR') return ERROR_COPY.SERVER_ERROR;
-  if (errorCode === 'HTTP_410' || errorCode === 'SOURCE_MASTER_UNAVAILABLE' || errorCode === 'ASSIGNMENT_REVOKED') return ERROR_COPY.UNAVAILABLE;
+  if (errorCode === 'HTTP_410' || errorCode === 'SOURCE_MASTER_UNAVAILABLE' || errorCode === 'ASSIGNMENT_REVOKED' || errorCode === 'JOB_NOT_ACTIVE') return ERROR_COPY.UNAVAILABLE;
   if (errorCode === 'INVALID_RESPONSE') return ERROR_COPY.INVALID_RESPONSE;
   return ERROR_COPY.UNKNOWN_ERROR;
 }
