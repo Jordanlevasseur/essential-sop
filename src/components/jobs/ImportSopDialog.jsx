@@ -7,9 +7,10 @@ import { Upload, FileText, X, AlertTriangle, Loader2, ClipboardPaste, ChevronRig
  * ImportSopDialog — Import an existing company document as a new SOP draft.
  *
  * Two input modes:
- *   - File: user selects a PDF/DOCX/TXT/MD file (max 10MB). The file is
- *     uploaded to private storage (UploadPrivateFile), then the file_uri is
- *     passed to the importCompanySop backend function for AI conversion.
+ *   - File: user selects a PDF/DOCX/TXT/MD file (max 10MB). The File is sent
+ *     to the importCompanySop backend function via multipart; the backend
+ *     uploads it to private storage server-side (no client-supplied file_uri)
+ *     and converts it with the AI.
  *   - Paste Text: user pastes document text directly (no file upload needed).
  *
  * If the document contains multiple separate SOPs, the backend returns the
@@ -77,44 +78,15 @@ export default function ImportSopDialog({ open, onClose, onImported }) {
     setError(null);
     setMultipleSops(null);
 
-    let fileUri = '';
-    let fileName = '';
-
-    // Upload file if in file mode
-    if (mode === 'file' && selectedFile && !sopTitle) {
-      setStage('Uploading file...');
-      try {
-        const uploadRes = await base44.integrations.Core.UploadPrivateFile({ file: selectedFile });
-        fileUri = uploadRes?.file_uri || '';
-        if (!fileUri) throw new Error('Upload failed');
-        fileName = selectedFile.name;
-      } catch (e) {
-        setError('Could not upload the file. Please try again or paste the text instead.');
-        setProcessing(false);
-        setStage('');
-        return;
-      }
-    } else if (mode === 'file' && selectedFile && sopTitle) {
-      // Re-using a previously uploaded file for a specific SOP — re-upload is
-      // simpler than caching the file_uri across the multi-SOP selection step.
-      setStage('Uploading file...');
-      try {
-        const uploadRes = await base44.integrations.Core.UploadPrivateFile({ file: selectedFile });
-        fileUri = uploadRes?.file_uri || '';
-        fileName = selectedFile.name;
-      } catch (e) {
-        setError('Could not upload the file. Please try again.');
-        setProcessing(false);
-        setStage('');
-        return;
-      }
-    }
-
-    // Call the backend import function
-    setStage('Generating draft...');
+    // Call the backend import function. In file mode the File is sent via
+    // multipart (the SDK auto-sends multipart when a File is in the payload);
+    // the backend uploads it privately server-side — no client-supplied
+    // file_uri is ever accepted. For multi-SOP re-selection the same File is
+    // re-sent (consistent with the prior re-upload behavior).
+    setStage('Importing document...');
     try {
       const payload = { action: 'generate', companyId };
-      if (fileUri) { payload.file_uri = fileUri; payload.fileName = fileName; }
+      if (mode === 'file' && selectedFile) { payload.file = selectedFile; }
       if (mode === 'text' && pastedText) { payload.pastedText = pastedText; }
       if (sopTitle) { payload.sopTitle = sopTitle; }
 
@@ -146,6 +118,8 @@ export default function ImportSopDialog({ open, onClose, onImported }) {
         setError('The document could not be converted to a valid SOP. ' + (data.details?.join(' ') || 'Please try pasting the text instead.'));
       } else if (code === 'FILE_ACCESS_FAILED') {
         setError('Could not access the uploaded file. Please try again or paste the text directly.');
+      } else if (code === 'INVALID_FILE' || code === 'NO_SOURCE' || code === 'TEXT_TOO_LONG') {
+        setError(data.error || 'Import failed. Please try again.');
       } else if (e?.response?.status === 403) {
         setError('You do not have permission to import SOPs.');
       } else {
