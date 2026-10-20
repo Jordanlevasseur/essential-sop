@@ -2,28 +2,34 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
 import { resolveCompanyKnowledge } from '../../shared/companyKnowledgeEngine.ts';
 import { routeAssistantRequest } from '../../shared/assistantRouter.ts';
 import { buildDirectAnswer } from '../../shared/directAnswerBuilder.ts';
+import { selectAiContext, ConversationMessage } from '../../shared/aiContextSelector.ts';
 
 /**
  * askAssistant — AI field-operations assistant.
  *
  * Answers a technician's question using ONLY the company's approved SOPs.
  *
- * Pipeline:
+ * Pipeline (Stage 4):
  *   1. Authorize active membership of the caller's company (data isolation).
  *   2. Reuse the shared `resolveAssistantContext` retrieval (same data the
  *      resolveJobsForAssistant resolver returns) — never the whole library.
- *   3. Score every published job against the question (title token + bigram
- *      overlap weighted heavily; content matches modestly) and select only
- *      the strongly relevant ones via a relative threshold. Follow-up
- *      `focusJobIds` are force-included so conversation context is preserved.
- *   4. If nothing relevant is found, return a plain "no SOP found" answer
- *      with NO citations (no fabrication).
- *   5. Otherwise call Core.InvokeLLM with the selected SOP context + recent
- *      conversation history, asking for a Markdown answer and the sourceIds
- *      actually used.
- *   6. Build a compact sources list from the cited SOPs only (falling back to
- *      the top relevant SOP if the model omits sourceIds), each pointing at
- *      its most relevant section.
+ *   3. Route the request via `routeAssistantRequest` (Stage 3). Direct,
+ *      clarification, and no-match routes return structured answers with
+ *      ZERO AI calls.
+ *   4. For the generative route, `selectAiContext` (Stage 4) determines WHICH
+ *      approved SOPs, sections, and content items are relevant to the
+ *      question, preserves structured metadata (safety severity, warnings,
+ *      quantities, specs, required/critical flags), and applies bounded
+ *      size controls. Focus SOPs are revalidated against the current
+ *      eligible set (stale focus silently dropped).
+ *   5. If no relevant SOP is found, return a plain "no SOP found" answer
+ *      with NO citations (no fabrication). Incomplete knowledge is reported
+ *      honestly.
+ *   6. Otherwise make ONE Core.InvokeLLM call with the intelligent context +
+ *      filtered conversation history, asking for a Markdown answer and the
+ *      sourceIds actually used.
+ *   7. Build a compact sources list from the cited SOPs only (only SOPs
+ *      included in the context can be cited — no fabricated citations).
  *
  * Request:  { companyId, question, history?: [{role,text}], focusJobIds?: string[] }
  * Response: { answer: string, sources: [{ jobId, jobTitle, sectionType, section, item }] }
@@ -37,7 +43,6 @@ const STOPWORDS = new Set([
   'please', 'tell', 'show', 'give', 'about',
 ]);
 
-const SECTION_ORDER = ['scope', 'tools', 'materials', 'procedure', 'safety', 'quality'];
 const SECTION_LABEL: Record<string, string> = {
   scope: 'Scope', tools: 'Tools', materials: 'Materials',
   procedure: 'Procedure', safety: 'Safety', quality: 'Quality Standards',
@@ -48,12 +53,15 @@ const SYSTEM_PROMPT = `You are an intelligent field-operations assistant for a r
 RULES:
 - Answer the user's actual question directly and practically. Synthesize the approved company instructions into a clear, actionable explanation.
 - For procedural questions, give enough step-by-step detail to be genuinely useful, drawn from the provided SOPs.
-- Include relevant safety precautions from the SOPs whenever applicable.
+- Include relevant safety precautions, severity levels, warnings, and required actions from the SOPs whenever applicable. NEVER omit a safety-critical detail, warning, or required action to keep the answer short.
+- Preserve documented quantities, specifications, and measurements exactly as they appear in the SOPs.
 - Use Markdown for readability: short headings (**bold** or ###), bullet lists, and numbered lists where helpful.
+- When answering about MULTIPLE SOPs (compare, contrast, overlap, how they fit together): preserve source identity. Attribute information to the SOP it comes from (e.g., "Per the Drywall Patch SOP..."). If two SOPs contain conflicting documented information, explain the discrepancy rather than silently choosing one. Do not merge differing requirements from separate SOPs into an invented universal company policy.
 - NEVER invent company-specific requirements, specs, torque values, codes, or steps that are not in the provided SOPs. Do not attribute general knowledge to a company SOP.
 - If the provided SOPs do not cover the question, say plainly that no relevant company SOP was found, then give only brief, clearly-labeled general guidance that is safe and non-company-specific.
-- For follow-up questions, use the CONVERSATION history to resolve references like "it" or "that".
-- Only cite SOPs whose content you actually used. Return their identifiers (e.g. "src-<jobId>") in "sourceIds".
+- If the context includes a NOTE about incomplete retrieval or size reduction, do not claim that a procedure or requirement definitively does not exist; say the available SOPs do not establish it.
+- For follow-up questions, use the CONVERSATION history to resolve references like "it", "that SOP", or "the other one". If the user has clearly changed the subject, do not force previous context into the answer.
+- Only cite SOPs whose content you actually used. Return their identifiers (e.g. "src-<jobId>") in "sourceIds". Never cite an SOP that was not provided in the context. Never fabricate item references.
 
 Return ONLY a JSON object: { "answer": <markdown string>, "sourceIds": [<string>, ...] }`;
 
@@ -69,62 +77,6 @@ const ANSWER_SCHEMA = {
 function tokenize(s: string): string[] {
   return (String(s || '').toLowerCase().match(/[a-z0-9]+/g) || [])
     .filter(t => t.length > 2 && !STOPWORDS.has(t));
-}
-
-function bigrams(tokens: string[]): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < tokens.length - 1; i++) out.push(`${tokens[i]} ${tokens[i + 1]}`);
-  return out;
-}
-
-function scoreJob(job: any, qTokens: string[], qBigrams: string[], items: any[]): number {
-  const title = String(job.title || '').toLowerCase();
-  const titleTokens = new Set(title.match(/[a-z0-9]+/g) || []);
-  let score = 0;
-  for (const t of qTokens) if (titleTokens.has(t)) score += 3;
-  for (const b of qBigrams) if (title.includes(b)) score += 6;
-
-  let contentHits = 0;
-  let hasContentBigram = false;
-  for (const it of items) {
-    const text = `${it.title || ''} ${it.body || ''}`.toLowerCase();
-    for (const t of qTokens) if (text.includes(t)) contentHits++;
-    for (const b of qBigrams) if (text.includes(b)) hasContentBigram = true;
-  }
-  score += Math.min(contentHits, 12);
-  if (hasContentBigram) score += 4;
-  return score;
-}
-
-function buildContextText(selected: any[], contentIndex: any[]): string {
-  const byJob: Record<string, Record<string, any[]>> = {};
-  for (const it of contentIndex) {
-    if (!byJob[it.jobId]) byJob[it.jobId] = {};
-    (byJob[it.jobId][it.sectionType] ||= []).push(it);
-  }
-  const parts: string[] = [];
-  for (const s of selected) {
-    const j = s.job;
-    const secs = byJob[j.id] || {};
-    const head = `### src-${j.id}: ${j.title}${j.trade ? ` (${j.trade})` : ''}${j.category ? ` — ${j.category}` : ''}`;
-    parts.push(head);
-    for (const st of SECTION_ORDER) {
-      const items = secs[st];
-      if (!items || items.length === 0) continue;
-      parts.push(`${SECTION_LABEL[st]}:`);
-      for (const it of items) {
-        const body = String(it.body || '').trim();
-        parts.push(body ? `- ${it.title}: ${body}` : `- ${it.title}`);
-      }
-    }
-    parts.push('');
-  }
-  return parts.join('\n');
-}
-
-function buildHistoryText(history: any[]): string {
-  if (!Array.isArray(history) || history.length === 0) return '(none)';
-  return history.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${String(m.text || '').slice(0, 800)}`).join('\n');
 }
 
 function pickBestSection(jobId: string, contentIndex: any[], qTokens: string[]): any | null {
@@ -222,46 +174,23 @@ export default async function (req: Request): Promise<Response> {
       });
     }
 
-    // ── Generative route: existing AI pipeline (same knowledge, no re-retrieval) ──
-    const itemsByJob: Record<string, any[]> = {};
-    for (const it of contentIndex) (itemsByJob[it.jobId] ||= []).push(it);
-
-    const qTokens = tokenize(question);
-    const qBigrams = bigrams(qTokens);
-
-    const scored = jobs.map((j: any) => ({
-      job: j,
-      score: scoreJob(j, qTokens, qBigrams, itemsByJob[j.id] || []),
-    }));
-
-    const maxScore = scored.reduce((m: number, s: any) => Math.max(m, s.score), 0);
-
-    let selected: any[] = [];
-    if (maxScore > 0) {
-      const threshold = Math.max(2, Math.ceil(maxScore * 0.5));
-      selected = scored
-        .filter((s: any) => s.score >= threshold)
-        .sort((a: any, b: any) => b.score - a.score)
-        .slice(0, 5);
-    }
-
-    // Follow-up context: force-include previously discussed SOPs.
-    if (focusJobIds.length > 0) {
-      const have = new Set(selected.map((s: any) => s.job.id));
-      for (const s of scored) {
-        if (focusJobIds.includes(s.job.id) && !have.has(s.job.id)) {
-          selected.push(s);
-          have.add(s.job.id);
-        }
-      }
-    }
+    // ── Generative route: Stage 4 intelligent context selection + single AI call ──
+    // The context selector determines WHICH SOPs, sections, and items are
+    // relevant, preserves structured metadata (safety severity, warnings,
+    // quantities, specs, required/critical flags), and applies bounded size
+    // controls. It reuses the same resolved knowledge — no re-retrieval, no
+    // additional AI calls for routing, summarization, or query-rewriting.
+    const {
+      contextText, historyText, includedSopIds, stats: contextStats,
+    } = selectAiContext(knowledge, question, decision, focusJobIds, history as ConversationMessage[]);
 
     // ── No relevant SOP found: plain answer, no citations, no fabrication ──
-    if (selected.length === 0) {
+    if (includedSopIds.length === 0) {
+      const noMatchAnswer = contextStats.knowledgeComplete
+        ? "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it."
+        : "I couldn't find an approved company SOP covering that in the available records. Some procedures may not be shown due to system limits.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.";
       return Response.json({
-        answer:
-          "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.",
-        sources: [], route: 'no_match',
+        answer: noMatchAnswer, sources: [], route: 'no_match',
         _routingMetrics: makeRoutingMetrics(
           'no_match', knowledge, _routeDurationMs, _totalStartTime,
           0, 0, decision.confidence, null
@@ -269,9 +198,7 @@ export default async function (req: Request): Promise<Response> {
       });
     }
 
-    // ── Build LLM context from the selected SOPs only ──
-    const contextText = buildContextText(selected, contentIndex);
-    const historyText = buildHistoryText(history);
+    // ── Build the prompt with the intelligent context ──
     const prompt =
       `${SYSTEM_PROMPT}\n\n` +
       `COMPANY SOPs (approved, use ONLY these):\n${contextText}\n\n` +
@@ -302,8 +229,10 @@ export default async function (req: Request): Promise<Response> {
       ? aiRaw.answer
       : 'The assistant could not produce an answer. Please try rephrasing your question.';
 
-    // ── Map cited sourceIds → compact sources (only SOPs actually used) ──
-    const validIds = new Set(selected.map((s: any) => s.job.id));
+    // ── Map cited sourceIds → compact sources (only SOPs included in context) ──
+    // The model can ONLY cite SOPs that were included in the context — never
+    // an SOP that was not provided. This prevents fabricated citations.
+    const validIds = new Set(includedSopIds);
     let cited: string[] = Array.isArray(aiRaw?.sourceIds)
       ? aiRaw.sourceIds
           .map((x: any) => String(x).replace(/^src-/, ''))
@@ -312,13 +241,13 @@ export default async function (req: Request): Promise<Response> {
     // De-duplicate, preserve order.
     cited = Array.from(new Set(cited));
     if (cited.length === 0) {
-      // Fallback: cite the single most relevant SOP.
-      cited = [selected[0].job.id];
+      // Fallback: cite the single most relevant included SOP.
+      cited = [includedSopIds[0]];
     }
 
+    const qTokens = tokenize(question);
     const sources = cited.map((jobId: string) => {
-      const s = selected.find((x: any) => x.job.id === jobId);
-      const job = s ? s.job : null;
+      const job = jobs.find((j: any) => j.id === jobId);
       const best = pickBestSection(jobId, contentIndex, qTokens);
       const sectionType = best?.sectionType || 'procedure';
       return {
@@ -336,6 +265,7 @@ export default async function (req: Request): Promise<Response> {
         'generative', knowledge, _routeDurationMs, _totalStartTime,
         sources.length, 1, decision.confidence, null
       ),
+      _contextStats: contextStats,
     });
   } catch (error: any) {
     return Response.json({ error: 'An unexpected error occurred.' }, { status: 500 });
