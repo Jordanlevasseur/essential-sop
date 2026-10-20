@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useCompany } from '@/lib/CompanyContext';
 import { useApp } from '@/lib/AppContext';
@@ -8,6 +9,7 @@ import { ArrowLeft, CreditCard, Users, ArrowUp, ArrowDown, AlertTriangle, CheckC
 
 export default function Subscription() {
   const navigate = useNavigate();
+  const handleBack = useSafeBack('/profile');
   const { activeCompany, refreshCompanies, activeMembership } = useCompany();
   const { isCompanyAdmin: isAdmin } = useApp();
   const [usage, setUsage] = useState(null);
@@ -71,7 +73,7 @@ export default function Subscription() {
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5">
-          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
+          <button onClick={handleBack} className="icon-btn no-select touch-active" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1">Subscription</h1>

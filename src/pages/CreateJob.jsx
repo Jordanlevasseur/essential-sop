@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
@@ -15,6 +16,7 @@ const fieldCls = 'w-full px-3 py-2.5 bg-app-input border border-app-border round
 
 export default function CreateJob() {
   const navigate = useNavigate();
+  const handleBack = useSafeBack('/');
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
   const { companyId, isCompanyAdmin } = useApp();
@@ -117,7 +119,7 @@ export default function CreateJob() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="icon-btn touch-active no-select" aria-label="Back">
+          <button onClick={handleBack} className="icon-btn touch-active no-select" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1">{editId ? 'Edit Job' : 'Create Job'}</h1>

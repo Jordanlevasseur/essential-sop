@@ -1,11 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { useCompany } from '@/lib/CompanyContext';
 import { PLANS, formatPrice, seatLimitLabel } from '@/lib/plans';
 import { ArrowLeft, Check, Star } from 'lucide-react';
 
 export default function Plans() {
   const navigate = useNavigate();
+  const handleBack = useSafeBack('/profile');
   const { activeCompany } = useCompany();
   // Conservative fallback matches the backend getSeatLimit behavior: a missing
   // plan code resolves to homeowner (1 profile), never contractor (unlimited).
@@ -15,7 +17,7 @@ export default function Plans() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5">
-          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
+          <button onClick={handleBack} className="icon-btn no-select touch-active" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text flex-1">Compare Plans</h1>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { ArrowLeft, Plus, Pencil, Trash2, ArrowUp, ArrowDown, Copy, Check, X, AlertTriangle, Info, AlertCircle, ShieldAlert, Camera, CheckCircle2, Circle } from 'lucide-react';
@@ -10,7 +11,7 @@ import AiSectionGeneratorDialog from '@/components/sections/AiSectionGeneratorDi
 
 export default function SectionDetail() {
   const { jobId, sectionType } = useParams();
-  const navigate = useNavigate();
+  const handleBack = useSafeBack(`/jobs/${jobId}`);
   const { isAdmin, session, setSessionItem, clearSessionForJob, user } = useApp();
   const [job, setJob] = useState(null);
   const [section, setSection] = useState(null);
@@ -136,7 +137,7 @@ export default function SectionDetail() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5">
-          <button onClick={() => navigate(-1)}>
+          <button onClick={handleBack}>
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <div className="flex-1 min-w-0">

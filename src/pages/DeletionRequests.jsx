@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX } from 'lucide-react';
@@ -12,6 +13,7 @@ const STATUS_STYLES = {
 
 export default function DeletionRequests() {
   const navigate = useNavigate();
+  const handleBack = useSafeBack('/profile');
   const { isPlatformSuperAdmin } = useApp();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -116,7 +118,7 @@ export default function DeletionRequests() {
     <div className="min-h-screen bg-app-bg">
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5 max-w-2xl mx-auto">
-          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
+          <button onClick={handleBack} className="icon-btn no-select touch-active" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <div className="flex-1">

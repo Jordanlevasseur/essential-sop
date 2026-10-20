@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSafeBack } from '@/lib/useSafeBack';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 
 /**
@@ -8,14 +8,14 @@ import { ArrowLeft, AlertTriangle } from 'lucide-react';
  * APP_SETTINGS.privacyPolicyUrl in src/lib/appSettings.js to point to a hosted version.
  */
 export default function PrivacyPolicy() {
-  const navigate = useNavigate();
+  const handleBack = useSafeBack('/profile');
 
   return (
     <div className="min-h-screen bg-app-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-4 py-3 flex items-center gap-3 max-w-2xl mx-auto">
-          <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
+          <button onClick={handleBack} className="icon-btn no-select touch-active" aria-label="Back">
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <h1 className="font-semibold text-app-text">Privacy Policy</h1>
