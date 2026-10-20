@@ -82,20 +82,14 @@ export default function JobDetail() {
         throw shapeErr;
       }
 
-      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr } = res.data;
+      const { job: j, sections: secs, contentBySection: cbs, capabilities: caps, override: ovr, activeGrant: grant } = res.data;
       setJob(j);
       setSections(secs || []);
       setContentBySection(cbs || {});
       setCapabilities(caps || null);
       setOverrideMeta(ovr || null);
+      setActiveGrant(grant || null);
       if (j) addRecentlyViewed(j.id, j.title);
-
-      const user = await base44.auth.me().catch(() => null);
-      if (user) {
-        const grants = await base44.entities.TemporaryEditGrant.filter({ jobId, userId: user.id, status: 'active' }).catch(() => []);
-        const valid = (grants || []).find(g => new Date(g.expiresAt) > new Date());
-        setActiveGrant(valid || null);
-      }
     } catch (err) {
       setLoadError(parseJobLoadError(err, jobId));
     } finally {
@@ -106,32 +100,29 @@ export default function JobDetail() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const assertMutationAllowed = async () => {
-    const res = await base44.functions.invoke('validateJobMutation', { jobId });
-    if (!res.data?.allowed) throw new Error(res.data?.reason || 'Mutation not permitted');
-  };
+  // All mutations go through saveSectionContent, which performs server-side
+  // authorization (GM/PM role + company isolation + Essential SOP guard) on
+  // every call. No separate validateJobMutation step is needed.
 
   const handleSaveItem = async (data) => {
     const st = editSectionType || showAddFor;
     if (!st) return;
-    await assertMutationAllowed();
-    const sectionRecord = sections.find(s => s.sectionType === st);
     if (editItem) {
-      const updated = await base44.entities.SectionContent.update(editItem.id, data);
+      const res = await base44.functions.invoke('saveSectionContent', {
+        action: 'update', jobId, sectionType: st, contentId: editItem.id, data,
+      });
+      const updated = res.data?.item;
+      if (!updated) throw new Error(res.data?.error || 'Update failed');
       setContentBySection(prev => ({
         ...prev,
         [st]: (prev[st] || []).map(i => i.id === editItem.id ? updated : i),
       }));
     } else {
-      const items = contentBySection[st] || [];
-      const created = await base44.entities.SectionContent.create({
-        ...data,
-        sectionId: sectionRecord?.id,
-        jobId,
-        sectionType: st,
-        sortOrder: items.length,
-        companyId: job?.companyId,
+      const res = await base44.functions.invoke('saveSectionContent', {
+        action: 'create', jobId, sectionType: st, data,
       });
+      const created = res.data?.item;
+      if (!created) throw new Error(res.data?.error || 'Create failed');
       setContentBySection(prev => ({ ...prev, [st]: [...(prev[st] || []), created] }));
     }
     setEditItem(null);
@@ -140,8 +131,9 @@ export default function JobDetail() {
   };
 
   const handleDelete = async (sectionType, id) => {
-    await assertMutationAllowed();
-    await base44.entities.SectionContent.delete(id);
+    await base44.functions.invoke('saveSectionContent', {
+      action: 'delete', jobId, sectionType, contentId: id,
+    });
     setContentBySection(prev => ({
       ...prev,
       [sectionType]: (prev[sectionType] || []).filter(i => i.id !== id),
@@ -149,16 +141,18 @@ export default function JobDetail() {
   };
 
   const handleReorder = async (sectionType, index, dir) => {
-    await assertMutationAllowed();
     const items = [...(contentBySection[sectionType] || [])];
     const swap = index + dir;
     if (swap < 0 || swap >= items.length) return;
     [items[index], items[swap]] = [items[swap], items[index]];
-    items.forEach((item, i) => base44.entities.SectionContent.update(item.id, { sortOrder: i }));
+    const orderedIds = items.map(i => i.id);
     setContentBySection(prev => ({
       ...prev,
       [sectionType]: items.map((item, i) => ({ ...item, sortOrder: i })),
     }));
+    await base44.functions.invoke('saveSectionContent', {
+      action: 'reorder', jobId, sectionType, orderedIds,
+    });
   };
 
   const onAdoptedVersion = (resolvedJob) => {

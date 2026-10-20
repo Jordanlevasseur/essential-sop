@@ -51,14 +51,12 @@ export default function SyncSettings() {
       if (raw) setSyncRecord(JSON.parse(raw));
     } catch {}
 
-    // Load live stats
+    // Load live stats through authorized backend function
     (async () => {
       setLoadingStats(true);
       try {
-        const [jobs] = await Promise.all([
-          base44.entities.Job.filter({ companyId, sourceType: 'essential_sop' }, '-created_date', 500),
-        ]);
-        setJobCount((jobs || []).length);
+        const res = await base44.functions.invoke('countCompanySopJobs', { companyId });
+        setJobCount(res.data?.count ?? null);
       } catch {}
       setLoadingStats(false);
     })();
@@ -83,9 +81,9 @@ export default function SyncSettings() {
       localStorage.setItem(`esop_sync_${companyId}`, JSON.stringify(record));
       setSyncRecord(record);
 
-      // Refresh job count
-      const jobs = await base44.entities.Job.filter({ companyId, sourceType: 'essential_sop' }, '-created_date', 500).catch(() => []);
-      setJobCount((jobs || []).length);
+      // Refresh job count through authorized backend function
+      const countRes = await base44.functions.invoke('countCompanySopJobs', { companyId }).catch(() => null);
+      setJobCount(countRes?.data?.count ?? jobCount);
     } catch (err) {
       setSyncError(err?.message || 'Sync failed. Please try again.');
     } finally {

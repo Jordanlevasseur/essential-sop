@@ -20,6 +20,14 @@ const PL_VISIBLE_ACTIONS = [
   'revision_submitted', 'revision_changes_requested', 'revision_rejected', 'revision_published',
 ];
 
+// Role-based filtering is now performed server-side by resolveCompanyActivity.
+// PL_VISIBLE_ACTIONS retained for reference; no longer used client-side.
+const _PL_VISIBLE_ACTIONS = [
+  'edit_request_submitted', 'edit_request_approved', 'edit_request_denied',
+  'temporary_access_granted', 'temporary_access_revoked', 'temporary_access_expired',
+  'revision_submitted', 'revision_changes_requested', 'revision_rejected', 'revision_published',
+];
+
 function relativeTime(dateStr) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -56,17 +64,14 @@ export default function ActivityHistory() {
 
   useEffect(() => {
     if (!companyId || !canView) return;
-    base44.auth.me().then(u => setCurrentUser(u)).catch(() => {});
-    Promise.all([
-      base44.entities.ActivityLog.filter({ companyId }, '-timestamp', 200),
-      base44.entities.User.list(),
-      base44.entities.Job.filter({ companyId }),
-    ]).then(([l, u, j]) => {
-      setLogs(l || []);
-      setUsers(u || []);
-      setJobs(j || []);
+    base44.functions.invoke('resolveCompanyActivity', { companyId }).then((res) => {
+      const data = res.data;
+      if (!data || data.error) { setLoading(false); return; }
+      setLogs(data.logs || []);
+      setUsers(data.users || []);
+      setJobs(data.jobs || []);
       setLoading(false);
-    });
+    }).catch(() => { setLoading(false); });
   }, [companyId, canView]);
 
   const getUser = id => users.find(u => u.id === id);
@@ -74,10 +79,6 @@ export default function ActivityHistory() {
 
   const filtered = useMemo(() => {
     let list = logs;
-
-    // Role-based filtering
-    if (isPM) list = list.filter(l => PM_VISIBLE_ACTIONS.includes(l.actionType));
-    if (isPL) list = list.filter(l => PL_VISIBLE_ACTIONS.includes(l.actionType) && l.actingUserId === currentUser?.id);
 
     // Category filter
     if (filter !== 'all') list = list.filter(l => getActivityCategory(l.actionType) === filter);
@@ -98,7 +99,7 @@ export default function ActivityHistory() {
     }
 
     return list;
-  }, [logs, filter, search, dateFrom, dateTo, isPM, isPL, currentUser]);
+  }, [logs, filter, search, dateFrom, dateTo]);
 
   if (!canView) {
     return (

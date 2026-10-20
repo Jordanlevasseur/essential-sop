@@ -41,75 +41,82 @@ export default function SectionDetail() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const updateSectionStatus = (newItems) => {
-    if (!section || !capabilities?.canChangeSectionStatus) return;
-    const status = newItems.length === 0 ? 'Empty' : newItems.length >= 4 ? 'Complete' : 'In Progress';
+  // Section status is auto-updated server-side by saveSectionContent after
+  // create/delete/replace_section/duplicate actions. We refresh the local
+  // section state from the response when needed.
+  const updateLocalSectionStatus = (itemCount) => {
+    if (!section) return;
+    const status = itemCount === 0 ? 'Empty' : itemCount >= 4 ? 'Complete' : 'In Progress';
     if (section.completionStatus !== status) {
-      base44.entities.JobSection.update(section.id, { completionStatus: status }).then(updated => setSection(updated));
+      setSection({ ...section, completionStatus: status });
     }
   };
 
-  // Backend mutation guard — second gate independent of frontend capability flags.
-  const assertMutationAllowed = async () => {
-    const res = await base44.functions.invoke('validateJobMutation', { jobId });
-    if (!res.data?.allowed) throw new Error(res.data?.reason || 'Mutation not permitted');
-  };
+  // All mutations go through saveSectionContent, which performs server-side
+  // authorization (GM/PM role + company isolation + Essential SOP guard) on
+  // every call. No separate validateJobMutation step is needed.
 
   const handleSaveItem = async (data) => {
-    await assertMutationAllowed();
     if (editItem) {
-      const updated = await base44.entities.SectionContent.update(editItem.id, data);
-      setItems(prev => { const n = prev.map(i => i.id === editItem.id ? updated : i); updateSectionStatus(n); return n; });
-    } else {
-      const created = await base44.entities.SectionContent.create({
-        ...data, sectionId: section.id, jobId, sectionType, sortOrder: items.length,
+      const res = await base44.functions.invoke('saveSectionContent', {
+        action: 'update', jobId, sectionType, contentId: editItem.id, data,
       });
-      setItems(prev => { const n = [...prev, created]; updateSectionStatus(n); return n; });
+      const updated = res.data?.item;
+      if (!updated) throw new Error(res.data?.error || 'Update failed');
+      setItems(prev => prev.map(i => i.id === editItem.id ? updated : i));
+    } else {
+      const res = await base44.functions.invoke('saveSectionContent', {
+        action: 'create', jobId, sectionType, data,
+      });
+      const created = res.data?.item;
+      if (!created) throw new Error(res.data?.error || 'Create failed');
+      setItems(prev => { const n = [...prev, created]; updateLocalSectionStatus(n.length); return n; });
     }
     setEditItem(null);
     setShowAdd(false);
   };
 
   const handleDelete = async (id) => {
-    await assertMutationAllowed();
-    await base44.entities.SectionContent.delete(id);
-    setItems(prev => { const n = prev.filter(i => i.id !== id); updateSectionStatus(n); return n; });
+    await base44.functions.invoke('saveSectionContent', {
+      action: 'delete', jobId, sectionType, contentId: id,
+    });
+    setItems(prev => { const n = prev.filter(i => i.id !== id); updateLocalSectionStatus(n.length); return n; });
   };
 
   const handleDuplicate = async (item) => {
-    await assertMutationAllowed();
-    const { id, created_date, updated_date, created_by_id, ...data } = item;
-    const created = await base44.entities.SectionContent.create({ ...data, title: `${item.title} (Copy)`, sortOrder: items.length });
+    const res = await base44.functions.invoke('saveSectionContent', {
+      action: 'duplicate', jobId, sectionType, contentId: item.id,
+    });
+    const created = res.data?.item;
+    if (!created) throw new Error(res.data?.error || 'Duplicate failed');
     setItems(prev => [...prev, created]);
   };
 
   const handleReorder = async (index, dir) => {
-    await assertMutationAllowed();
     const newItems = [...items];
     const swapIndex = index + dir;
     if (swapIndex < 0 || swapIndex >= newItems.length) return;
     [newItems[index], newItems[swapIndex]] = [newItems[swapIndex], newItems[index]];
-    newItems.forEach((item, i) => { if (item.sortOrder !== i) base44.entities.SectionContent.update(item.id, { sortOrder: i }); });
+    const orderedIds = newItems.map(i => i.id);
     setItems(newItems.map((item, i) => ({ ...item, sortOrder: i })));
+    await base44.functions.invoke('saveSectionContent', {
+      action: 'reorder', jobId, sectionType, orderedIds,
+    });
   };
 
   // AI section regenerate: backend returns items without persisting. We replace
-  // only this section's SectionContent through the existing mutation-guarded path.
+  // only this section's SectionContent through the saveSectionContent backend.
   const handleAiGenerated = async (newItems) => {
-    await assertMutationAllowed();
-    if (items.length > 0) {
-      await base44.entities.SectionContent.deleteMany({ jobId, sectionType });
-    }
-    const created = await base44.entities.SectionContent.bulkCreate(
-      newItems.map((it, i) => ({
-        companyId: job?.companyId, sectionId: section.id, jobId, sectionType,
+    const res = await base44.functions.invoke('saveSectionContent', {
+      action: 'replace_section', jobId, sectionType, items: newItems.map(it => ({
         contentType: it.contentType, title: it.title, body: it.body || '',
-        sortOrder: i, isRequired: !!it.isRequired, isCritical: !!it.isCritical, metadata: it.metadata || {},
-      }))
-    );
-    const sorted = (created || []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+        isRequired: !!it.isRequired, isCritical: !!it.isCritical, metadata: it.metadata || {},
+      })),
+    });
+    const created = res.data?.items || [];
+    const sorted = created.slice().sort((a, b) => a.sortOrder - b.sortOrder);
     setItems(sorted);
-    updateSectionStatus(sorted);
+    updateLocalSectionStatus(sorted.length);
     setShowAiGen(false);
   };
 

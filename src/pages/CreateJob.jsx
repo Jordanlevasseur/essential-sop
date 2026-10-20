@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useCompany } from '@/lib/CompanyContext';
-import { createJobWithSections } from '@/lib/seedData';
 import { ArrowLeft, Check, Eye, Save, Send, ChevronDown } from 'lucide-react';
 import { SECTION_DEFINITIONS, TRADES, CATEGORIES } from '@/lib/constants';
 import { Sparkles } from 'lucide-react';
@@ -34,10 +33,8 @@ export default function CreateJob() {
 
   useEffect(() => {
     if (editId) {
-      Promise.all([
-        base44.entities.Job.get(editId),
-        base44.entities.JobSection.filter({ jobId: editId }, 'sortOrder', 10),
-      ]).then(([j, secs]) => {
+      base44.functions.invoke('resolveCompanyJobForEdit', { jobId: editId }).then((res) => {
+        const { job: j, sections: secs } = res.data;
         setForm({
           title: j.title, shortDescription: j.shortDescription || '', trade: j.trade || '',
           category: j.category || '',
@@ -63,12 +60,17 @@ export default function CreateJob() {
     setSaving(true);
     try {
       if (jobId) {
-        await base44.entities.Job.update(jobId, { ...form, status: 'Draft' });
+        const res = await base44.functions.invoke('saveCompanyJob', {
+          action: 'save_draft', jobId, companyId, jobData: form,
+        });
+        if (res.data?.job) setJobId(res.data.job.id);
       } else {
-        const { job } = await createJobWithSections({ ...form, status: 'Draft' }, companyId);
-        setJobId(job.id);
-        const secs = await base44.entities.JobSection.filter({ jobId: job.id }, 'sortOrder', 10);
-        setSections(secs || []);
+        const res = await base44.functions.invoke('saveCompanyJob', {
+          action: 'create', companyId, jobData: { ...form, status: 'Draft' },
+        });
+        if (!res.data?.job) throw new Error(res.data?.error || 'Create failed');
+        setJobId(res.data.job.id);
+        setSections(res.data.sections || []);
       }
       setStep(2);
     } catch (e) {
@@ -83,13 +85,19 @@ export default function CreateJob() {
     setSaving(true);
     try {
       if (jobId) {
-        await base44.entities.Job.update(jobId, { ...form, status: 'Published' });
+        const res = await base44.functions.invoke('saveCompanyJob', {
+          action: 'publish', jobId, companyId, jobData: form,
+        });
+        if (res.data?.job) setJobId(res.data.job.id);
       } else {
-        const { job } = await createJobWithSections({ ...form, status: 'Published' }, companyId);
-        setJobId(job.id);
+        const res = await base44.functions.invoke('saveCompanyJob', {
+          action: 'create', companyId, jobData: { ...form, status: 'Published' },
+        });
+        if (!res.data?.job) throw new Error(res.data?.error || 'Create failed');
+        setJobId(res.data.job.id);
       }
       setShowPublishConfirm(false);
-      navigate(`/jobs/${jobId || form.id}`);
+      navigate(`/jobs/${jobId}`);
     } catch (e) {
       alert('Publish failed: ' + (e.message || 'Unknown error'));
     } finally {

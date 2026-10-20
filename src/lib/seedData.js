@@ -1,81 +1,39 @@
-import { base44 } from '@/api/base44Client';
-import { SECTION_DEFINITIONS } from './constants';
-import { demoJobs } from './demoData';
-
 /**
- * Seed demo jobs for a given companyId if none exist for that company.
+ * seedData.js — Seeding and job-creation helpers.
+ *
+ * SECURITY PHASE 2 MIGRATION:
+ *   - ensureSeeded: NO-OP. Automatic demo-data seeding for new companies has
+ *     been stopped. The existing demo company's data is preserved in the
+ *     database and is unaffected. New companies start empty.
+ *   - resetDemoData: NO-OP (safe). The previous direct-entity deleteMany +
+ *     re-seed path would fail under RLS lockdown. The Profile "Reset Demo
+ *     Data" button now simply reloads the app.
+ *   - createJobWithSections: Delegates to the saveCompanyJob backend function,
+ *     which performs server-side authorization (GM/PM role check) and creates
+ *     the Job + six JobSections through the service role.
  */
-export async function ensureSeeded(companyId) {
-  if (!companyId) return;
-  const existing = await base44.entities.Job.filter({ companyId }, '-updated_date', 5);
-  if (existing && existing.length > 0) return;
+import { base44 } from '@/api/base44Client';
 
-  for (const demoJob of demoJobs) {
-    const job = await base44.entities.Job.create({ ...demoJob.job, companyId });
-
-    const sectionsToCreate = SECTION_DEFINITIONS.map(sd => {
-      const items = demoJob.sections[sd.sectionType] || [];
-      const status = items.length === 0 ? 'Empty' : items.length >= 4 ? 'Complete' : 'In Progress';
-      return {
-        companyId,
-        jobId: job.id,
-        sectionType: sd.sectionType,
-        title: sd.title,
-        description: sd.description,
-        sortOrder: sd.sortOrder,
-        completionStatus: status,
-      };
-    });
-    const sections = await base44.entities.JobSection.bulkCreate(sectionsToCreate);
-
-    const allContent = [];
-    for (const section of sections) {
-      const items = demoJob.sections[section.sectionType] || [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        allContent.push({
-          companyId,
-          sectionId: section.id,
-          jobId: job.id,
-          sectionType: section.sectionType,
-          contentType: item.contentType,
-          title: item.title || '',
-          body: item.body || '',
-          sortOrder: item.sortOrder ?? i,
-          isRequired: item.isRequired || false,
-          isCritical: item.isCritical || false,
-          metadata: item.metadata || {},
-        });
-      }
-    }
-    if (allContent.length > 0) {
-      await base44.entities.SectionContent.bulkCreate(allContent);
-    }
-  }
+export async function ensureSeeded(_companyId) {
+  // No-op: new companies start with an empty library. The existing demo
+  // company's data is preserved in the database and is unaffected.
+  return;
 }
 
-export async function resetDemoData(companyId) {
-  if (!companyId) throw new Error('companyId required for reset');
-  await base44.entities.SectionContent.deleteMany({ companyId });
-  await base44.entities.JobSection.deleteMany({ companyId });
-  await base44.entities.Job.deleteMany({ companyId });
-  await ensureSeeded(companyId);
+export async function resetDemoData(_companyId) {
+  // No-op: the previous direct-entity deleteMany path is incompatible with
+  // RLS lockdown. The Profile page reloads the app after calling this.
+  return;
 }
 
 export async function createJobWithSections(jobData, companyId) {
-  const job = await base44.entities.Job.create({ ...jobData, companyId });
-  // Create exactly six sections — no documentation
-  const sixSections = SECTION_DEFINITIONS.filter(sd => sd.sectionType !== 'documentation');
-  const sections = await base44.entities.JobSection.bulkCreate(
-    sixSections.map(sd => ({
-      companyId,
-      jobId: job.id,
-      sectionType: sd.sectionType,
-      title: sd.title,
-      description: sd.description,
-      sortOrder: sd.sortOrder,
-      completionStatus: 'Empty',
-    }))
-  );
-  return { job, sections };
+  const res = await base44.functions.invoke('saveCompanyJob', {
+    action: 'create',
+    companyId,
+    jobData,
+  });
+  if (!res?.data?.job) {
+    throw new Error(res?.data?.error || 'Failed to create job');
+  }
+  return { job: res.data.job, sections: res.data.sections || [] };
 }

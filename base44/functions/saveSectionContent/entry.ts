@@ -83,6 +83,17 @@ export default async function (req: Request): Promise<Response> {
     const section = (sections || [])[0];
     if (!section) return Response.json({ error: 'Section not found for this job' }, { status: 404 });
 
+    // ── Helper: auto-update section completionStatus based on item count ────
+    const refreshSectionStatus = async () => {
+      const all = await SR.entities.SectionContent.filter({ jobId, sectionType }, 'sortOrder', 500);
+      const count = (all || []).length;
+      const status = count === 0 ? 'Empty' : count >= 4 ? 'Complete' : 'In Progress';
+      if (section.completionStatus !== status) {
+        await SR.entities.JobSection.update(section.id, { completionStatus: status });
+      }
+      return status;
+    };
+
     // ── Helper: verify a content item belongs to this job ────────────────────
     const verifyContentBelongsToJob = async (cid: string) => {
       const existing = await SR.entities.SectionContent.get(cid).catch(() => null);
@@ -102,6 +113,7 @@ export default async function (req: Request): Promise<Response> {
           sectionType,
           sortOrder: (existing || []).length,
         });
+        await refreshSectionStatus();
         return Response.json({ item: created });
       }
 
@@ -118,6 +130,7 @@ export default async function (req: Request): Promise<Response> {
         const existing = await verifyContentBelongsToJob(contentId);
         if (!existing) return Response.json({ error: 'Content not found in this job' }, { status: 404 });
         await SR.entities.SectionContent.delete(contentId);
+        await refreshSectionStatus();
         return Response.json({ success: true });
       }
 
@@ -132,6 +145,7 @@ export default async function (req: Request): Promise<Response> {
           title: `${existing.title} (Copy)`,
           sortOrder: (all || []).length,
         });
+        await refreshSectionStatus();
         return Response.json({ item: created });
       }
 
@@ -172,7 +186,13 @@ export default async function (req: Request): Promise<Response> {
             metadata: it.metadata || {},
           }))
         );
+        await refreshSectionStatus();
         return Response.json({ items: created });
+      }
+
+      case 'update_section_status': {
+        const status = await refreshSectionStatus();
+        return Response.json({ success: true, sectionStatus: status });
       }
 
       default:

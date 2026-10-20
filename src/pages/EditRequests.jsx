@@ -65,18 +65,14 @@ export default function EditRequests() {
 
   const loadData = async () => {
     setLoading(true);
-    const [allRequests, allRevisions, allGrants, allJobs, allUsers] = await Promise.all([
-      base44.entities.EditRequest.filter({ companyId }),
-      base44.entities.JobRevision.filter({ companyId }),
-      base44.entities.TemporaryEditGrant.filter({ companyId }),
-      base44.entities.Job.filter({ companyId }),
-      base44.entities.User.list(),
-    ]);
-    setRequests(allRequests || []);
-    setRevisions(allRevisions || []);
-    setGrants(allGrants || []);
-    setJobs(allJobs || []);
-    setUsers(allUsers || []);
+    const res = await base44.functions.invoke('resolveCompanyEditRequests', { companyId });
+    const data = res.data;
+    if (!data || data.error) { setLoading(false); return; }
+    setRequests(data.requests || []);
+    setRevisions(data.revisions || []);
+    setGrants(data.grants || []);
+    setJobs(data.jobs || []);
+    setUsers(data.users || []);
     setLoading(false);
   };
 
