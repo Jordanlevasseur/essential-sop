@@ -290,7 +290,8 @@ function formatSopBlock(
   job: any,
   knowledge: CompanyKnowledge,
   sections: string[],
-  includeResources: boolean
+  includeResources: boolean,
+  maxItemsBySection?: Record<string, number>
 ): string {
   const lines: string[] = [`=== src-${job.id}: ${job.title || ''} ===`];
 
@@ -305,8 +306,13 @@ function formatSopBlock(
   for (const st of sections) {
     const items = getSectionItems(knowledge, job.id, st);
     if (items.length === 0) continue;
+    const cap = maxItemsBySection?.[st];
+    const visible = cap != null ? items.slice(0, cap) : items;
     lines.push(`## ${SECTION_LABELS[st] || st}`);
-    items.forEach((it, i) => lines.push(formatItem(it, i, st)));
+    visible.forEach((it, i) => lines.push(formatItem(it, i, st)));
+    if (cap != null && items.length > cap) {
+      lines.push(`(${items.length - cap} additional items omitted to fit size limits)`);
+    }
     lines.push('');
   }
 
@@ -373,11 +379,12 @@ function reduceContext(
 ): { text: string; reason: string; finalContexts: SopContext[] } {
   const minSops = mode === 'comparison' ? 2 : 1;
   let contexts = sopContexts.map(c => ({ ...c, sections: [...c.sections] }));
+  let itemLimits: Record<string, number> | undefined;
 
   const build = () =>
     contexts
       .filter(c => c.sections.length > 0)
-      .map(c => formatSopBlock(c.job, knowledge, c.sections, includeResources))
+      .map(c => formatSopBlock(c.job, knowledge, c.sections, includeResources, itemLimits))
       .join('\n---\n\n');
 
   let text = build();
@@ -421,11 +428,53 @@ function reduceContext(
       .join('\n');
   }
 
-  const reason = text.length < build().length
-    ? 'Reduced non-essential sections and SOPs to fit context budget.'
-    : undefined;
+  // Pass 4: cap items per section when context still exceeds budget.
+  // Safety and scope items are NEVER capped (critical context). Procedure and
+  // other sections are capped in order from the beginning, preserving the
+  // sequential flow. An "(N additional items omitted)" note is added per
+  // capped section so the AI and user know steps were skipped.
+  if (text.length > CONTEXT_BUDGET) {
+    // Estimate average chars per item from current text
+    let totalItems = 0;
+    for (const c of contexts) {
+      for (const st of c.sections) {
+        totalItems += getSectionItems(knowledge, c.job.id, st).length;
+      }
+    }
+    const avgItemChars = totalItems > 0 ? text.length / totalItems : 500;
 
-  return { text, reason: reason || 'Context reduced to fit size budget.', finalContexts: contexts };
+    // Count uncappable items (safety + scope) and their estimated size
+    let uncappableItems = 0;
+    for (const c of contexts) {
+      for (const st of c.sections) {
+        if (st === 'safety' || st === 'scope') {
+          uncappableItems += getSectionItems(knowledge, c.job.id, st).length;
+        }
+      }
+    }
+    const uncappableChars = Math.round(uncappableItems * avgItemChars);
+    const overheadChars = contexts.length * 300; // SOP headers, section labels
+    const remainingBudget = CONTEXT_BUDGET - uncappableChars - overheadChars;
+    const maxCappableItems = Math.max(1, Math.floor(remainingBudget / Math.max(avgItemChars, 200)));
+
+    itemLimits = {};
+    for (const c of contexts) {
+      for (const st of c.sections) {
+        if (st !== 'safety' && st !== 'scope') {
+          const fullCount = getSectionItems(knowledge, c.job.id, st).length;
+          itemLimits[st] = Math.min(maxCappableItems, fullCount);
+        }
+      }
+    }
+    text = build();
+  }
+
+  const withinBudget = text.length <= CONTEXT_BUDGET;
+  const reason = withinBudget
+    ? 'Context reduced to fit size budget.'
+    : 'Context exceeds size budget; safety-critical items prioritized over procedure steps.';
+
+  return { text, reason, finalContexts: contexts };
 }
 
 // ── Conversation history ───────────────────────────────────────────────────
