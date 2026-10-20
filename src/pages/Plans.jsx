@@ -7,7 +7,9 @@ import { ArrowLeft, Check, Star } from 'lucide-react';
 export default function Plans() {
   const navigate = useNavigate();
   const { activeCompany } = useCompany();
-  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor';
+  // Conservative fallback matches the backend getSeatLimit behavior: a missing
+  // plan code resolves to homeowner (1 profile), never contractor (unlimited).
+  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'homeowner';
 
   return (
     <div className="min-h-screen bg-app-bg">

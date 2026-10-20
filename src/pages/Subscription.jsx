@@ -25,7 +25,9 @@ export default function Subscription() {
       .catch(() => setLoading(false));
   }, [activeCompany?.id]);
 
-  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'contractor';
+  // Conservative fallback matches the backend getSeatLimit behavior: a missing
+  // plan code resolves to homeowner (1 profile), never contractor (unlimited).
+  const currentPlanCode = activeCompany?.subscriptionPlanCode || 'homeowner';
   const currentPlan = getPlan(currentPlanCode);
   const upgradeOptions = getUpgradeOptions(currentPlanCode);
   const downgradeOptions = getDowngradeOptions(currentPlanCode);
