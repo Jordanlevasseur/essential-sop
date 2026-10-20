@@ -85,25 +85,22 @@ export default function PrivacyPolicy() {
 
         <Section title="5. Data Retention & Account Deletion">
           <p>
-            You may request deletion of your account at any time via Profile → Delete Account.
-            When you submit a deletion request, your session is revoked immediately and the request
-            is placed in a Pending state for administrator review.
+            You may request deletion of your account at any time via Profile → Delete Account. Any
+            authenticated user — including the sole owner of a single-person workspace — can submit a
+            request. When you submit it, your session is revoked immediately and the request is placed
+            in a Pending state for administrator review.
           </p>
+          <p className="mt-2"><strong>Workspaces:</strong> if you are the sole owner and only active member of a workspace (for example, a one-profile Homeowner workspace), the workspace is <strong>closed</strong> as part of your deletion — it is not deleted, and its standard operating procedures and records are retained. If you are the sole owner of a workspace that still has other active members, ownership must be transferred before your account can be deleted, so the workspace is not left without an owner.</p>
           <p className="mt-2">When an administrator completes your request, Essential SOP:</p>
           <ul className="list-disc pl-5 mt-2 space-y-1">
-            <li>Deletes your personal in-app notifications.</li>
-            <li>Revokes your company and platform memberships (your access is removed; the membership records are retained for roster and audit history).</li>
-            <li>Cancels any pending invitations sent to your email address.</li>
-            <li>Removes your login (authentication) identity via the Base44 dashboard.</li>
+            <li><strong>Deletes</strong> your personal in-app notifications.</li>
+            <li><strong>Revokes</strong> your company and platform memberships (access is removed; the membership records are retained for roster and audit history).</li>
+            <li><strong>Cancels</strong> any pending invitations sent to your email address.</li>
+            <li><strong>Closes</strong> any single-person workspace you owned (status set to closed; data retained).</li>
+            <li><strong>Removes</strong> your login (authentication) identity via the Base44 dashboard (manual administrator step).</li>
           </ul>
-          <p className="mt-2">
-            Company-owned standard operating procedures, job templates, section content, resources,
-            and audit logs (activity history, edit requests, and revision records that reference your
-            account) are shared operational data and are <strong>retained</strong> as part of normal
-            business operations; they are not personal data and are not deleted with your account.
-            A completion-confirmation email is sent to your registered email address once deletion is
-            complete, because in-app notifications are no longer available.
-          </p>
+          <p className="mt-2"><strong>Retained company operational records:</strong> standard operating procedures, job templates, section content, job overrides and revisions, edit requests (including the requester's reason and supporting note as part of the company's SOP-governance record), uploaded reference documents and PDFs, version-analysis/decision/deferral records, temporary edit grants, activity logs, platform audit logs, and distribution/provisioning records. These reference your account by ID or name as part of legitimate company audit and governance history; they are shared operational data, not your personal data, and are <strong>not</strong> deleted with your account.</p>
+          <p className="mt-2"><strong>Completion confirmation:</strong> we attempt to send a confirmation email to your registered address. If delivery cannot be confirmed (for example, because your login identity has already been removed or email delivery is unavailable), an administrator will inform you through an alternative verified channel and record that notification. You will not be able to sign in again after deletion.</p>
           <p className="mt-2 text-app-text-muted text-sm">[Finalize retention periods with legal counsel before publishing.]</p>
         </Section>
 

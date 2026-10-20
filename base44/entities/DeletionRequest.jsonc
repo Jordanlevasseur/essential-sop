@@ -1,7 +1,7 @@
 {
   "name": "DeletionRequest",
   "type": "object",
-  "description": "Account-deletion request record. Holds the requesting user's personal data (email, name, id). ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by the deleteAccount backend function (service role, for the authenticated requesting user) and read/processed ONLY by the resolveDeletionRequests and manageDeletionRequest backend functions, which verify an active PlatformMembership(SUPER_ADMIN) on the backend before any access. No frontend SDK call may list, read, modify, or delete these records. Existing records are preserved; only the authorized backend functions mutate them.",
+  "description": "Account-deletion request record. Holds the requesting user's personal data (email, name, id). ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by the deleteAccount backend function (service role, for the authenticated requesting user) and read/processed ONLY by the resolveDeletionRequests and manageDeletionRequest backend functions, which verify an active PlatformMembership(SUPER_ADMIN) on the backend before any access. No frontend SDK call may list, read, modify, or delete these records. Existing records are preserved; only the authorized backend functions mutate them. Four independent, distinguishable signals are tracked per request: status (Pending/Completed/Cancelled), authIdentityDeletedAt (admin's manual identity-removal attestation), appDataDeletedAt (application-data cleanup), and notificationStatus (user completion-notification delivery).",
   "rls": {
     "read": false,
     "create": false,
@@ -41,12 +41,42 @@
     "appDataDeletedAt": {
       "type": "string",
       "format": "date-time",
-      "description": "Set only when an administrator completes the deletion via manageDeletionRequest (action=complete), at which point associated personal data (notifications, memberships) is removed. Null while the request is Pending \u2014 a submitted request is not a completed deletion."
+      "description": "Set only when an administrator completes the deletion via manageDeletionRequest (action=complete), at which point associated personal data (notifications, memberships) is removed/revoked. Null while the request is Pending \u2014 a submitted request is not a completed deletion. Independent of authIdentityDeletedAt and notificationStatus."
     },
     "authIdentityDeletedAt": {
       "type": "string",
       "format": "date-time",
-      "description": "Set when an administrator completes the deletion via manageDeletionRequest, after removing the Base44 authentication identity via the Base44 Dashboard (manual, no API). Null while Pending."
+      "description": "Set when an administrator completes the deletion via manageDeletionRequest, after attesting (authIdentityRemoved: true) that the Base44 authentication identity was removed via the Base44 Dashboard (manual, no API). A manual attestation, not an automatically verified platform event. Null while Pending."
+    },
+    "notificationStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "email_sent",
+        "email_failed",
+        "admin_notified"
+      ],
+      "default": "pending",
+      "description": "Status of the deletion-COMPLETION notification to the user (independent of deletion status). 'email_sent' = the SendEmail delivery was accepted by the sending service. 'email_failed' = delivery was NOT accepted (e.g., recipient identity removed, no custom email domain); the admin must notify via an alternative verified channel and record it via record_notification. 'admin_notified' = the admin recorded an alternative-channel notification. 'pending' = no notification attempted yet."
+    },
+    "userNotifiedVia": {
+      "type": "string",
+      "description": "When notificationStatus='admin_notified', the verified channel the admin used to inform the user (e.g., 'email reply', 'phone')."
+    },
+    "userNotifiedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notificationError": {
+      "type": "string",
+      "description": "When notificationStatus='email_failed', the reason delivery was not accepted by the sending service."
+    },
+    "closedCompanyIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Company IDs that were closed (status='closed') as part of completing this deletion because the user was the sole owner and only active member of each. Company data is retained (closed, not deleted)."
     }
   },
   "required": [

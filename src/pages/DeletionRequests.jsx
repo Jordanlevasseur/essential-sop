@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
-import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX } from 'lucide-react';
 
 const STATUS_STYLES = {
   Pending:   { bg: 'bg-app-warning-bg',  border: 'border-app-warning',  text: 'text-app-warning',  icon: Clock },
@@ -15,17 +15,12 @@ export default function DeletionRequests() {
   const { isPlatformSuperAdmin } = useApp();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(null); // id of record being saved/processed
+  const [saving, setSaving] = useState(null);
   const [editNotes, setEditNotes] = useState({});
   const [actionError, setActionError] = useState('');
-  // Per-request preflight result: { canProceed, blockers }
   const [preflightCache, setPreflightCache] = useState({});
   const [preflightLoading, setPreflightLoading] = useState(null);
 
-  // Direct client access to DeletionRequest is blocked by RLS. The admin panel
-  // reads/processed exclusively through these backend-verified functions
-  // (resolveDeletionRequests / manageDeletionRequest), which check an active
-  // PlatformMembership(SUPER_ADMIN) on the backend — not a client flag.
   useEffect(() => {
     if (!isPlatformSuperAdmin) { navigate('/'); return; }
     base44.functions.invoke('resolveDeletionRequests', {})
@@ -40,7 +35,7 @@ export default function DeletionRequests() {
       const res = await base44.functions.invoke('manageDeletionRequest', { action: 'preflight', requestId: req.id });
       const data = res.data || {};
       if (data.success) {
-        setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: data.canProceed, blockers: data.blockers || [] } }));
+        setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: data.canProceed, blockers: data.blockers || [], singleOwnerCompanies: data.singleOwnerCompanies || [] } }));
       } else {
         setActionError(data.error || 'Preflight failed.');
       }
@@ -57,20 +52,13 @@ export default function DeletionRequests() {
     setActionError('');
     try {
       const action = newStatus === 'Completed' ? 'complete' : 'cancel';
-      const payload = {
-        action,
-        requestId: req.id,
-        adminNotes: editNotes[req.id] ?? req.adminNotes ?? '',
-      };
+      const payload = { action, requestId: req.id, adminNotes: editNotes[req.id] ?? req.adminNotes ?? '' };
       if (newStatus === 'Completed') payload.authIdentityRemoved = !!opts.authIdentityRemoved;
       const res = await base44.functions.invoke('manageDeletionRequest', payload);
       const data = res.data || {};
       if (!data.success) {
         setActionError(data.error || 'Failed to update request.');
-        // If completion failed on preflight, surface the blockers inline.
-        if (data.blockers) {
-          setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: false, blockers: data.blockers } }));
-        }
+        if (data.blockers) setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: false, blockers: data.blockers, singleOwnerCompanies: [] } }));
       } else if (data.request) {
         setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
         setPreflightCache(prev => { const next = { ...prev }; delete next[req.id]; return next; });
@@ -83,21 +71,34 @@ export default function DeletionRequests() {
     }
   };
 
+  const handleRecordNotification = async (req, channel) => {
+    setSaving(req.id);
+    setActionError('');
+    try {
+      const res = await base44.functions.invoke('manageDeletionRequest', { action: 'record_notification', requestId: req.id, userNotifiedVia: channel });
+      const data = res.data || {};
+      if (!data.success) {
+        setActionError(data.error || 'Failed to record notification.');
+      } else if (data.request) {
+        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
+      }
+    } catch (e) {
+      const data = e?.response?.data || e?.data || {};
+      setActionError(data.error || e?.message || 'Failed to record notification.');
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const handleNotesChange = (id, value) => setEditNotes(prev => ({ ...prev, [id]: value }));
 
   const handleSaveNotes = async (req) => {
     setSaving(req.id);
     setActionError('');
     try {
-      const res = await base44.functions.invoke('manageDeletionRequest', {
-        action: 'save_notes',
-        requestId: req.id,
-        adminNotes: editNotes[req.id] ?? req.adminNotes ?? '',
-      });
+      const res = await base44.functions.invoke('manageDeletionRequest', { action: 'save_notes', requestId: req.id, adminNotes: editNotes[req.id] ?? req.adminNotes ?? '' });
       const data = res.data || {};
-      if (data.request) {
-        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
-      }
+      if (data.request) setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
     } catch (e) {
       const data = e?.response?.data || e?.data || {};
       setActionError(data.error || 'Failed to save notes.');
@@ -113,7 +114,6 @@ export default function DeletionRequests() {
 
   return (
     <div className="min-h-screen bg-app-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      {/* Header */}
       <div className="bg-app-surface border-b border-app-border sticky top-0 z-40" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="px-3 py-2.5 flex items-center gap-2.5 max-w-2xl mx-auto">
           <button onClick={() => navigate(-1)} className="icon-btn no-select touch-active" aria-label="Back">
@@ -138,18 +138,18 @@ export default function DeletionRequests() {
           </div>
         )}
 
-        {/* How-to banner — corrected sequence: preflight FIRST, then remove identity, then attested completion */}
         <div className="flex items-start gap-3 p-4 mb-5 bg-app-info-bg border border-app-border rounded-xl">
           <Info size={16} className="text-app-info flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-app-text mb-1">Process for each Pending request</p>
             <ol className="text-xs text-app-text-2 space-y-0.5 list-decimal pl-4">
-              <li>Click <strong>Check Prerequisites</strong> on the request. Do not remove the login identity until this passes.</li>
-              <li>If prerequisites are met, go to <strong>Base44 Dashboard → Your App → Users</strong>, find the user by email, and click <strong>Remove User</strong>.</li>
-              <li>Return here, click <strong>Mark Completed</strong>, and confirm the attestation. This deletes the user's personal data (notifications, memberships, pending invitations) and records completion.</li>
+              <li>Click <strong>Check Prerequisites</strong>. A single-person workspace (sole owner, only member) will be closed automatically — only a sole GM with other active members blocks completion.</li>
+              <li>If prerequisites are met, go to <strong>Base44 Dashboard → Users</strong> and click <strong>Remove User</strong>.</li>
+              <li>Click <strong>Mark Completed</strong> and confirm the attestation. This deletes personal data and records completion.</li>
+              <li>If the completion email could not be delivered, notify the user via a verified channel and record it below the request.</li>
             </ol>
             <p className="text-xs text-app-text-muted mt-1.5">
-              Base44 does not expose a server-side API to delete auth identities or to verify their removal, so the completion timestamp is the administrator's manual attestation.
+              Base44 exposes no API to delete auth identities or verify their removal; the completion timestamp is the administrator's manual attestation.
             </p>
           </div>
         </div>
@@ -168,36 +168,20 @@ export default function DeletionRequests() {
             {pending.length > 0 && (
               <Section title={`Pending (${pending.length})`}>
                 {pending.map(req => (
-                  <RequestCard
-                    key={req.id}
-                    req={req}
-                    editNotes={editNotes}
-                    onNotesChange={handleNotesChange}
-                    onSaveNotes={handleSaveNotes}
-                    onStatusChange={handleStatusChange}
-                    onPreflight={handlePreflight}
-                    saving={saving}
-                    preflight={preflightCache[req.id]}
-                    preflightLoading={preflightLoading === req.id}
-                  />
+                  <RequestCard key={req.id} req={req} editNotes={editNotes} onNotesChange={handleNotesChange}
+                    onSaveNotes={handleSaveNotes} onStatusChange={handleStatusChange} onPreflight={handlePreflight}
+                    onRecordNotification={handleRecordNotification} saving={saving}
+                    preflight={preflightCache[req.id]} preflightLoading={preflightLoading === req.id} />
                 ))}
               </Section>
             )}
             {completed.length > 0 && (
               <Section title="Resolved">
                 {completed.map(req => (
-                  <RequestCard
-                    key={req.id}
-                    req={req}
-                    editNotes={editNotes}
-                    onNotesChange={handleNotesChange}
-                    onSaveNotes={handleSaveNotes}
-                    onStatusChange={handleStatusChange}
-                    onPreflight={handlePreflight}
-                    saving={saving}
-                    preflight={preflightCache[req.id]}
-                    preflightLoading={preflightLoading === req.id}
-                  />
+                  <RequestCard key={req.id} req={req} editNotes={editNotes} onNotesChange={handleNotesChange}
+                    onSaveNotes={handleSaveNotes} onStatusChange={handleStatusChange} onPreflight={handlePreflight}
+                    onRecordNotification={handleRecordNotification} saving={saving}
+                    preflight={preflightCache[req.id]} preflightLoading={preflightLoading === req.id} />
                 ))}
               </Section>
             )}
@@ -217,18 +201,28 @@ function Section({ title, children }) {
   );
 }
 
-function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChange, onPreflight, saving, preflight, preflightLoading }) {
+const NOTIF_LABELS = {
+  pending: { label: 'Pending', text: 'text-app-warning', bg: 'bg-app-warning-bg', icon: Clock },
+  email_sent: { label: 'Email sent', text: 'text-app-success', bg: 'bg-app-success-bg', icon: Mail },
+  email_failed: { label: 'Email failed', text: 'text-app-danger', bg: 'bg-app-danger-bg', icon: MailX },
+  admin_notified: { label: 'Admin notified', text: 'text-app-success', bg: 'bg-app-success-bg', icon: CheckCircle2 },
+};
+
+function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChange, onPreflight, onRecordNotification, saving, preflight, preflightLoading }) {
   const style = STATUS_STYLES[req.status] || STATUS_STYLES.Pending;
   const StatusIcon = style.icon;
   const isSaving = saving === req.id;
   const noteValue = editNotes[req.id] ?? req.adminNotes ?? '';
   const [confirming, setConfirming] = useState(false);
   const [attested, setAttested] = useState(false);
+  const [notifChannel, setNotifChannel] = useState('');
   const preflightClear = preflight?.canProceed === true;
+  const notif = NOTIF_LABELS[req.notificationStatus] || NOTIF_LABELS.pending;
+  const NotifIcon = notif.icon;
+  const needsNotifRecord = req.status === 'Completed' && req.notificationStatus !== 'email_sent' && req.notificationStatus !== 'admin_notified';
 
   return (
     <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
-      {/* Status bar */}
       <div className={`flex items-center gap-2 px-4 py-2 border-b ${style.bg} ${style.border}`}>
         <StatusIcon size={14} className={style.text} />
         <span className={`text-xs font-semibold ${style.text}`}>{req.status}</span>
@@ -236,14 +230,12 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
       </div>
 
       <div className="p-4 space-y-3">
-        {/* User info */}
         <div>
           <p className="text-sm font-semibold text-app-text">{req.userName || '(no name)'}</p>
           <p className="text-xs text-app-text-2 font-mono mt-0.5">{req.userEmail}</p>
           <p className="text-xs text-app-text-muted mt-0.5">User ID: {req.userId}</p>
         </div>
 
-        {/* Timestamps */}
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="bg-app-elevated rounded-lg p-2">
             <p className="text-app-text-muted mb-0.5">App data removed</p>
@@ -257,53 +249,80 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
           </div>
         </div>
 
-        {/* Admin notes */}
+        {Array.isArray(req.closedCompanyIds) && req.closedCompanyIds.length > 0 && (
+          <div className="bg-app-elevated rounded-lg p-2 text-xs text-app-text-2">
+            <span className="font-medium">Closed workspace(s): </span>{req.closedCompanyIds.join(', ')}
+          </div>
+        )}
+
         <div>
           <label className="text-xs font-semibold text-app-text-muted uppercase block mb-1">Admin Notes</label>
-          <textarea
-            rows={2}
-            value={noteValue}
-            onChange={e => onNotesChange(req.id, e.target.value)}
-            placeholder="Add notes..."
-            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent"
-          />
+          <textarea rows={2} value={noteValue} onChange={e => onNotesChange(req.id, e.target.value)} placeholder="Add notes..."
+            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
         </div>
 
-        {/* Preflight section — Pending only */}
         {req.status === 'Pending' && (
           <div className="border-t border-app-divider pt-3 space-y-2">
             <p className="text-xs font-semibold text-app-text-muted uppercase">Step 1 — Check prerequisites</p>
-            <button
-              onClick={() => onPreflight(req)}
-              disabled={preflightLoading}
-              className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50 flex items-center gap-1"
-            >
+            <button onClick={() => onPreflight(req)} disabled={preflightLoading}
+              className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">
               {preflightLoading ? 'Checking…' : 'Check Prerequisites'}
             </button>
             {preflight && !preflight.canProceed && (
               <div className="bg-app-danger-bg border border-app-danger rounded-lg p-2 space-y-1">
                 {preflight.blockers.map((b, i) => (
-                  <p key={i} className="text-xs text-app-danger flex items-start gap-1">
-                    <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{b.message}
-                  </p>
+                  <p key={i} className="text-xs text-app-danger flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{b.message}</p>
                 ))}
               </div>
             )}
             {preflightClear && (
               <>
-                <p className="text-xs text-app-success flex items-center gap-1">
-                  <CheckCircle2 size={12} /> Prerequisites met. Proceed to Step 2.
-                </p>
+                <p className="text-xs text-app-success flex items-center gap-1"><CheckCircle2 size={12} /> Prerequisites met. Proceed to Step 2.</p>
+                {preflight.singleOwnerCompanies?.length > 0 && (
+                  <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2">
+                    <span className="font-semibold text-app-text">Will close single-person workspace(s): </span>
+                    {preflight.singleOwnerCompanies.map(c => c.companyName).join(', ')}. Data is retained (closed, not deleted).
+                  </div>
+                )}
                 <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2 leading-relaxed">
                   <p className="font-semibold text-app-text mb-1">Step 2 — Remove login identity</p>
-                  Go to <strong>Base44 Dashboard → Your App → Users</strong>, find this user by email, and click <strong>Remove User</strong>. Then return here and click Mark Completed.
+                  Go to <strong>Base44 Dashboard → Users</strong>, find this user by email, and click <strong>Remove User</strong>. Then return here and click Mark Completed.
                 </div>
               </>
             )}
           </div>
         )}
 
-        {/* Actions */}
+        {/* Completion notification (Completed requests) */}
+        {req.status === 'Completed' && (
+          <div className="border-t border-app-divider pt-3 space-y-2">
+            <p className="text-xs font-semibold text-app-text-muted uppercase">Completion notification</p>
+            <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${notif.bg} w-fit`}>
+              <NotifIcon size={13} className={notif.text} />
+              <span className={`text-xs font-medium ${notif.text}`}>{notif.label}</span>
+              {req.userNotifiedVia && <span className="text-xs text-app-text-muted">· {req.userNotifiedVia}</span>}
+            </div>
+            {req.notificationStatus === 'email_failed' && req.notificationError && (
+              <p className="text-xs text-app-danger">Delivery not accepted: {req.notificationError}</p>
+            )}
+            {needsNotifRecord && (
+              <div className="space-y-2">
+                <p className="text-xs text-app-text-2 leading-relaxed">
+                  Email delivery was not confirmed. Contact the user via a verified channel (e.g., reply to their request, phone) and record how you notified them.
+                </p>
+                <div className="flex gap-2">
+                  <input value={notifChannel} onChange={e => setNotifChannel(e.target.value)} placeholder="e.g., email reply, phone"
+                    className="flex-1 px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
+                  <button onClick={() => { if (notifChannel.trim()) onRecordNotification(req, notifChannel.trim()); }} disabled={isSaving || !notifChannel.trim()}
+                    className="px-3 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold disabled:opacity-50">
+                    {isSaving ? 'Saving…' : 'Record'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 flex-wrap">
           {noteValue !== (req.adminNotes ?? '') && (
             <button onClick={() => onSaveNotes(req)} disabled={isSaving}
@@ -314,55 +333,33 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
           {req.status === 'Pending' && (
             <>
               {!confirming ? (
-                <button
-                  onClick={() => setConfirming(true)}
-                  disabled={isSaving || !preflightClear}
-                  className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1"
-                >
+                <button onClick={() => setConfirming(true)} disabled={isSaving || !preflightClear}
+                  className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
                   <CheckCircle2 size={12} /> Mark Completed
                 </button>
               ) : (
                 <div className="w-full space-y-2 border border-app-success rounded-lg p-2.5 bg-app-success-bg">
                   <label className="flex items-start gap-2 text-xs text-app-text">
-                    <input
-                      type="checkbox"
-                      checked={attested}
-                      onChange={e => setAttested(e.target.checked)}
-                      className="mt-0.5"
-                    />
+                    <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} className="mt-0.5" />
                     <span>I confirm I have removed the user's login identity in the Base44 Dashboard.</span>
                   </label>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => { setConfirming(false); setAttested(false); }}
-                      disabled={isSaving}
-                      className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => onStatusChange(req, 'Completed', { authIdentityRemoved: true })}
-                      disabled={isSaving || !attested}
-                      className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1"
-                    >
+                    <button onClick={() => { setConfirming(false); setAttested(false); }} disabled={isSaving}
+                      className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
+                    <button onClick={() => onStatusChange(req, 'Completed', { authIdentityRemoved: true })} disabled={isSaving || !attested}
+                      className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
                       {isSaving ? 'Completing…' : 'Confirm Completion'}
                     </button>
                   </div>
                 </div>
               )}
-              <button
-                onClick={() => onStatusChange(req, 'Cancelled')}
-                disabled={isSaving}
-                className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-muted disabled:opacity-50"
-              >
-                Cancel Request
-              </button>
+              <button onClick={() => onStatusChange(req, 'Cancelled')} disabled={isSaving}
+                className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-muted disabled:opacity-50">Cancel Request</button>
             </>
           )}
           {req.status === 'Completed' && (
             <span className="text-xs text-app-success flex items-center gap-1">
-              <CheckCircle2 size={12} /> Fully resolved
-              {req.completedAt && ` · ${new Date(req.completedAt).toLocaleDateString()}`}
+              <CheckCircle2 size={12} /> Fully resolved{req.completedAt && ` · ${new Date(req.completedAt).toLocaleDateString()}`}
             </span>
           )}
         </div>
