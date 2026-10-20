@@ -20,6 +20,7 @@ import {
   CompanyKnowledge,
   findSopByJobId,
   SECTION_LABELS,
+  SYNONYM_MAP,
 } from './companyKnowledgeEngine.ts';
 
 export type RouteKind = 'direct' | 'generative' | 'no_match' | 'clarification';
@@ -86,6 +87,22 @@ const LISTING_WORDS = new Set([
 ]);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * normalizeQuery — replace synonym variants with their canonical form so
+ * "sheetrock" matches "drywall" titles, "boiler" matches "water heater", etc.
+ * Conservative: only replaces exact term matches found in SYNONYM_MAP.
+ */
+function normalizeQuery(q: string): string {
+  let result = q.toLowerCase();
+  for (const [term, syns] of Object.entries(SYNONYM_MAP)) {
+    const canonical = syns[0];
+    if (term === canonical) continue;
+    const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+    result = result.replace(re, canonical);
+  }
+  return result;
+}
 
 function hasWord(text: string, word: string): boolean {
   const re = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
@@ -202,16 +219,29 @@ function detectTradeListing(
 }
 
 /**
+ * Generic construction-title process words. These appear across many SOP titles
+ * (Fence Repair, Siding Repair, Deck Stair Repair, ...) and don't distinguish
+ * one SOP from another. Filter them from the significant-title-token set so a
+ * query for "sheetrock repair" matches "Drywall Patch and Repair" via "drywall"
+ * rather than tying with "Fence Repair" on the generic word "repair".
+ */
+const TITLE_STOPWORDS = new Set([
+  'repair', 'replacement', 'installation', 'inspection',
+  'and', 'the', 'for', 'of', 'in', 'on', 'at', 'to', 'a', 'an',
+]);
+
+/**
  * Score how well a question references a job title. Returns 0..1.
  * 1.0 = full title substring in question. Lower = partial token overlap.
+ * Synonym-normalized + generic process words filtered from title tokens.
  */
 function titleMatchScore(question: string, jobTitle: string): number {
-  const q = question.toLowerCase();
+  const q = normalizeQuery(question.toLowerCase());
   const title = (jobTitle || '').toLowerCase().trim();
   if (!title) return 0;
   if (q.includes(title)) return 1.0;
   const titleTokens = title.match(/[a-z0-9]+/g) || [];
-  const significant = titleTokens.filter(t => t.length > 2);
+  const significant = titleTokens.filter(t => t.length > 2 && !TITLE_STOPWORDS.has(t));
   if (significant.length === 0) return 0;
   let hits = 0;
   for (const t of significant) {
