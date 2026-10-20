@@ -3,7 +3,7 @@ import {
   sanitizeStoredOverride,
   buildResolvedItems,
 } from './overrideSchema.js';
-import { loadActiveAssignmentMasterIds } from './activeCompanyContent.ts';
+import { loadActiveAssignmentMasterIdsWithMetrics } from './activeCompanyContent.ts';
 
 /**
  * resolveAssistantContext — shared retrieval for the Assistant.
@@ -49,7 +49,8 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   // orphaned jobs whose Master was deleted/archived. This is the EXCLUSIVE
   // source for the AI Assistant — there is no Master Library fallback.
   // See activeCompanyContent.ts for the authoritative rule.
-  const activeMasterIds = await loadActiveAssignmentMasterIds(SR, companyId);
+  const { masterIds: activeMasterIds, hasMore: _provisioningHasMore } = await loadActiveAssignmentMasterIdsWithMetrics(SR, companyId);
+  if (_provisioningHasMore) _errors.push('ProvisioningRecord query limit (500) reached — some assignments may be omitted.');
   const _masterIds = Array.from(new Set(sopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
   const _masterCache: Record<string, any> = {};
   await Promise.all(_masterIds.map(async (mid: string) => {
@@ -187,7 +188,7 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
     _errors.push('CompanyResource retrieval failed — resources omitted.');
   }
 
-  const _complete = !_jobsHasMore && !_contentHasMore && !_overridesHasMore && !_resourcesHasMore;
+  const _complete = !_jobsHasMore && !_contentHasMore && !_overridesHasMore && !_resourcesHasMore && !_provisioningHasMore;
 
   const metrics = {
     eligibleJobCount: jobs.length,
@@ -200,6 +201,7 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
       content: _contentHasMore,
       overrides: _overridesHasMore,
       resources: _resourcesHasMore,
+      provisioning: _provisioningHasMore,
     },
     errors: _errors,
   };

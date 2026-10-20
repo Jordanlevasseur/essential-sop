@@ -38,15 +38,32 @@ import { buildProvisioningKey } from './companyLibraryProvisioning.ts';
  * Returns the set of masterIds that have an ACTIVE ProvisioningRecord for the
  * given company. One call per company read; reused across all sopJobs in it.
  */
-export async function loadActiveAssignmentMasterIds(SR: any, companyId: string): Promise<Set<string>> {
+/**
+ * loadActiveAssignmentMasterIdsWithMetrics — same as loadActiveAssignmentMasterIds
+ * but also returns a hasMore flag indicating whether the 500-record query limit
+ * was reached. Stage 3 surfaces this in completeness metrics so the router can
+ * avoid definitive "no SOP exists" answers on potentially incomplete data.
+ */
+export async function loadActiveAssignmentMasterIdsWithMetrics(
+  SR: any, companyId: string
+): Promise<{ masterIds: Set<string>; hasMore: boolean }> {
   try {
     const records = await SR.entities.ProvisioningRecord.filter(
       { companyId, assignmentStatus: 'ACTIVE' }, '-createdAt', 500
     );
-    return new Set((records || []).map((r: any) => r.masterId).filter(Boolean));
+    const hasMore = (records || []).length >= 500;
+    return {
+      masterIds: new Set((records || []).map((r: any) => r.masterId).filter(Boolean)),
+      hasMore,
+    };
   } catch (_) {
-    return new Set();
+    return { masterIds: new Set(), hasMore: false };
   }
+}
+
+export async function loadActiveAssignmentMasterIds(SR: any, companyId: string): Promise<Set<string>> {
+  const { masterIds } = await loadActiveAssignmentMasterIdsWithMetrics(SR, companyId);
+  return masterIds;
 }
 
 /**

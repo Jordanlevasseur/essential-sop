@@ -1,5 +1,7 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.40';
-import { resolveAssistantContext } from '../../shared/assistantRetrieval.ts';
+import { resolveCompanyKnowledge } from '../../shared/companyKnowledgeEngine.ts';
+import { routeAssistantRequest } from '../../shared/assistantRouter.ts';
+import { buildDirectAnswer } from '../../shared/directAnswerBuilder.ts';
 
 /**
  * askAssistant — AI field-operations assistant.
@@ -138,7 +140,30 @@ function pickBestSection(jobId: string, contentIndex: any[], qTokens: string[]):
   return best;
 }
 
+// ── Stage 3: non-sensitive routing instrumentation ──────────────────────────
+// Measures only route, durations, counts, and completeness. Never logs or
+// returns question text, SOP text, user content, or conversation content.
+function makeRoutingMetrics(
+  route: string, knowledge: any, routeDurationMs: number,
+  totalStartTime: number, sourceCount: number, aiCalls: number,
+  confidence: number, directKind?: string | null
+) {
+  return {
+    route,
+    directKind: directKind || null,
+    aiCalls,
+    knowledgeDurationMs: knowledge.metrics?.retrievalDurationMs ?? 0,
+    routeDurationMs,
+    totalDurationMs: Date.now() - totalStartTime,
+    sourceCount,
+    eligibleJobCount: knowledge.metrics?.eligibleJobCount ?? 0,
+    knowledgeComplete: knowledge.metrics?.complete ?? true,
+    confidence,
+  };
+}
+
 export default async function (req: Request): Promise<Response> {
+  const _totalStartTime = Date.now();
   try {
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me().catch(() => null);
@@ -163,8 +188,41 @@ export default async function (req: Request): Promise<Response> {
     }
 
     // ── Retrieval (shared, resolver-backed, override-merged) ──
-    const { jobs, contentIndex } = await resolveAssistantContext(base44.asServiceRole, companyId);
+    // Stage 3: resolve once, reuse for both routing and generation.
+    const knowledge = await resolveCompanyKnowledge(base44.asServiceRole, companyId);
+    const { jobs, contentIndex } = knowledge;
 
+    // ── Stage 3: Intelligent request routing ──
+    const _routeStartTime = Date.now();
+    const decision = routeAssistantRequest(knowledge, question, focusJobIds);
+    const _routeDurationMs = Date.now() - _routeStartTime;
+
+    // ── Direct / clarification routes: structured answer, no AI call ──
+    if (decision.route === 'direct' || decision.route === 'clarification') {
+      const { answer, sources } = buildDirectAnswer(knowledge, decision);
+      return Response.json({
+        answer, sources, route: decision.route,
+        _routingMetrics: makeRoutingMetrics(
+          decision.route, knowledge, _routeDurationMs, _totalStartTime,
+          sources.length, 0, decision.confidence, decision.directKind
+        ),
+      });
+    }
+
+    // ── No-match route: no AI call ──
+    if (decision.route === 'no_match') {
+      return Response.json({
+        answer:
+          "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.",
+        sources: [], route: 'no_match',
+        _routingMetrics: makeRoutingMetrics(
+          'no_match', knowledge, _routeDurationMs, _totalStartTime,
+          0, 0, decision.confidence, null
+        ),
+      });
+    }
+
+    // ── Generative route: existing AI pipeline (same knowledge, no re-retrieval) ──
     const itemsByJob: Record<string, any[]> = {};
     for (const it of contentIndex) (itemsByJob[it.jobId] ||= []).push(it);
 
@@ -203,7 +261,11 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({
         answer:
           "I couldn't find an approved company SOP covering that. No procedure in your company library matches this topic.\n\nFor anything safety-critical, consult your supervisor and the equipment manufacturer's instructions before proceeding. If you believe a procedure should exist, ask an administrator to add it.",
-        sources: [],
+        sources: [], route: 'no_match',
+        _routingMetrics: makeRoutingMetrics(
+          'no_match', knowledge, _routeDurationMs, _totalStartTime,
+          0, 0, decision.confidence, null
+        ),
       });
     }
 
@@ -268,7 +330,13 @@ export default async function (req: Request): Promise<Response> {
       };
     });
 
-    return Response.json({ answer, sources });
+    return Response.json({
+      answer, sources, route: 'generative',
+      _routingMetrics: makeRoutingMetrics(
+        'generative', knowledge, _routeDurationMs, _totalStartTime,
+        sources.length, 1, decision.confidence, null
+      ),
+    });
   } catch (error: any) {
     return Response.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
