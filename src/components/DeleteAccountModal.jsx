@@ -103,7 +103,7 @@ export default function DeleteAccountModal({ onClose }) {
                 { icon: '👤', text: 'Your personal app data, preferences, and history will be removed.' },
                 { icon: '🏢', text: 'Company-owned job templates, procedures, and shared knowledge will not be deleted.' },
                 { icon: '🏘️', text: 'If you are the only member of your workspace, it will be closed as part of your deletion (its data is kept, not deleted).' },
-                { icon: '🔐', text: 'A deletion request will be logged. An administrator will permanently remove your login identity via the Base44 dashboard.' },
+                { icon: '🔐', text: 'A deletion request will be logged. An Essential SOP administrator will permanently remove your login identity as a final step.' },
               ].map((item, i) => (
                 <li key={i} className="flex items-start gap-2.5">
                   <span className="text-base flex-shrink-0 leading-snug">{item.icon}</span>
@@ -181,7 +181,7 @@ export default function DeleteAccountModal({ onClose }) {
             <div className="bg-app-info-bg border border-app-border rounded-xl p-3 text-left mb-2">
               <p className="text-xs text-app-text-muted leading-relaxed">
                 Your request is now pending administrator review. Removal of your account data and
-                login identity will be completed via the Base44 dashboard. You will not be able to
+                login identity will be completed by an Essential SOP administrator. You will not be able to
                 sign in again.
               </p>
             </div>

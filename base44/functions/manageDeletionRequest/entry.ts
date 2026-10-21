@@ -132,6 +132,23 @@ async function runPreflight(SR: any, targetUserId: string) {
   return { canProceed: blockers.length === 0, blockers, singleOwnerCompanies, activeMemberships: activeMems };
 }
 
+// ── Company-deletion lifecycle notification to the requesting GM ──────────────
+// Best-effort in-app notification. Used for approve/reject. Completion uses
+// SendEmail because the GM's access to the deleted company ends at execution.
+async function notifyCompanyDeletion(SR: any, req: any, type: string, title: string, body: string) {
+  try {
+    await SR.entities.Notification.create({
+      companyId: req.companyId,
+      userId: req.requestedByUserId,
+      type,
+      title,
+      body,
+      targetType: 'company',
+      targetId: req.companyId,
+    });
+  } catch (_) { /* best-effort */ }
+}
+
 export default async function (req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
@@ -150,6 +167,9 @@ export default async function (req: Request): Promise<Response> {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType === 'COMPANY_DELETION') {
+        return Response.json({ error: 'This is a company deletion request. Use preflight_company.' }, { status: 400 });
+      }
       if (existing.status !== 'Pending') {
         return Response.json({ error: 'Only pending requests can be prefchecked' }, { status: 409 });
       }
@@ -179,6 +199,9 @@ export default async function (req: Request): Promise<Response> {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType === 'COMPANY_DELETION') {
+        return Response.json({ error: 'Company deletion requests cannot be cancelled; use reject_company.' }, { status: 400 });
+      }
       if (existing.status !== 'Pending') {
         return Response.json({ error: 'Only pending requests can be cancelled' }, { status: 409 });
       }
@@ -194,6 +217,9 @@ export default async function (req: Request): Promise<Response> {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType === 'COMPANY_DELETION') {
+        return Response.json({ error: 'Company deletion completion notifications are sent by email. Use save_notes for notes.' }, { status: 400 });
+      }
       if (existing.status !== 'Completed') {
         return Response.json({ error: 'Notifications can only be recorded for completed requests' }, { status: 409 });
       }
@@ -214,6 +240,9 @@ export default async function (req: Request): Promise<Response> {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType === 'COMPANY_DELETION') {
+        return Response.json({ error: 'This is a company deletion request. Use execute_company_deletion after approve_company.' }, { status: 400 });
+      }
       if (existing.status !== 'Pending') {
         return Response.json({ error: 'Only pending requests can be completed' }, { status: 409 });
       }
@@ -354,6 +383,161 @@ export default async function (req: Request): Promise<Response> {
         adminNotes: adminNotes ?? existing.adminNotes ?? '',
       });
 
+      return Response.json({ success: true, request: updated });
+    }
+
+    // ── preflight_company ───────────────────────────────────────────────────
+    // Displays the company, requesting GM, affected memberships, and scope of
+    // the deletion BEFORE any approval/execution. Revalidates the requester's
+    // GM authorization and the company state. Does NOT delete anything.
+    if (action === 'preflight_company') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') {
+        return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      }
+      if (existing.status !== 'Pending' && existing.status !== 'Approved') {
+        return Response.json({ error: 'Only pending or approved requests can be scoped' }, { status: 409 });
+      }
+      const cid = existing.companyId;
+      const requesterMems = await SR.entities.CompanyMembership.filter({ companyId: cid, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
+      const requesterStillGm = (requesterMems || []).some((m: any) => m.role === 'general_manager');
+      const company = await SR.entities.Company.get(cid).catch(() => null);
+      const members = await SR.entities.CompanyMembership.filter({ companyId: cid, status: 'active' }).catch(() => []);
+      const jobCount = await SR.entities.Job.count({ companyId: cid }).catch(() => 0);
+      const resourceCount = await SR.entities.CompanyResource.count({ companyId: cid }).catch(() => 0);
+      const pdfCount = await SR.entities.CompanyPdfAttachment.count({ companyId: cid }).catch(() => 0);
+      const blockers: { code: string; message: string }[] = [];
+      if (!requesterStillGm) blockers.push({ code: 'REQUESTER_NO_LONGER_GM', message: 'The requesting General Manager is no longer an active GM of this company.' });
+      if (!company) blockers.push({ code: 'COMPANY_GONE', message: 'The company no longer exists.' });
+      else if (company.status === 'closed') blockers.push({ code: 'COMPANY_CLOSED', message: 'The company is already closed.' });
+      return Response.json({
+        success: true,
+        canProceed: blockers.length === 0,
+        blockers,
+        status: existing.status,
+        scope: {
+          companyName: company?.name || existing.companyName,
+          companyId: cid,
+          requester: { userId: existing.requestedByUserId, name: existing.userName, email: existing.userEmail, stillGm: requesterStillGm },
+          activeMemberships: (members || []).map((m: any) => ({ userId: m.userId, role: m.role })),
+          counts: { jobs: jobCount, resources: resourceCount, pdfs: pdfCount, memberships: (members || []).length },
+        },
+      });
+    }
+
+    // ── approve_company (SUPER_ADMIN only — already enforced above) ──────────
+    // Pending → Approved. Revalidates requester authorization + company state at
+    // approval time. Company data is NOT touched. Notifies the requesting GM.
+    if (action === 'approve_company') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'Pending') return Response.json({ error: 'Only pending requests can be approved' }, { status: 409 });
+      const mems = await SR.entities.CompanyMembership.filter({ companyId: existing.companyId, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
+      const stillGm = (mems || []).some((m: any) => m.role === 'general_manager');
+      const company = await SR.entities.Company.get(existing.companyId).catch(() => null);
+      if (!stillGm) return Response.json({ error: 'The requesting General Manager is no longer an active GM. Cannot approve.', code: 'REQUESTER_NO_LONGER_GM' }, { status: 409 });
+      if (!company || company.status === 'closed') return Response.json({ error: 'The company no longer exists or is already closed.', code: 'COMPANY_GONE' }, { status: 409 });
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        status: 'Approved', reviewerUserId: user.id, reviewedAt: now,
+        adminNotes: adminNotes ?? existing.adminNotes ?? '',
+      });
+      await notifyCompanyDeletion(SR, existing, 'company_deletion_approved', 'Company deletion approved',
+        `Your request to delete "${existing.companyName}" has been approved by Essential SOP administration. The irreversible deletion will be processed separately; you will be notified when it is complete.`);
+      return Response.json({ success: true, request: updated });
+    }
+
+    // ── reject_company (SUPER_ADMIN only) ────────────────────────────────────
+    // Pending → Rejected. Company data is NOT touched. Notifies the requesting GM.
+    if (action === 'reject_company') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'Pending') return Response.json({ error: 'Only pending requests can be rejected' }, { status: 409 });
+      const rejectionReason = (body.rejectionReason || '').toString().trim();
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        status: 'Rejected', reviewerUserId: user.id, reviewedAt: now, rejectionReason,
+        adminNotes: adminNotes ?? existing.adminNotes ?? '',
+      });
+      await notifyCompanyDeletion(SR, existing, 'company_deletion_rejected', 'Company deletion declined',
+        `Your request to delete "${existing.companyName}" was declined by Essential SOP administration.${rejectionReason ? ` Reason: ${rejectionReason}` : ''} The workspace and all its data remain unchanged.`);
+      return Response.json({ success: true, request: updated });
+    }
+
+    // ── execute_company_deletion (irreversible; separate confirmation) ─────
+    // Approved → Completed. Revalidates requester authorization + company state
+    // at processing time. Permanently deletes company-owned operational data
+    // and the company record. Does NOT delete employees' auth accounts or their
+    // memberships in other companies. Platform-owned Master Library records are
+    // never deleted.
+    if (action === 'execute_company_deletion') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'Approved') return Response.json({ error: 'Only approved requests can be executed. Approve first.' }, { status: 409 });
+
+      const cid = existing.companyId;
+      const mems = await SR.entities.CompanyMembership.filter({ companyId: cid, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
+      const stillGm = (mems || []).some((m: any) => m.role === 'general_manager');
+      const company = await SR.entities.Company.get(cid).catch(() => null);
+      if (!stillGm) return Response.json({ error: 'The requesting General Manager is no longer an active GM. Execution aborted.', code: 'REQUESTER_NO_LONGER_GM' }, { status: 409 });
+      if (!company || company.status === 'closed') return Response.json({ error: 'The company no longer exists or is already closed. Execution aborted.', code: 'COMPANY_GONE' }, { status: 409 });
+
+      const errors: string[] = [];
+      const del = async (entity: string, filter: any) => {
+        try { await SR.entities[entity].deleteMany(filter); }
+        catch (e: any) { errors.push(`${entity}: ${e?.message || 'delete failed'}`); }
+      };
+      // Company-owned operational data (companyId-scoped).
+      await del('Job', { companyId: cid });
+      await del('JobSection', { companyId: cid });
+      await del('SectionContent', { companyId: cid });
+      await del('JobOverride', { companyId: cid });
+      await del('JobRevision', { companyId: cid });
+      await del('EditRequest', { companyId: cid });
+      await del('CompanyResource', { companyId: cid });
+      await del('CompanyPdfAttachment', { companyId: cid });
+      await del('CompanyVersionAnalysis', { companyId: cid });
+      await del('CompanyVersionDecision', { companyId: cid });
+      await del('CompanyVersionDeferral', { companyId: cid });
+      await del('TemporaryEditGrant', { companyId: cid });
+      await del('ActivityLog', { companyId: cid });
+      await del('Notification', { companyId: cid });
+      await del('CompanyInvitation', { companyId: cid });
+      await del('ProvisioningRecord', { companyId: cid });
+      await del('CompanyLibraryProvisioningRun', { companyId: cid });
+      // Remove this company's memberships (does NOT delete the users or their
+      // memberships in other companies).
+      await del('CompanyMembership', { companyId: cid });
+      // Delete the company record itself, last.
+      try { await SR.entities.Company.delete(cid); } catch (e: any) { errors.push(`Company: ${e?.message || 'delete failed'}`); }
+
+      if (errors.length > 0) {
+        await SR.entities.DeletionRequest.update(requestId, {
+          status: 'Failed',
+          adminNotes: [...(existing.adminNotes ? [existing.adminNotes] : []), `Execution errors: ${errors.join('; ')}`].join('\n'),
+        }).catch(() => {});
+        return Response.json({ error: 'One or more deletion steps failed. The request is marked Failed. Review and retry the remaining items.', code: 'EXECUTION_FAILED', errors }, { status: 500 });
+      }
+
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        status: 'Completed', completedAt: now, appDataDeletedAt: now,
+        closedCompanyIds: [cid],
+        adminNotes: adminNotes ?? existing.adminNotes ?? '',
+      });
+      // Email the requesting GM (their app access to this company is now gone).
+      try {
+        await base44.integrations.Core.SendEmail({
+          to: existing.userEmail,
+          subject: 'Your Essential SOP workspace deletion is complete',
+          body: `Hello ${existing.userName || ''},\n\nYour company workspace "${existing.companyName}" has been permanently deleted, including its SOP library, resources, attachments, memberships, and associated operational data. Your Essential SOP login and any other workspaces you belong to were not affected.\n\n— Essential SOP`,
+        });
+      } catch (_) { /* best-effort */ }
       return Response.json({ success: true, request: updated });
     }
 

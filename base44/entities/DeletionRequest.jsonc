@@ -1,7 +1,7 @@
 {
   "name": "DeletionRequest",
   "type": "object",
-  "description": "Account-deletion request record. Holds the requesting user's personal data (email, name, id). ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by the deleteAccount backend function (service role, for the authenticated requesting user) and read/processed ONLY by the resolveDeletionRequests and manageDeletionRequest backend functions, which verify an active PlatformMembership(SUPER_ADMIN) on the backend before any access. No frontend SDK call may list, read, modify, or delete these records. Existing records are preserved; only the authorized backend functions mutate them. Four independent, distinguishable signals are tracked per request: status (Pending/Completed/Cancelled), authIdentityDeletedAt (admin's manual identity-removal attestation), appDataDeletedAt (application-data cleanup), and notificationStatus (user completion-notification delivery).",
+  "description": "Unified deletion-request queue for TWO distinct workflows: (1) PERSONAL_ACCOUNT_DELETION \u2014 any authenticated user requests deletion of their own account; (2) COMPANY_DELETION \u2014 an active General Manager requests permanent deletion of their company workspace. ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by deleteAccount (personal) and requestCompanyClosure (company), both service-role, and read/processed ONLY by resolveDeletionRequests / manageDeletionRequest, which verify an active PlatformMembership(SUPER_ADMIN) on the backend. No frontend SDK call may list, read, modify, or delete these records. RECONCILIATION: pre-existing records have requestType=null and are treated as PERSONAL_ACCOUNT_DELETION (the original behavior); their status (Pending/Completed/Cancelled) is preserved unchanged. Lifecycle states: Pending (submitted, awaiting admin), Approved (company deletion \u2014 admin approved, awaiting irreversible execution), Rejected (company deletion \u2014 admin rejected), Completed (done), Cancelled (personal \u2014 admin dismissed), Failed (execution errored). Four independent signals per personal request: status, authIdentityDeletedAt (admin attestation), appDataDeletedAt (personal-data cleanup), notificationStatus (user completion notification). Company-deletion lifecycle is tracked via status + reviewerUserId/reviewedAt + completedAt.",
   "rls": {
     "read": false,
     "create": false,
@@ -9,14 +9,36 @@
     "delete": false
   },
   "properties": {
+    "requestType": {
+      "type": "string",
+      "enum": [
+        "PERSONAL_ACCOUNT_DELETION",
+        "COMPANY_DELETION"
+      ],
+      "default": "PERSONAL_ACCOUNT_DELETION",
+      "description": "Distinguishes the two deletion workflows. Null on pre-existing records is treated as PERSONAL_ACCOUNT_DELETION."
+    },
     "userId": {
-      "type": "string"
+      "type": "string",
+      "description": "For PERSONAL: the user deleting their own account. For COMPANY: the requesting General Manager (same as requestedByUserId)."
     },
     "userEmail": {
       "type": "string"
     },
     "userName": {
       "type": "string"
+    },
+    "requestedByUserId": {
+      "type": "string",
+      "description": "The authenticated user who submitted the request. For PERSONAL equals userId; for COMPANY equals the requesting GM."
+    },
+    "companyId": {
+      "type": "string",
+      "description": "For COMPANY_DELETION: the company whose deletion is requested. Null for PERSONAL."
+    },
+    "companyName": {
+      "type": "string",
+      "description": "For COMPANY_DELETION: snapshot of the company name at request time (used for typed-name confirmation and audit)."
     },
     "requestedAt": {
       "type": "string",
@@ -26,10 +48,26 @@
       "type": "string",
       "enum": [
         "Pending",
+        "Approved",
+        "Rejected",
         "Completed",
-        "Cancelled"
+        "Cancelled",
+        "Failed"
       ],
       "default": "Pending"
+    },
+    "reviewerUserId": {
+      "type": "string",
+      "description": "Platform Super Admin who approved or rejected a COMPANY_DELETION request. Null for personal and until review."
+    },
+    "reviewedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of approval or rejection for COMPANY_DELETION."
+    },
+    "rejectionReason": {
+      "type": "string",
+      "description": "Reason recorded when a COMPANY_DELETION request is rejected."
     },
     "completedAt": {
       "type": "string",
@@ -41,12 +79,12 @@
     "appDataDeletedAt": {
       "type": "string",
       "format": "date-time",
-      "description": "Set only when an administrator completes the deletion via manageDeletionRequest (action=complete), at which point associated personal data (notifications, memberships) is removed/revoked. Null while the request is Pending \u2014 a submitted request is not a completed deletion. Independent of authIdentityDeletedAt and notificationStatus."
+      "description": "PERSONAL: set when manageDeletionRequest(action=complete) removes personal data. COMPANY: set when execute_company_deletion completes. Null while Pending/Approved. Independent of authIdentityDeletedAt and notificationStatus."
     },
     "authIdentityDeletedAt": {
       "type": "string",
       "format": "date-time",
-      "description": "Set when an administrator completes the deletion via manageDeletionRequest, after attesting (authIdentityRemoved: true) that the Base44 authentication identity was removed via the Base44 Dashboard (manual, no API). A manual attestation, not an automatically verified platform event. Null while Pending."
+      "description": "PERSONAL only: set when an administrator completes the deletion after attesting (authIdentityRemoved: true) that the authentication identity was removed via the Dashboard (manual, no API). A manual attestation, not an automatically verified platform event. Null while Pending. Not used for COMPANY_DELETION."
     },
     "notificationStatus": {
       "type": "string",
@@ -57,11 +95,11 @@
         "admin_notified"
       ],
       "default": "pending",
-      "description": "Status of the deletion-COMPLETION notification to the user (independent of deletion status). 'email_sent' = the SendEmail delivery was accepted by the sending service. 'email_failed' = delivery was NOT accepted (e.g., recipient identity removed, no custom email domain); the admin must notify via an alternative verified channel and record it via record_notification. 'admin_notified' = the admin recorded an alternative-channel notification. 'pending' = no notification attempted yet."
+      "description": "PERSONAL: status of the deletion-COMPLETION notification to the user. COMPANY: status of the lifecycle notification to the requesting GM. 'email_sent' = SendEmail delivery accepted. 'email_failed' = delivery NOT accepted. 'admin_notified' = admin recorded an alternative channel. 'pending' = none attempted yet."
     },
     "userNotifiedVia": {
       "type": "string",
-      "description": "When notificationStatus='admin_notified', the verified channel the admin used to inform the user (e.g., 'email reply', 'phone')."
+      "description": "When notificationStatus='admin_notified', the verified channel used to inform the recipient."
     },
     "userNotifiedAt": {
       "type": "string",
@@ -69,14 +107,14 @@
     },
     "notificationError": {
       "type": "string",
-      "description": "When notificationStatus='email_failed', the reason delivery was not accepted by the sending service."
+      "description": "When notificationStatus='email_failed', the reason delivery was not accepted."
     },
     "closedCompanyIds": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "Company IDs that were closed (status='closed') as part of completing this deletion because the user was the sole owner and only active member of each. Company data is retained (closed, not deleted)."
+      "description": "PERSONAL: company IDs closed (status='closed') during completion because the user was the sole owner and only active member. COMPANY: the company ID that was permanently deleted."
     }
   },
   "required": [

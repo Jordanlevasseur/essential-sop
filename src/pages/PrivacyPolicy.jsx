@@ -85,11 +85,18 @@ export default function PrivacyPolicy() {
 
         <Section title="5. Data Retention & Account Deletion">
           <p>
-            You may request deletion of your account at any time via Profile → Delete Account. Any
-            authenticated user — including the sole owner of a single-person workspace — can submit a
-            request. When you submit it, your session is revoked immediately and the request is placed
-            in a Pending state for administrator review.
+            You may request deletion of your account at any time via Profile → Ownership & Account →
+            Account & Data → Delete My Account. Any authenticated user — including the sole owner
+            of a single-person workspace — can submit a request. When you submit it, your session is
+            revoked immediately and the request is placed in a Pending state for administrator review.
+            Account deletion is generally completed within 30 days of your request.
           </p>
+          <p className="mt-2"><strong>Company workspace deletion:</strong> a General Manager may request permanent deletion of the
+          entire company workspace via Profile → Ownership & Account → Account & Data → Request Company
+          Deletion. The request requires typing the company name to confirm, is reviewed by Essential SOP
+          administration, and the workspace and all its data remain unchanged until approved and processed.
+          Only a Platform Super Administrator can approve and execute the deletion. Company deletion does not
+          delete employees' individual Essential SOP accounts or their access to unrelated companies.</p>
           <p className="mt-2"><strong>Workspaces:</strong> if you are the sole owner and only active member of a workspace (for example, a one-profile Homeowner workspace), the workspace is <strong>closed</strong> as part of your deletion — it is not deleted, and its standard operating procedures and records are retained. If you are the sole owner of a workspace that still has other active members, ownership must be transferred before your account can be deleted, so the workspace is not left without an owner.</p>
           <p className="mt-2">When an administrator completes your request, Essential SOP:</p>
           <ul className="list-disc pl-5 mt-2 space-y-1">
@@ -97,7 +104,7 @@ export default function PrivacyPolicy() {
             <li><strong>Revokes</strong> your company and platform memberships (access is removed; the membership records are retained for roster and audit history).</li>
             <li><strong>Cancels</strong> any pending invitations sent to your email address.</li>
             <li><strong>Closes</strong> any single-person workspace you owned (status set to closed; data retained).</li>
-            <li><strong>Removes</strong> your login (authentication) identity via the Base44 dashboard (manual administrator step).</li>
+            <li><strong>Removes</strong> your login (authentication) identity as a manual administrator step.</li>
           </ul>
           <p className="mt-2"><strong>Retained company operational records:</strong> standard operating procedures, job templates, section content, job overrides and revisions, edit requests (including the requester's reason and supporting note as part of the company's SOP-governance record), uploaded reference documents and PDFs, version-analysis/decision/deferral records, temporary edit grants, activity logs, platform audit logs, and distribution/provisioning records. These reference your account by ID or name as part of legitimate company audit and governance history; they are shared operational data, not your personal data, and are <strong>not</strong> deleted with your account.</p>
           <p className="mt-2"><strong>Completion confirmation:</strong> we attempt to send a confirmation email to your registered address. If delivery cannot be confirmed (for example, because your login identity has already been removed or email delivery is unavailable), an administrator will inform you through an alternative verified channel and record that notification. You will not be able to sign in again after deletion.</p>

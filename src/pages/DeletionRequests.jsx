@@ -3,13 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
-import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX, Building2, User, X } from 'lucide-react';
 
 const STATUS_STYLES = {
   Pending:   { bg: 'bg-app-warning-bg',  border: 'border-app-warning',  text: 'text-app-warning',  icon: Clock },
-  Completed: { bg: 'bg-app-success-bg',  border: 'border-app-success',  text: 'text-app-success',  icon: CheckCircle2 },
-  Cancelled: { bg: 'bg-app-elevated',    border: 'border-app-border',   text: 'text-app-text-muted', icon: Info },
+  Approved:  { bg: 'bg-app-info-bg',    border: 'border-app-info',     text: 'text-app-info',     icon: Info },
+  Rejected:  { bg: 'bg-app-elevated',   border: 'border-app-border',   text: 'text-app-text-muted', icon: X },
+  Completed: { bg: 'bg-app-success-bg', border: 'border-app-success',  text: 'text-app-success',  icon: CheckCircle2 },
+  Cancelled: { bg: 'bg-app-elevated',   border: 'border-app-border',   text: 'text-app-text-muted', icon: Info },
+  Failed:    { bg: 'bg-app-danger-bg',  border: 'border-app-danger',   text: 'text-app-danger',   icon: AlertTriangle },
 };
+
+const TYPE_LABELS = {
+  PERSONAL_ACCOUNT_DELETION: { label: 'Personal Account', icon: User, tone: 'text-app-text-muted' },
+  COMPANY_DELETION: { label: 'Company Deletion', icon: Building2, tone: 'text-app-danger' },
+};
+
+function typeOf(req) { return req.requestType || 'PERSONAL_ACCOUNT_DELETION'; }
 
 export default function DeletionRequests() {
   const navigate = useNavigate();
@@ -20,8 +30,6 @@ export default function DeletionRequests() {
   const [saving, setSaving] = useState(null);
   const [editNotes, setEditNotes] = useState({});
   const [actionError, setActionError] = useState('');
-  const [preflightCache, setPreflightCache] = useState({});
-  const [preflightLoading, setPreflightLoading] = useState(null);
 
   useEffect(() => {
     if (!isPlatformSuperAdmin) { navigate('/'); return; }
@@ -30,63 +38,20 @@ export default function DeletionRequests() {
       .catch(() => { setActionError('Failed to load deletion requests.'); setLoading(false); });
   }, [isPlatformSuperAdmin]);
 
-  const handlePreflight = async (req) => {
-    setPreflightLoading(req.id);
-    setActionError('');
-    try {
-      const res = await base44.functions.invoke('manageDeletionRequest', { action: 'preflight', requestId: req.id });
-      const data = res.data || {};
-      if (data.success) {
-        setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: data.canProceed, blockers: data.blockers || [], singleOwnerCompanies: data.singleOwnerCompanies || [] } }));
-      } else {
-        setActionError(data.error || 'Preflight failed.');
-      }
-    } catch (e) {
-      const data = e?.response?.data || e?.data || {};
-      setActionError(data.error || e?.message || 'Preflight failed.');
-    } finally {
-      setPreflightLoading(null);
-    }
-  };
+  const refresh = (req) => setRequests(prev => prev.map(r => r.id === req.id ? req : r));
 
-  const handleStatusChange = async (req, newStatus, opts = {}) => {
-    setSaving(req.id);
-    setActionError('');
+  const callManage = async (payload, onOk) => {
+    setSaving(payload.requestId); setActionError('');
     try {
-      const action = newStatus === 'Completed' ? 'complete' : 'cancel';
-      const payload = { action, requestId: req.id, adminNotes: editNotes[req.id] ?? req.adminNotes ?? '' };
-      if (newStatus === 'Completed') payload.authIdentityRemoved = !!opts.authIdentityRemoved;
       const res = await base44.functions.invoke('manageDeletionRequest', payload);
       const data = res.data || {};
       if (!data.success) {
-        setActionError(data.error || 'Failed to update request.');
-        if (data.blockers) setPreflightCache(prev => ({ ...prev, [req.id]: { canProceed: false, blockers: data.blockers, singleOwnerCompanies: [] } }));
-      } else if (data.request) {
-        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
-        setPreflightCache(prev => { const next = { ...prev }; delete next[req.id]; return next; });
-      }
+        setActionError(data.error || 'Action failed.');
+        if (data.blockers) setActionError(prev => prev + ' ' + data.blockers.map(b => b.message).join(' '));
+      } else if (onOk) onOk(data);
     } catch (e) {
       const data = e?.response?.data || e?.data || {};
-      setActionError(data.error || e?.message || 'Failed to update request.');
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const handleRecordNotification = async (req, channel) => {
-    setSaving(req.id);
-    setActionError('');
-    try {
-      const res = await base44.functions.invoke('manageDeletionRequest', { action: 'record_notification', requestId: req.id, userNotifiedVia: channel });
-      const data = res.data || {};
-      if (!data.success) {
-        setActionError(data.error || 'Failed to record notification.');
-      } else if (data.request) {
-        setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
-      }
-    } catch (e) {
-      const data = e?.response?.data || e?.data || {};
-      setActionError(data.error || e?.message || 'Failed to record notification.');
+      setActionError(data.error || e?.message || 'Action failed.');
     } finally {
       setSaving(null);
     }
@@ -94,25 +59,10 @@ export default function DeletionRequests() {
 
   const handleNotesChange = (id, value) => setEditNotes(prev => ({ ...prev, [id]: value }));
 
-  const handleSaveNotes = async (req) => {
-    setSaving(req.id);
-    setActionError('');
-    try {
-      const res = await base44.functions.invoke('manageDeletionRequest', { action: 'save_notes', requestId: req.id, adminNotes: editNotes[req.id] ?? req.adminNotes ?? '' });
-      const data = res.data || {};
-      if (data.request) setRequests(prev => prev.map(r => r.id === req.id ? data.request : r));
-    } catch (e) {
-      const data = e?.response?.data || e?.data || {};
-      setActionError(data.error || 'Failed to save notes.');
-    } finally {
-      setSaving(null);
-    }
-  };
-
-  const pending = requests.filter(r => r.status === 'Pending');
-  const completed = requests.filter(r => r.status !== 'Pending');
-
   if (!isPlatformSuperAdmin) return null;
+
+  const pending = requests.filter(r => r.status === 'Pending' || r.status === 'Approved');
+  const resolved = requests.filter(r => r.status !== 'Pending' && r.status !== 'Approved');
 
   return (
     <div className="min-h-screen bg-app-bg">
@@ -122,8 +72,8 @@ export default function DeletionRequests() {
             <ArrowLeft size={22} className="text-app-text-2" />
           </button>
           <div className="flex-1">
-            <h1 className="text-semibold text-app-text">Account Deletion Requests</h1>
-            <p className="text-xs text-app-text-muted">Admin only</p>
+            <h1 className="text-semibold text-app-text">Deletion Requests</h1>
+            <p className="text-xs text-app-text-muted">Platform Super Admin</p>
           </div>
           {pending.length > 0 && (
             <span className="px-2 py-0.5 bg-app-danger text-white text-xs font-bold rounded-full">{pending.length}</span>
@@ -132,7 +82,6 @@ export default function DeletionRequests() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-5">
-
         {actionError && (
           <div className="flex items-start gap-2 p-3 mb-4 bg-app-danger-bg border border-app-danger rounded-lg">
             <AlertTriangle size={16} className="text-app-danger flex-shrink-0 mt-0.5" />
@@ -142,17 +91,9 @@ export default function DeletionRequests() {
 
         <div className="flex items-start gap-3 p-4 mb-5 bg-app-info-bg border border-app-border rounded-xl">
           <Info size={16} className="text-app-info flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-app-text mb-1">Process for each Pending request</p>
-            <ol className="text-xs text-app-text-2 space-y-0.5 list-decimal pl-4">
-              <li>Click <strong>Check Prerequisites</strong>. A single-person workspace (sole owner, only member) will be closed automatically — only a sole GM with other active members blocks completion.</li>
-              <li>If prerequisites are met, go to <strong>Base44 Dashboard → Users</strong> and click <strong>Remove User</strong>.</li>
-              <li>Click <strong>Mark Completed</strong> and confirm the attestation. This deletes personal data and records completion.</li>
-              <li>If the completion email could not be delivered, notify the user via a verified channel and record it below the request.</li>
-            </ol>
-            <p className="text-xs text-app-text-muted mt-1.5">
-              Base44 exposes no API to delete auth identities or verify their removal; the completion timestamp is the administrator's manual attestation.
-            </p>
+          <div className="text-xs text-app-text-2 space-y-1.5">
+            <p><strong className="text-app-text">Personal Account Deletion</strong> — a user requests deletion of their own account. The GM is notified for work handoff but cannot reject or cancel. Process: Check Prerequisites → remove the login identity in the Dashboard → Mark Completed (attest). Single-person workspaces are closed automatically; a sole GM with other members must transfer ownership first.</p>
+            <p><strong className="text-app-text">Company Deletion</strong> — a General Manager requests permanent deletion of their workspace. View the scope, then Approve or Reject. After approval, run Execute Deletion (irreversible) to permanently remove the company and its data. The requester's authorization and company state are revalidated at each step.</p>
           </div>
         </div>
 
@@ -168,22 +109,18 @@ export default function DeletionRequests() {
         ) : (
           <>
             {pending.length > 0 && (
-              <Section title={`Pending (${pending.length})`}>
+              <Section title={`Active (${pending.length})`}>
                 {pending.map(req => (
                   <RequestCard key={req.id} req={req} editNotes={editNotes} onNotesChange={handleNotesChange}
-                    onSaveNotes={handleSaveNotes} onStatusChange={handleStatusChange} onPreflight={handlePreflight}
-                    onRecordNotification={handleRecordNotification} saving={saving}
-                    preflight={preflightCache[req.id]} preflightLoading={preflightLoading === req.id} />
+                    callManage={callManage} refresh={refresh} saving={saving} setActionError={setActionError} />
                 ))}
               </Section>
             )}
-            {completed.length > 0 && (
+            {resolved.length > 0 && (
               <Section title="Resolved">
-                {completed.map(req => (
+                {resolved.map(req => (
                   <RequestCard key={req.id} req={req} editNotes={editNotes} onNotesChange={handleNotesChange}
-                    onSaveNotes={handleSaveNotes} onStatusChange={handleStatusChange} onPreflight={handlePreflight}
-                    onRecordNotification={handleRecordNotification} saving={saving}
-                    preflight={preflightCache[req.id]} preflightLoading={preflightLoading === req.id} />
+                    callManage={callManage} refresh={refresh} saving={saving} setActionError={setActionError} />
                 ))}
               </Section>
             )}
@@ -205,6 +142,24 @@ function Section({ title, children }) {
   );
 }
 
+function TypeBadge({ req }) {
+  const t = TYPE_LABELS[typeOf(req)];
+  const Icon = t.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${t.tone}`}>
+      <Icon size={12} /> {t.label}
+    </span>
+  );
+}
+
+function RequestCard({ req, editNotes, onNotesChange, callManage, refresh, saving, setActionError }) {
+  if (typeOf(req) === 'COMPANY_DELETION') {
+    return <CompanyRequestCard req={req} editNotes={editNotes} onNotesChange={onNotesChange} callManage={callManage} refresh={refresh} saving={saving} setActionError={setActionError} />;
+  }
+  return <PersonalRequestCard req={req} editNotes={editNotes} onNotesChange={onNotesChange} callManage={callManage} refresh={refresh} saving={saving} />;
+}
+
+// ── Personal Account Deletion ───────────────────────────────────────────────
 const NOTIF_LABELS = {
   pending: { label: 'Pending', text: 'text-app-warning', bg: 'bg-app-warning-bg', icon: Clock },
   email_sent: { label: 'Email sent', text: 'text-app-success', bg: 'bg-app-success-bg', icon: Mail },
@@ -212,24 +167,35 @@ const NOTIF_LABELS = {
   admin_notified: { label: 'Admin notified', text: 'text-app-success', bg: 'bg-app-success-bg', icon: CheckCircle2 },
 };
 
-function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChange, onPreflight, onRecordNotification, saving, preflight, preflightLoading }) {
+function PersonalRequestCard({ req, editNotes, onNotesChange, callManage, refresh, saving }) {
   const style = STATUS_STYLES[req.status] || STATUS_STYLES.Pending;
   const StatusIcon = style.icon;
   const isSaving = saving === req.id;
   const noteValue = editNotes[req.id] ?? req.adminNotes ?? '';
   const [confirming, setConfirming] = useState(false);
   const [attested, setAttested] = useState(false);
+  const [preflight, setPreflight] = useState(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
   const [notifChannel, setNotifChannel] = useState('');
   const preflightClear = preflight?.canProceed === true;
   const notif = NOTIF_LABELS[req.notificationStatus] || NOTIF_LABELS.pending;
   const NotifIcon = notif.icon;
   const needsNotifRecord = req.status === 'Completed' && req.notificationStatus !== 'email_sent' && req.notificationStatus !== 'admin_notified';
 
+  const onPreflight = async () => {
+    setPreflightLoading(true);
+    await callManage({ action: 'preflight', requestId: req.id }, (data) => {
+      setPreflight({ canProceed: data.canProceed, blockers: data.blockers || [], singleOwnerCompanies: data.singleOwnerCompanies || [] });
+    });
+    setPreflightLoading(false);
+  };
+
   return (
     <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
       <div className={`flex items-center gap-2 px-4 py-2 border-b ${style.bg} ${style.border}`}>
         <StatusIcon size={14} className={style.text} />
         <span className={`text-xs font-semibold ${style.text}`}>{req.status}</span>
+        <span className="ml-2"><TypeBadge req={req} /></span>
         <span className="ml-auto text-xs text-app-text-muted">{req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : '—'}</span>
       </div>
 
@@ -259,16 +225,12 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
           </div>
         )}
 
-        <div>
-          <label className="text-xs font-semibold text-app-text-muted uppercase block mb-1">Admin Notes</label>
-          <textarea rows={2} value={noteValue} onChange={e => onNotesChange(req.id, e.target.value)} placeholder="Add notes..."
-            className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-        </div>
+        <NotesBlock req={req} noteValue={noteValue} onNotesChange={onNotesChange} callManage={callManage} isSaving={isSaving} />
 
         {req.status === 'Pending' && (
           <div className="border-t border-app-divider pt-3 space-y-2">
             <p className="text-xs font-semibold text-app-text-muted uppercase">Step 1 — Check prerequisites</p>
-            <button onClick={() => onPreflight(req)} disabled={preflightLoading}
+            <button onClick={onPreflight} disabled={preflightLoading}
               className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">
               {preflightLoading ? 'Checking…' : 'Check Prerequisites'}
             </button>
@@ -290,14 +252,13 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
                 )}
                 <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2 leading-relaxed">
                   <p className="font-semibold text-app-text mb-1">Step 2 — Remove login identity</p>
-                  Go to <strong>Base44 Dashboard → Users</strong>, find this user by email, and click <strong>Remove User</strong>. Then return here and click Mark Completed.
+                  Go to the Dashboard → Users, find this user by email, and remove the user. Then return here and click Mark Completed.
                 </div>
               </>
             )}
           </div>
         )}
 
-        {/* Completion notification (Completed requests) */}
         {req.status === 'Completed' && (
           <div className="border-t border-app-divider pt-3 space-y-2">
             <p className="text-xs font-semibold text-app-text-muted uppercase">Completion notification</p>
@@ -312,12 +273,12 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
             {needsNotifRecord && (
               <div className="space-y-2">
                 <p className="text-xs text-app-text-2 leading-relaxed">
-                  Email delivery was not confirmed. Contact the user via a verified channel (e.g., reply to their request, phone) and record how you notified them.
+                  Email delivery was not confirmed. Contact the user via a verified channel and record how you notified them.
                 </p>
                 <div className="flex gap-2">
                   <input value={notifChannel} onChange={e => setNotifChannel(e.target.value)} placeholder="e.g., email reply, phone"
-                    className="flex-1 px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
-                  <button onClick={() => { if (notifChannel.trim()) onRecordNotification(req, notifChannel.trim()); }} disabled={isSaving || !notifChannel.trim()}
+                    className="flex-1 px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text focus:outline-none focus:border-app-accent" />
+                  <button onClick={() => { if (notifChannel.trim()) callManage({ action: 'record_notification', requestId: req.id, userNotifiedVia: notifChannel.trim() }, (d) => refresh(d.request)); }} disabled={isSaving || !notifChannel.trim()}
                     className="px-3 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold disabled:opacity-50">
                     {isSaving ? 'Saving…' : 'Record'}
                   </button>
@@ -328,12 +289,6 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
         )}
 
         <div className="flex gap-2 flex-wrap">
-          {noteValue !== (req.adminNotes ?? '') && (
-            <button onClick={() => onSaveNotes(req)} disabled={isSaving}
-              className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">
-              {isSaving ? 'Saving…' : 'Save Notes'}
-            </button>
-          )}
           {req.status === 'Pending' && (
             <>
               {!confirming ? (
@@ -345,19 +300,19 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
                 <div className="w-full space-y-2 border border-app-success rounded-lg p-2.5 bg-app-success-bg">
                   <label className="flex items-start gap-2 text-xs text-app-text">
                     <input type="checkbox" checked={attested} onChange={e => setAttested(e.target.checked)} className="mt-0.5" />
-                    <span>I confirm I have removed the user's login identity in the Base44 Dashboard.</span>
+                    <span>I confirm I have removed the user's login identity in the Dashboard.</span>
                   </label>
                   <div className="flex gap-2">
                     <button onClick={() => { setConfirming(false); setAttested(false); }} disabled={isSaving}
                       className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
-                    <button onClick={() => onStatusChange(req, 'Completed', { authIdentityRemoved: true })} disabled={isSaving || !attested}
+                    <button onClick={() => callManage({ action: 'complete', requestId: req.id, authIdentityRemoved: true }, (d) => { refresh(d.request); setPreflight(null); })} disabled={isSaving || !attested}
                       className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
-                      {isSaving ? 'Completing…' : 'Confirm Completion'}
+                      {isSaving ? 'Completing…' : <><CheckCircle2 size={12} /> Confirm Completion</>}
                     </button>
                   </div>
                 </div>
               )}
-              <button onClick={() => onStatusChange(req, 'Cancelled')} disabled={isSaving}
+              <button onClick={() => callManage({ action: 'cancel', requestId: req.id }, (d) => refresh(d.request))} disabled={isSaving}
                 className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-muted disabled:opacity-50">Cancel Request</button>
             </>
           )}
@@ -368,6 +323,152 @@ function RequestCard({ req, editNotes, onNotesChange, onSaveNotes, onStatusChang
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Company Deletion ─────────────────────────────────────────────────────────
+function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh, saving, setActionError }) {
+  const style = STATUS_STYLES[req.status] || STATUS_STYLES.Pending;
+  const StatusIcon = style.icon;
+  const isSaving = saving === req.id;
+  const noteValue = editNotes[req.id] ?? req.adminNotes ?? '';
+  const [scope, setScope] = useState(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [execConfirm, setExecConfirm] = useState(false);
+
+  const loadScope = async () => {
+    setScopeLoading(true);
+    await callManage({ action: 'preflight_company', requestId: req.id }, (data) => {
+      setScope({ canProceed: data.canProceed, blockers: data.blockers || [], status: data.status, scope: data.scope });
+    });
+    setScopeLoading(false);
+  };
+
+  const approve = () => callManage({ action: 'approve_company', requestId: req.id }, (d) => { refresh(d.request); setScope(null); });
+  const reject = () => callManage({ action: 'reject_company', requestId: req.id, rejectionReason: rejectReason.trim() }, (d) => { refresh(d.request); setRejectOpen(false); setRejectReason(''); setScope(null); });
+  const execute = () => callManage({ action: 'execute_company_deletion', requestId: req.id }, (d) => { refresh(d.request); setScope(null); setExecConfirm(false); });
+
+  return (
+    <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
+      <div className={`flex items-center gap-2 px-4 py-2 border-b ${style.bg} ${style.border}`}>
+        <StatusIcon size={14} className={style.text} />
+        <span className={`text-xs font-semibold ${style.text}`}>{req.status}</span>
+        <span className="ml-2"><TypeBadge req={req} /></span>
+        <span className="ml-auto text-xs text-app-text-muted">{req.requestedAt ? new Date(req.requestedAt).toLocaleDateString() : '—'}</span>
+      </div>
+
+      <div className="p-4 space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-app-text">{req.companyName || '(company)'}</p>
+          <p className="text-xs text-app-text-2 mt-0.5">Requested by: {req.userName || '—'} · {req.userEmail}</p>
+          <p className="text-xs text-app-text-muted mt-0.5">Company ID: {req.companyId}</p>
+          {req.rejectionReason && <p className="text-xs text-app-text-2 mt-1">Rejection reason: {req.rejectionReason}</p>}
+        </div>
+
+        <NotesBlock req={req} noteValue={noteValue} onNotesChange={onNotesChange} callManage={callManage} isSaving={isSaving} />
+
+        {(req.status === 'Pending' || req.status === 'Approved') && (
+          <div className="border-t border-app-divider pt-3 space-y-2">
+            <p className="text-xs font-semibold text-app-text-muted uppercase">Deletion scope</p>
+            <button onClick={loadScope} disabled={scopeLoading}
+              className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">
+              {scopeLoading ? 'Loading…' : scope ? 'Refresh scope' : 'View scope & revalidate'}
+            </button>
+            {scope && (
+              <div className="space-y-2">
+                {!scope.canProceed && (
+                  <div className="bg-app-danger-bg border border-app-danger rounded-lg p-2 space-y-1">
+                    {scope.blockers.map((b, i) => (
+                      <p key={i} className="text-xs text-app-danger flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{b.message}</p>
+                    ))}
+                  </div>
+                )}
+                {scope.canProceed && (
+                  <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2 space-y-1">
+                    <p><span className="font-semibold text-app-text">Company:</span> {scope.scope.companyName}</p>
+                    <p><span className="font-semibold text-app-text">Requester:</span> {scope.scope.requester.name} ({scope.scope.requester.email}) — {scope.scope.requester.stillGm ? 'still active GM' : 'no longer GM'}</p>
+                    <p><span className="font-semibold text-app-text">Active members:</span> {scope.scope.counts.memberships} ({scope.scope.activeMemberships.map(m => m.role).join(', ') || 'none'})</p>
+                    <p><span className="font-semibold text-app-text">Will permanently delete:</span> {scope.scope.counts.jobs} SOPs, {scope.scope.counts.resources} resources, {scope.scope.counts.pdfs} PDFs, and all memberships for this company.</p>
+                    <p className="text-app-text-muted">Employees' individual login accounts and access to other companies are NOT deleted.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 flex-wrap">
+          {req.status === 'Pending' && (
+            <>
+              <button onClick={approve} disabled={isSaving || (scope && !scope.canProceed)}
+                className="px-3 py-1.5 bg-app-warning text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Approve
+              </button>
+              {!rejectOpen ? (
+                <button onClick={() => setRejectOpen(true)} disabled={isSaving}
+                  className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Reject</button>
+              ) : (
+                <div className="w-full space-y-2 border border-app-border rounded-lg p-2.5 bg-app-elevated">
+                  <input value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason (optional)"
+                    className="w-full px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text focus:outline-none focus:border-app-accent" />
+                  <div className="flex gap-2">
+                    <button onClick={() => { setRejectOpen(false); setRejectReason(''); }} disabled={isSaving}
+                      className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
+                    <button onClick={reject} disabled={isSaving}
+                      className="px-3 py-1.5 bg-app-danger text-white rounded-lg text-xs font-semibold disabled:opacity-50">Confirm Reject</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {req.status === 'Approved' && (
+            !execConfirm ? (
+              <button onClick={() => { if (!scope) { loadScope(); } setExecConfirm(true); }} disabled={isSaving}
+                className="px-3 py-1.5 bg-app-danger text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
+                <AlertTriangle size={12} /> Execute Deletion
+              </button>
+            ) : (
+              <div className="w-full space-y-2 border border-app-danger rounded-lg p-2.5 bg-app-danger-bg">
+                <p className="text-xs text-app-danger flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> This permanently deletes the company and all its data. This cannot be undone. Revalidation runs at processing time.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setExecConfirm(false)} disabled={isSaving}
+                    className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
+                  <button onClick={execute} disabled={isSaving || (scope && !scope.canProceed)}
+                    className="px-3 py-1.5 bg-app-danger text-white rounded-lg text-xs font-semibold disabled:opacity-50">{isSaving ? 'Deleting…' : 'Confirm & Delete'}</button>
+                </div>
+              </div>
+            )
+          )}
+          {req.status === 'Completed' && (
+            <span className="text-xs text-app-success flex items-center gap-1">
+              <CheckCircle2 size={12} /> Completed{req.completedAt && ` · ${new Date(req.completedAt).toLocaleDateString()}`}
+            </span>
+          )}
+          {req.status === 'Failed' && (
+            <span className="text-xs text-app-danger flex items-center gap-1"><AlertTriangle size={12} /> Execution failed — review admin notes and retry</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotesBlock({ req, noteValue, onNotesChange, callManage, isSaving }) {
+  const [showSave, setShowSave] = useState(false);
+  return (
+    <div>
+      <label className="text-xs font-semibold text-app-text-muted uppercase block mb-1">Admin Notes</label>
+      <textarea rows={2} value={noteValue} onChange={e => { onNotesChange(req.id, e.target.value); setShowSave(true); }} placeholder="Add notes..."
+        className="w-full px-3 py-2 bg-app-input border border-app-border rounded-lg text-xs text-app-text placeholder:text-app-text-muted focus:outline-none focus:border-app-accent" />
+      {showSave && noteValue !== (req.adminNotes ?? '') && (
+        <button onClick={() => callManage({ action: 'save_notes', requestId: req.id, adminNotes: noteValue }, (d) => { setShowSave(false); })} disabled={isSaving}
+          className="mt-1 px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">
+          {isSaving ? 'Saving…' : 'Save Notes'}
+        </button>
+      )}
     </div>
   );
 }

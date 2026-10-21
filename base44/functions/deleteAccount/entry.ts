@@ -95,13 +95,46 @@ export default async function(req) {
       userId,
       userEmail,
       userName,
+      requestedByUserId: userId,
+      requestType: 'PERSONAL_ACCOUNT_DELETION',
       requestedAt: now,
       status: 'Pending',
       // appDataDeletedAt / authIdentityDeletedAt: intentionally null at request.
-      adminNotes: 'Request received. To complete: (1) remove the user in Base44 Dashboard → Users → Remove User, then (2) run manageDeletionRequest action=complete to remove associated personal data and mark the request Completed.',
+      adminNotes: 'Request received. To complete: (1) remove the user in the Dashboard → Users → Remove User, then (2) run manageDeletionRequest action=complete to remove associated personal data and mark the request Completed.',
     });
 
     console.log(`DeletionRequest created for userId=${userId} email=${userEmail} at ${now}`);
+
+    // ── 4b. Notify relevant company General Managers (departure handoff) ───────
+    // Shares only necessary departure information (who is leaving). The GM may
+    // acknowledge and coordinate work handoff by reading this notification. The
+    // GM has NO authority to reject, cancel, or delay another person's personal
+    // account deletion — DeletionRequest is deny-all RLS and admin-only, so no
+    // GM control exists. Personal account deletion never deletes the shared
+    // company workspace or other employees' accounts.
+    const SR = base44.asServiceRole;
+    try {
+      const myMemberships = await SR.entities.CompanyMembership.filter({
+        userId, status: 'active',
+      }).catch(() => []);
+      for (const m of (myMemberships || [])) {
+        const gms = await SR.entities.CompanyMembership.filter({
+          companyId: m.companyId, status: 'active',
+        }).catch(() => []);
+        const gmMems = (gms || []).filter(g => g.role === 'general_manager' && g.userId !== userId);
+        for (const gm of gmMems) {
+          await SR.entities.Notification.create({
+            companyId: m.companyId,
+            userId: gm.userId,
+            type: 'account_deletion_departure',
+            title: 'Team member departure',
+            body: `${userName || userEmail} has requested deletion of their Essential SOP account. Please coordinate any work handoff. You cannot approve or deny their personal account deletion.`,
+            targetType: 'user',
+            targetId: userId,
+          }).catch(() => {});
+        }
+      }
+    } catch (_) { /* best-effort departure notification */ }
 
     // ── 5. Return success ─────────────────────────────────────────────────────
     // Client will: localStorage.clear() → auth.logout('/') → redirect to login.

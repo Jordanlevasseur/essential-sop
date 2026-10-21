@@ -35,7 +35,11 @@
         "revision_rejected",
         "job_published",
         "plan_limit_reached",
-        "subscription_status_changed"
+        "subscription_status_changed",
+        "account_deletion_departure",
+        "company_deletion_approved",
+        "company_deletion_rejected",
+        "company_deletion_completed"
       ]
     },
     "title": {

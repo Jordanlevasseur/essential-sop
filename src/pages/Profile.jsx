@@ -7,15 +7,14 @@ import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
 import {
   Clock, Type, Sun, Moon, Monitor, ArrowUpDown,
-  Pencil, LogOut, ShieldCheck, ChevronRight, Trash2,
-  AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
+  Pencil, LogOut, ShieldCheck, ChevronRight,
+  FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
   RefreshCw,
   ChevronDown,
 } from 'lucide-react';
 import { getPlan, formatPrice, BETA_BILLING_ACTIVE } from '@/lib/plans';
 import { getRoleLabel } from '@/lib/roleLabels';
-import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { SORT_OPTIONS } from '@/lib/jobsSort';
 import { resolveLegalLink } from '@/lib/appSettings';
 import {
@@ -35,7 +34,6 @@ export default function Profile() {
   const isProjectManager = role === 'project_manager';
   const isProjectLead = role === 'project_lead';
   const isTechnician = role === 'technician';
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
   const { syncRecord, librarySyncing } = useApp();
 
@@ -208,6 +206,7 @@ export default function Profile() {
       )}
 
       <Section title="Account">
+
         <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />
         <Divider />
         <Row icon={LogOut} label="Sign Out" onClick={() => {
@@ -228,26 +227,6 @@ export default function Profile() {
           if (!r.external) navigate(r.route);
         }} />
       </Section>
-
-      {/* Danger zone */}
-      <div className="mb-4">
-        <div className="bg-app-card border border-app-danger/40 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-app-divider flex items-center gap-2">
-            <AlertTriangle size={13} className="text-app-danger" />
-            <span className="text-xs font-semibold text-app-danger uppercase tracking-wide">Danger Zone</span>
-          </div>
-          <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center gap-3 px-4 py-3.5 touch-active">
-            <Trash2 size={18} className="text-app-danger" />
-            <div className="flex-1 text-left">
-              <span className="text-sm font-medium text-app-danger">Delete Account</span>
-              <p className="text-xs text-app-text-muted mt-0.5">Permanently delete your account and personal data.</p>
-            </div>
-            <ChevronRight size={16} className="text-app-danger/60" />
-          </button>
-        </div>
-      </div>
-
-      {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
 
       <SelectSheet
         open={showSortSheet}
