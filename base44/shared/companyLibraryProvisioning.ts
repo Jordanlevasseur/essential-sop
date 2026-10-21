@@ -446,37 +446,27 @@ export async function provisionCompanyLibraryCore(
   } catch (_) {}
 
   // ── Step 1: Load candidate Masters ──────────────────────────────────────────
-  // COMPANY_CREATION performs a UNIVERSAL INITIAL SEED: every active, published,
-  // non-retired Master is provisioned to the new company as "available" (an ACTIVE
-  // ProvisioningRecord with NO linked Job). This populates the company's Master
-  // Library on first login so managers can preview and deliberately adopt —
-  // without manual platform-admin provisioning and WITHOUT auto-adopting
-  // (provisioned != adopted; only company-published Jobs inform the Assistant).
+  // CUSTOMER-APPROVAL GATE (single access-control point): a Master is a candidate
+  // for ANY provisioning — initial seed OR manual admin push — ONLY when it is
+  // explicitly marked distributionStatus='customer_available'. 'internal' is the
+  // platform-admin-only / unapproved state (see EssentialSOPMaster schema and
+  // publishingOrchestration §POLICY VALIDATION RULES) and is NEVER auto-
+  // provisioned to a customer company. 'retired' (revoked) and 'archived' masters
+  // are excluded by this filter. The initial company-creation seed does NOT
+  // bypass this gate — it applies the same one as MANUAL_PLATFORM_ADMIN.
   //
-  // The distribution policy (MANUAL / SELECTED / FUTURE / ALL) gates PUSH events
-  // (new-SOP / new-version distribution to EXISTING companies), NOT the initial
-  // library seed. MANUAL_PLATFORM_ADMIN and FUTURE_DISTRIBUTION_EVENT keep the
-  // stricter customer_available + policy eligibility, unchanged.
+  // The distribution POLICY (MANUAL / SELECTED / FUTURE / ALL) is a SEPARATE axis:
+  // it gates PUSH events (new-SOP / new-version distribution to EXISTING
+  // companies), NOT the initial new-company availability seed. So the seed
+  // bypasses the policy gate (below) but never the customer-approval gate (here).
   const isCompanyCreationSeed = source === 'COMPANY_CREATION';
   let allMasters: any[] = [];
   try {
-    if (isCompanyCreationSeed) {
-      allMasters = await SR.entities.EssentialSOPMaster.filter(
-        { status: 'active' },
-        '-updatedAt',
-        500
-      ) || [];
-      // Exclude retired (revoked) masters only. Both 'internal' and
-      // 'customer_available' are seeded — eligibility is active + published +
-      // not-revoked. Archived masters are already excluded by the status filter.
-      allMasters = allMasters.filter((m: any) => m.distributionStatus !== 'retired');
-    } else {
-      allMasters = await SR.entities.EssentialSOPMaster.filter(
-        { status: 'active', distributionStatus: 'customer_available' },
-        '-updatedAt',
-        500
-      ) || [];
-    }
+    allMasters = await SR.entities.EssentialSOPMaster.filter(
+      { status: 'active', distributionStatus: 'customer_available' },
+      '-updatedAt',
+      500
+    ) || [];
   } catch (_) {
     const failResult = _buildFailResult(runRecord?.id || null);
     await _finalizeRun(SR, runRecord, failResult, startedAt);
@@ -500,9 +490,11 @@ export async function provisionCompanyLibraryCore(
       continue;
     }
 
-    // Universal initial seed (company creation): every active, published,
-    // non-retired Master is eligible. The distribution policy does NOT gate the
-    // initial seed — it governs push events for EXISTING companies.
+    // Initial new-company seed: every customer-approved (customer_available),
+    // active, published Master is made available to the new company. The
+    // distribution POLICY does NOT gate the initial seed — it governs push
+    // events for EXISTING companies. The customer-approval gate was already
+    // enforced by the candidate load above; this bypasses only the policy gate.
     if (isCompanyCreationSeed) {
       eligibleMasters.push(m);
       continue;
