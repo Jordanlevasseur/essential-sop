@@ -1,7 +1,7 @@
 {
   "name": "DeletionRequest",
   "type": "object",
-  "description": "Unified deletion-request queue for TWO distinct workflows: (1) PERSONAL_ACCOUNT_DELETION \u2014 any authenticated user requests deletion of their own account; (2) COMPANY_DELETION \u2014 an active General Manager requests permanent deletion of their company workspace. ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by deleteAccount (personal) and requestCompanyClosure (company), both service-role, and read/processed ONLY by resolveDeletionRequests / manageDeletionRequest, which verify an active PlatformMembership(SUPER_ADMIN) on the backend. No frontend SDK call may list, read, modify, or delete these records. RECONCILIATION: pre-existing records have requestType=null and are treated as PERSONAL_ACCOUNT_DELETION (the original behavior); their status (Pending/Completed/Cancelled) is preserved unchanged. Lifecycle states: Pending (submitted, awaiting admin), Approved (company deletion \u2014 admin approved, awaiting irreversible execution), Rejected (company deletion \u2014 admin rejected), Completed (done), Cancelled (personal \u2014 admin dismissed), Failed (execution errored). Four independent signals per personal request: status, authIdentityDeletedAt (admin attestation), appDataDeletedAt (personal-data cleanup), notificationStatus (user completion notification). Company-deletion lifecycle is tracked via status + reviewerUserId/reviewedAt + completedAt.",
+  "description": "Unified deletion-request queue for TWO distinct workflows: (1) PERSONAL_ACCOUNT_DELETION \u2014 any authenticated user requests deletion of their own account; (2) COMPANY_DELETION \u2014 an active General Manager requests permanent deletion of their company workspace. ALL direct client access (read/create/update/delete) is blocked via RLS. Records are created ONLY by deleteAccount (personal) and requestCompanyClosure (company), both service-role, and read/processed ONLY by resolveDeletionRequests / manageDeletionRequest, which verify an active PlatformMembership(SUPER_ADMIN) on the backend. No frontend SDK call may list, read, modify, or delete these records. RECONCILIATION: pre-existing records have requestType=null and are treated as PERSONAL_ACCOUNT_DELETION (the original behavior); their status (Pending/Completed/Cancelled) is preserved unchanged. Lifecycle states: Pending (submitted, awaiting admin), Approved (company deletion \u2014 admin approved, awaiting irreversible execution), CleanupPending (company deletion \u2014 operational data deleted, underlying private file content still outstanding provider cleanup), Rejected (company deletion \u2014 admin rejected), Completed (done), Cancelled (personal \u2014 admin dismissed), Failed (execution errored; idempotent retry allowed). Four independent signals per personal request: status, authIdentityDeletedAt (admin attestation), appDataDeletedAt (personal-data cleanup), notificationStatus. Company-deletion lifecycle is tracked via status + reviewerUserId/reviewedAt + completedAt + fileCleanupStatus + notificationStatus.",
   "rls": {
     "read": false,
     "create": false,
@@ -49,12 +49,14 @@
       "enum": [
         "Pending",
         "Approved",
+        "CleanupPending",
         "Rejected",
         "Completed",
         "Cancelled",
         "Failed"
       ],
-      "default": "Pending"
+      "default": "Pending",
+      "description": "CleanupPending = company operational data deleted, underlying private file content still outstanding provider cleanup. Not marked Completed until file cleanup is confirmed."
     },
     "reviewerUserId": {
       "type": "string",
@@ -79,7 +81,7 @@
     "appDataDeletedAt": {
       "type": "string",
       "format": "date-time",
-      "description": "PERSONAL: set when manageDeletionRequest(action=complete) removes personal data. COMPANY: set when execute_company_deletion completes. Null while Pending/Approved. Independent of authIdentityDeletedAt and notificationStatus."
+      "description": "PERSONAL: set when manageDeletionRequest(action=complete) removes personal data. COMPANY: set when execute_company_deletion completes the metadata + company deletion. Independent of authIdentityDeletedAt and notificationStatus."
     },
     "authIdentityDeletedAt": {
       "type": "string",
@@ -95,7 +97,7 @@
         "admin_notified"
       ],
       "default": "pending",
-      "description": "PERSONAL: status of the deletion-COMPLETION notification to the user. COMPANY: status of the lifecycle notification to the requesting GM. 'email_sent' = SendEmail delivery accepted. 'email_failed' = delivery NOT accepted. 'admin_notified' = admin recorded an alternative channel. 'pending' = none attempted yet."
+      "description": "PERSONAL: status of the deletion-COMPLETION notification to the user. COMPANY: status of the lifecycle/completion notification to the requesting GM. 'email_sent' = SendEmail delivery accepted. 'email_failed' = delivery NOT accepted (retry via retry_company_completion_notification or record an alternative channel). 'admin_notified' = admin recorded an alternative verified channel. 'pending' = none attempted yet."
     },
     "userNotifiedVia": {
       "type": "string",
@@ -115,6 +117,43 @@
         "type": "string"
       },
       "description": "PERSONAL: company IDs closed (status='closed') during completion because the user was the sole owner and only active member. COMPANY: the company ID that was permanently deleted."
+    },
+    "fileCleanupStatus": {
+      "type": "string",
+      "enum": [
+        "none",
+        "pending",
+        "completed",
+        "manual_required"
+      ],
+      "default": "none",
+      "description": "COMPANY_DELETION only: tracks outstanding private file-content cleanup. 'none' = no private files were attached to the company. 'pending' = operational data deleted but underlying private file content (CompanyPdfAttachment.fileUri / Job.sourceDocumentUri) still requires provider cleanup; request stays CleanupPending. 'completed' = admin attested provider cleanup done; request transitioned to Completed. 'manual_required' = cleanup could not be completed automatically and awaits manual provider action. Base44 exposes no file-purge API; this field records the limitation without claiming a purge that did not occur."
+    },
+    "pendingFileUris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "COMPANY_DELETION only: private file_uri values captured from CompanyPdfAttachment.fileUri and Job.sourceDocumentUri BEFORE their metadata records were deleted. Retained so the administrator can identify and complete outstanding file-content cleanup with the provider. Admin-only; never exposed to customers."
+    },
+    "fileCleanupNotes": {
+      "type": "string",
+      "description": "COMPANY_DELETION only: admin attestation/notes recorded when confirming provider file cleanup."
+    },
+    "fileCleanupCompletedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fileCleanupCompletedBy": {
+      "type": "string",
+      "description": "userId of the Platform Super Admin who attested file-content cleanup was completed."
+    },
+    "executionErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "COMPANY_DELETION only: per-step error details when an execution partially fails (status=Failed). Lets the administrator identify exactly which cleanup steps remain before retrying. Cleared on successful completion."
     }
   },
   "required": [

@@ -149,6 +149,26 @@ async function notifyCompanyDeletion(SR: any, req: any, type: string, title: str
   } catch (_) { /* best-effort */ }
 }
 
+// Records the REAL delivery outcome of the company-deletion completion email.
+// Never claims sent when the sending service did not accept the request, and
+// never throws — a notification problem must NOT imply the deletion failed or
+// recreate any deleted data. Returns { notificationStatus, notificationError }.
+async function sendCompanyCompletionEmail(base44: any, req: any) {
+  try {
+    const r: any = await base44.integrations.Core.SendEmail({
+      to: req.userEmail,
+      subject: 'Your Essential SOP workspace deletion is complete',
+      body: `Hello ${req.userName || ''},\n\nYour company workspace "${req.companyName}" has been permanently deleted, including its SOP library, resources, attachments, memberships, and associated operational data. Your Essential SOP login and any other workspaces you belong to were not affected.\n\n— Essential SOP`,
+    });
+    if (r && (r.error || r.success === false)) {
+      return { notificationStatus: 'email_failed', notificationError: String(r.error || 'sending service rejected the request') };
+    }
+    return { notificationStatus: 'email_sent', notificationError: '' };
+  } catch (e: any) {
+    return { notificationStatus: 'email_failed', notificationError: e?.message || 'SendEmail threw' };
+  }
+}
+
 export default async function (req: Request): Promise<Response> {
   try {
     const base44 = createClientFromRequest(req);
@@ -468,32 +488,61 @@ export default async function (req: Request): Promise<Response> {
       return Response.json({ success: true, request: updated });
     }
 
-    // ── execute_company_deletion (irreversible; separate confirmation) ─────
-    // Approved → Completed. Revalidates requester authorization + company state
-    // at processing time. Permanently deletes company-owned operational data
-    // and the company record. Does NOT delete employees' auth accounts or their
-    // memberships in other companies. Platform-owned Master Library records are
-    // never deleted.
+    // ── execute_company_deletion (irreversible; idempotent; separate confirmation) ─
+    // Approved (or Failed on retry) → deletes company-owned operational data.
+    // Idempotent: every step is a companyId-scoped deleteMany that is a no-op on
+    // records already removed, so a retry after a partial failure safely sweeps
+    // the remaining work (and any records created since the last attempt — the
+    // company cannot silently retain new operational data).
+    // GM revalidation is enforced on the FIRST run (company still present). On
+    // a retry after the company record was removed, the GM membership is already
+    // gone so revalidation is impossible; we proceed to residual cleanup
+    // without bypassing the prior approval (a Failed request was previously
+    // Approved). Platform-owned Master Library records are never deleted.
     if (action === 'execute_company_deletion') {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
       if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
-      if (existing.status !== 'Approved') return Response.json({ error: 'Only approved requests can be executed. Approve first.' }, { status: 409 });
+      if (existing.status !== 'Approved' && existing.status !== 'Failed') {
+        return Response.json({ error: 'Only approved or previously-failed requests can be executed. Approve first.' }, { status: 409 });
+      }
 
       const cid = existing.companyId;
-      const mems = await SR.entities.CompanyMembership.filter({ companyId: cid, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
-      const stillGm = (mems || []).some((m: any) => m.role === 'general_manager');
       const company = await SR.entities.Company.get(cid).catch(() => null);
-      if (!stillGm) return Response.json({ error: 'The requesting General Manager is no longer an active GM. Execution aborted.', code: 'REQUESTER_NO_LONGER_GM' }, { status: 409 });
-      if (!company || company.status === 'closed') return Response.json({ error: 'The company no longer exists or is already closed. Execution aborted.', code: 'COMPANY_GONE' }, { status: 409 });
+
+      // Revalidate authorization ONLY when the company still exists (first run).
+      // On a retry after the company was deleted, memberships are gone and
+      // revalidation is impossible; the prior Approved status already
+      // authorized the deletion, so we proceed to idempotent residual cleanup.
+      if (company) {
+        const mems = await SR.entities.CompanyMembership.filter({ companyId: cid, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
+        const stillGm = (mems || []).some((m: any) => m.role === 'general_manager');
+        if (!stillGm) return Response.json({ error: 'The requesting General Manager is no longer an active GM. Execution aborted.', code: 'REQUESTER_NO_LONGER_GM' }, { status: 409 });
+        if (company.status === 'closed') return Response.json({ error: 'The company is already closed.', code: 'COMPANY_CLOSED' }, { status: 409 });
+      }
+
+      // Collect underlying private file URIs BEFORE deleting the metadata, so
+      // the request can track outstanding file-content cleanup. Base44 exposes
+      // no API to purge private storage; the admin must complete that with the
+      // provider and attest. The request is NOT marked Completed until then.
+      const pendingFileUris: string[] = [];
+      try {
+        const pdfs = await SR.entities.CompanyPdfAttachment.filter({ companyId: cid }).catch(() => []);
+        for (const p of (pdfs || [])) { if (p.fileUri) pendingFileUris.push(p.fileUri); }
+      } catch (_) { /* best-effort collection */ }
+      try {
+        const jobs = await SR.entities.Job.filter({ companyId: cid }).catch(() => []);
+        for (const j of (jobs || [])) { if (j.sourceDocumentUri) pendingFileUris.push(j.sourceDocumentUri); }
+      } catch (_) { /* best-effort collection */ }
 
       const errors: string[] = [];
       const del = async (entity: string, filter: any) => {
         try { await SR.entities[entity].deleteMany(filter); }
         catch (e: any) { errors.push(`${entity}: ${e?.message || 'delete failed'}`); }
       };
-      // Company-owned operational data (companyId-scoped).
+      // Company-owned operational data (companyId-scoped). deleteMany is
+      // idempotent, so a retry sweeps any records created since the last attempt.
       await del('Job', { companyId: cid });
       await del('JobSection', { companyId: cid });
       await del('SectionContent', { companyId: cid });
@@ -514,30 +563,123 @@ export default async function (req: Request): Promise<Response> {
       // Remove this company's memberships (does NOT delete the users or their
       // memberships in other companies).
       await del('CompanyMembership', { companyId: cid });
-      // Delete the company record itself, last.
-      try { await SR.entities.Company.delete(cid); } catch (e: any) { errors.push(`Company: ${e?.message || 'delete failed'}`); }
+      // Delete the company record itself, last (only if it still exists).
+      if (company) {
+        try { await SR.entities.Company.delete(cid); }
+        catch (e: any) { errors.push(`Company: ${e?.message || 'delete failed'}`); }
+      }
 
       if (errors.length > 0) {
         await SR.entities.DeletionRequest.update(requestId, {
           status: 'Failed',
-          adminNotes: [...(existing.adminNotes ? [existing.adminNotes] : []), `Execution errors: ${errors.join('; ')}`].join('\n'),
+          executionErrors: errors,
+          pendingFileUris: pendingFileUris.length ? pendingFileUris : (existing.pendingFileUris || []),
+          adminNotes: adminNotes ?? existing.adminNotes ?? '',
         }).catch(() => {});
-        return Response.json({ error: 'One or more deletion steps failed. The request is marked Failed. Review and retry the remaining items.', code: 'EXECUTION_FAILED', errors }, { status: 500 });
+        return Response.json({ error: 'One or more deletion steps failed. The request is marked Failed. Retry execute_company_deletion to complete the remaining idempotent steps.', code: 'EXECUTION_FAILED', errors, pendingFileUris }, { status: 500 });
+      }
+
+      // Metadata + company deleted. If underlying private files remain, the
+      // deletion is NOT fully complete until an admin attests provider cleanup.
+      const hasPendingFiles = pendingFileUris.length > 0;
+      if (hasPendingFiles) {
+        const updated = await SR.entities.DeletionRequest.update(requestId, {
+          status: 'CleanupPending',
+          executionErrors: [],
+          pendingFileUris,
+          fileCleanupStatus: 'pending',
+          appDataDeletedAt: now,
+          adminNotes: adminNotes ?? existing.adminNotes ?? '',
+        });
+        return Response.json({
+          success: true,
+          request: updated,
+          fileCleanupRequired: true,
+          pendingFileUris,
+          note: 'Company operational data deleted. Underlying private file content must be removed with the storage provider and attested via confirm_file_cleanup before the request is marked Completed.',
+        });
       }
 
       const updated = await SR.entities.DeletionRequest.update(requestId, {
         status: 'Completed', completedAt: now, appDataDeletedAt: now,
+        executionErrors: [], fileCleanupStatus: 'none', pendingFileUris: [],
         closedCompanyIds: [cid],
         adminNotes: adminNotes ?? existing.adminNotes ?? '',
       });
-      // Email the requesting GM (their app access to this company is now gone).
-      try {
-        await base44.integrations.Core.SendEmail({
-          to: existing.userEmail,
-          subject: 'Your Essential SOP workspace deletion is complete',
-          body: `Hello ${existing.userName || ''},\n\nYour company workspace "${existing.companyName}" has been permanently deleted, including its SOP library, resources, attachments, memberships, and associated operational data. Your Essential SOP login and any other workspaces you belong to were not affected.\n\n— Essential SOP`,
-        });
-      } catch (_) { /* best-effort */ }
+      // Notify the requesting GM. Record the REAL delivery outcome; never
+      // claim sent if not accepted. A notification failure does NOT recreate
+      // any data or imply deletion failed.
+      const notif = await sendCompanyCompletionEmail(base44, existing);
+      const withNotif = await SR.entities.DeletionRequest.update(requestId, {
+        notificationStatus: notif.notificationStatus,
+        notificationError: notif.notificationError || '',
+        userNotifiedAt: notif.notificationStatus === 'email_sent' ? now : undefined,
+      }).catch(() => updated);
+      return Response.json({ success: true, request: withNotif });
+    }
+
+    // ── confirm_file_cleanup (SUPER_ADMIN) ───────────────────────────────────
+    // Admin attests that the underlying private file content for a
+    // CleanupPending request has been removed (Base44 exposes no file-purge
+    // API; cleanup is performed with the storage provider). Transitions to
+    // Completed and sends the completion notification. Does not touch any
+    // deleted data and never recreates the company.
+    if (action === 'confirm_file_cleanup') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'CleanupPending') return Response.json({ error: 'Only cleanup-pending requests can be confirmed' }, { status: 409 });
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        status: 'Completed', completedAt: now,
+        fileCleanupStatus: 'completed',
+        fileCleanupCompletedAt: now,
+        fileCleanupCompletedBy: user.id,
+        fileCleanupNotes: (body.fileCleanupNotes || '').toString().trim() || existing.fileCleanupNotes || '',
+      });
+      const notif = await sendCompanyCompletionEmail(base44, existing);
+      const withNotif = await SR.entities.DeletionRequest.update(requestId, {
+        notificationStatus: notif.notificationStatus,
+        notificationError: notif.notificationError || '',
+        userNotifiedAt: notif.notificationStatus === 'email_sent' ? now : undefined,
+      }).catch(() => updated);
+      return Response.json({ success: true, request: withNotif });
+    }
+
+    // ── retry_company_completion_notification (SUPER_ADMIN) ───────────────────
+    // Resend the completion email after a prior failure. Does NOT modify any
+    // deletion state; only updates notificationStatus from the real outcome.
+    if (action === 'retry_company_completion_notification') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'Completed') return Response.json({ error: 'Notification can only be retried for completed requests' }, { status: 409 });
+      const notif = await sendCompanyCompletionEmail(base44, existing);
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        notificationStatus: notif.notificationStatus,
+        notificationError: notif.notificationError || '',
+        userNotifiedAt: notif.notificationStatus === 'email_sent' ? now : (existing.userNotifiedAt || undefined),
+      }).catch(() => null);
+      return Response.json({ success: true, request: updated, notificationStatus: notif.notificationStatus });
+    }
+
+    // ── record_company_completion_notification (SUPER_ADMIN) ──────────────────
+    // Admin records an alternative verified channel used to inform the GM when
+    // email delivery could not be confirmed. Does NOT modify deletion state.
+    if (action === 'record_company_completion_notification') {
+      if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
+      const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
+      if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
+      if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
+      if (existing.status !== 'Completed') return Response.json({ error: 'Only completed requests can have a notification recorded' }, { status: 409 });
+      const userNotifiedVia = (body.userNotifiedVia || '').toString().trim();
+      if (!userNotifiedVia) return Response.json({ error: 'userNotifiedVia is required (the verified channel used)' }, { status: 400 });
+      const updated = await SR.entities.DeletionRequest.update(requestId, {
+        notificationStatus: 'admin_notified',
+        userNotifiedVia,
+        userNotifiedAt: now,
+      });
       return Response.json({ success: true, request: updated });
     }
 

@@ -3,15 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
-import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX, Building2, User, X } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, CheckCircle2, Clock, Info, Mail, MailX, Building2, User, X, FileText, RefreshCw } from 'lucide-react';
 
 const STATUS_STYLES = {
-  Pending:   { bg: 'bg-app-warning-bg',  border: 'border-app-warning',  text: 'text-app-warning',  icon: Clock },
-  Approved:  { bg: 'bg-app-info-bg',    border: 'border-app-info',     text: 'text-app-info',     icon: Info },
-  Rejected:  { bg: 'bg-app-elevated',   border: 'border-app-border',   text: 'text-app-text-muted', icon: X },
-  Completed: { bg: 'bg-app-success-bg', border: 'border-app-success',  text: 'text-app-success',  icon: CheckCircle2 },
-  Cancelled: { bg: 'bg-app-elevated',   border: 'border-app-border',   text: 'text-app-text-muted', icon: Info },
-  Failed:    { bg: 'bg-app-danger-bg',  border: 'border-app-danger',   text: 'text-app-danger',   icon: AlertTriangle },
+  Pending:        { bg: 'bg-app-warning-bg',  border: 'border-app-warning',  text: 'text-app-warning',  icon: Clock },
+  Approved:       { bg: 'bg-app-info-bg',     border: 'border-app-info',    text: 'text-app-info',     icon: Info },
+  CleanupPending: { bg: 'bg-app-info-bg',     border: 'border-app-info',    text: 'text-app-info',     icon: Clock },
+  Rejected:       { bg: 'bg-app-elevated',    border: 'border-app-border',  text: 'text-app-text-muted', icon: X },
+  Completed:      { bg: 'bg-app-success-bg',   border: 'border-app-success', text: 'text-app-success',  icon: CheckCircle2 },
+  Cancelled:      { bg: 'bg-app-elevated',    border: 'border-app-border',  text: 'text-app-text-muted', icon: Info },
+  Failed:         { bg: 'bg-app-danger-bg',   border: 'border-app-danger',  text: 'text-app-danger',   icon: AlertTriangle },
 };
 
 const TYPE_LABELS = {
@@ -61,8 +62,8 @@ export default function DeletionRequests() {
 
   if (!isPlatformSuperAdmin) return null;
 
-  const pending = requests.filter(r => r.status === 'Pending' || r.status === 'Approved');
-  const resolved = requests.filter(r => r.status !== 'Pending' && r.status !== 'Approved');
+  const pending = requests.filter(r => r.status === 'Pending' || r.status === 'Approved' || r.status === 'CleanupPending' || r.status === 'Failed');
+  const resolved = requests.filter(r => r.status !== 'Pending' && r.status !== 'Approved' && r.status !== 'CleanupPending' && r.status !== 'Failed');
 
   return (
     <div className="min-h-screen bg-app-bg">
@@ -93,7 +94,7 @@ export default function DeletionRequests() {
           <Info size={16} className="text-app-info flex-shrink-0 mt-0.5" />
           <div className="text-xs text-app-text-2 space-y-1.5">
             <p><strong className="text-app-text">Personal Account Deletion</strong> — a user requests deletion of their own account. The GM is notified for work handoff but cannot reject or cancel. Process: Check Prerequisites → remove the login identity in the Dashboard → Mark Completed (attest). Single-person workspaces are closed automatically; a sole GM with other members must transfer ownership first.</p>
-            <p><strong className="text-app-text">Company Deletion</strong> — a General Manager requests permanent deletion of their workspace. View the scope, then Approve or Reject. After approval, run Execute Deletion (irreversible) to permanently remove the company and its data. The requester's authorization and company state are revalidated at each step.</p>
+            <p><strong className="text-app-text">Company Deletion</strong> — a General Manager requests permanent deletion of their workspace. View the scope, then Approve or Reject. After approval, run Execute Deletion (irreversible) to permanently remove the company and its data. If the company had private file attachments, the request moves to <strong>Cleanup Pending</strong> until an administrator attests the underlying file content has been removed with the provider, then marks it Completed. The requester's authorization and company state are revalidated at each step; a failed execution can be retried idempotently.</p>
           </div>
         </div>
 
@@ -338,6 +339,11 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [execConfirm, setExecConfirm] = useState(false);
+  const [cleanupConfirm, setCleanupConfirm] = useState(false);
+  const [cleanupNotes, setCleanupNotes] = useState('');
+  const [notifChannel, setNotifChannel] = useState('');
+  const notif = NOTIF_LABELS[req.notificationStatus] || NOTIF_LABELS.pending;
+  const NotifIcon = notif.icon;
 
   const loadScope = async () => {
     setScopeLoading(true);
@@ -350,6 +356,9 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
   const approve = () => callManage({ action: 'approve_company', requestId: req.id }, (d) => { refresh(d.request); setScope(null); });
   const reject = () => callManage({ action: 'reject_company', requestId: req.id, rejectionReason: rejectReason.trim() }, (d) => { refresh(d.request); setRejectOpen(false); setRejectReason(''); setScope(null); });
   const execute = () => callManage({ action: 'execute_company_deletion', requestId: req.id }, (d) => { refresh(d.request); setScope(null); setExecConfirm(false); });
+  const confirmCleanup = () => callManage({ action: 'confirm_file_cleanup', requestId: req.id, fileCleanupNotes: cleanupNotes.trim() }, (d) => { refresh(d.request); setCleanupConfirm(false); setCleanupNotes(''); });
+  const retryNotif = () => callManage({ action: 'retry_company_completion_notification', requestId: req.id }, (d) => refresh(d.request));
+  const recordNotif = () => { if (notifChannel.trim()) callManage({ action: 'record_company_completion_notification', requestId: req.id, userNotifiedVia: notifChannel.trim() }, (d) => { refresh(d.request); setNotifChannel(''); }); };
 
   return (
     <div className="bg-app-card border border-app-border rounded-xl overflow-hidden">
@@ -395,6 +404,90 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
                     <p className="text-app-text-muted">Employees' individual login accounts and access to other companies are NOT deleted.</p>
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Failed execution — show which steps remain and allow idempotent retry */}
+        {req.status === 'Failed' && (
+          <div className="border-t border-app-divider pt-3 space-y-2">
+            <p className="text-xs font-semibold text-app-danger uppercase">Execution failed — remaining steps</p>
+            {Array.isArray(req.executionErrors) && req.executionErrors.length > 0 && (
+              <div className="bg-app-danger-bg border border-app-danger rounded-lg p-2 space-y-1">
+                {req.executionErrors.map((e, i) => (
+                  <p key={i} className="text-xs text-app-danger flex items-start gap-1"><AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />{e}</p>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-app-text-2 leading-relaxed">Retry resumes the deletion idempotently — already-removed records are skipped and authorization revalidation only runs while the company still exists.</p>
+            <button onClick={execute} disabled={isSaving}
+              className="px-3 py-1.5 bg-app-danger text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
+              <RefreshCw size={12} /> {isSaving ? 'Retrying…' : 'Retry Execution'}
+            </button>
+          </div>
+        )}
+
+        {/* CleanupPending — operational data deleted, underlying file content outstanding */}
+        {req.status === 'CleanupPending' && (
+          <div className="border-t border-app-divider pt-3 space-y-2">
+            <p className="text-xs font-semibold text-app-info uppercase flex items-center gap-1"><FileText size={12} /> Outstanding file cleanup</p>
+            <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2 space-y-1">
+              <p>Company operational data has been deleted. The following private file references were captured before their metadata was removed and still require authorized provider cleanup:</p>
+              {Array.isArray(req.pendingFileUris) && req.pendingFileUris.length > 0 ? (
+                <ul className="space-y-0.5 mt-1 font-mono text-app-text-muted break-all">
+                  {req.pendingFileUris.map((u, i) => <li key={i}>• {u}</li>)}
+                </ul>
+              ) : <p className="text-app-text-muted">No file references recorded.</p>}
+            </div>
+            {!cleanupConfirm ? (
+              <button onClick={() => setCleanupConfirm(true)} disabled={isSaving}
+                className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
+                <CheckCircle2 size={12} /> Confirm File Cleanup
+              </button>
+            ) : (
+              <div className="w-full space-y-2 border border-app-success rounded-lg p-2.5 bg-app-success-bg">
+                <p className="text-xs text-app-text">Attest that the underlying file content has been removed with the provider. This marks the deletion Completed and notifies the requesting GM.</p>
+                <input value={cleanupNotes} onChange={e => setCleanupNotes(e.target.value)} placeholder="Cleanup reference / notes (optional)"
+                  className="w-full px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text focus:outline-none focus:border-app-accent" />
+                <div className="flex gap-2">
+                  <button onClick={() => { setCleanupConfirm(false); setCleanupNotes(''); }} disabled={isSaving}
+                    className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
+                  <button onClick={confirmCleanup} disabled={isSaving}
+                    className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> {isSaving ? 'Confirming…' : 'Attest & Complete'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Completion notification — real delivery status + retry / manual-confirmation path */}
+        {req.status === 'Completed' && (
+          <div className="border-t border-app-divider pt-3 space-y-2">
+            <p className="text-xs font-semibold text-app-text-muted uppercase">Completion notification</p>
+            <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${notif.bg} w-fit`}>
+              <NotifIcon size={13} className={notif.text} />
+              <span className={`text-xs font-medium ${notif.text}`}>{notif.label}</span>
+              {req.userNotifiedVia && <span className="text-xs text-app-text-muted">· {req.userNotifiedVia}</span>}
+            </div>
+            {req.notificationStatus === 'email_failed' && req.notificationError && (
+              <p className="text-xs text-app-danger">Delivery not accepted: {req.notificationError}</p>
+            )}
+            {req.notificationStatus !== 'email_sent' && req.notificationStatus !== 'admin_notified' && (
+              <div className="space-y-2">
+                <button onClick={retryNotif} disabled={isSaving}
+                  className="px-3 py-1.5 bg-app-elevated border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50 flex items-center gap-1">
+                  <RefreshCw size={12} /> {isSaving ? 'Sending…' : 'Retry email'}
+                </button>
+                <p className="text-xs text-app-text-2 leading-relaxed">Or contact the GM via a verified channel and record how you notified them.</p>
+                <div className="flex gap-2">
+                  <input value={notifChannel} onChange={e => setNotifChannel(e.target.value)} placeholder="e.g., email reply, phone"
+                    className="flex-1 px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text focus:outline-none focus:border-app-accent" />
+                  <button onClick={recordNotif} disabled={isSaving || !notifChannel.trim()}
+                    className="px-3 py-1.5 bg-app-accent text-app-accent-text rounded-lg text-xs font-semibold disabled:opacity-50">Record</button>
+                </div>
               </div>
             )}
           </div>
@@ -446,9 +539,6 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
             <span className="text-xs text-app-success flex items-center gap-1">
               <CheckCircle2 size={12} /> Completed{req.completedAt && ` · ${new Date(req.completedAt).toLocaleDateString()}`}
             </span>
-          )}
-          {req.status === 'Failed' && (
-            <span className="text-xs text-app-danger flex items-center gap-1"><AlertTriangle size={12} /> Execution failed — review admin notes and retry</span>
           )}
         </div>
       </div>
