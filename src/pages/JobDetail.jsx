@@ -28,6 +28,7 @@ import VersionAdoptionIncomplete from '@/components/jobs/version/VersionAdoption
 import ContentEditDialog from '@/components/sections/ContentEditDialog';
 import EditRequestForm from '@/components/EditRequestForm';
 import RemoveFromLibraryButton from '@/components/jobs/RemoveFromLibraryButton';
+import SopPdfExportButton from '@/components/jobs/SopPdfExportButton';
 import NotificationBell from '@/components/NotificationBell';
 import JobLoadError, { parseJobLoadError } from '@/components/jobs/JobLoadError';
 import CompanyResourcesSection from '@/components/resources/CompanyResourcesSection';
@@ -217,6 +218,9 @@ export default function JobDetail() {
   const headerActions = (
     <>
       <NotificationBell />
+      {job?.status === 'Published' && (
+        <SopPdfExportButton jobId={job.id} companyName={activeCompany?.name} />
+      )}
       {job?.sourceDocumentUri && (
         <button
           onClick={handleViewOriginal}
