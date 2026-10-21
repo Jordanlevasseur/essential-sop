@@ -36,8 +36,7 @@ export default function SopPdfExportButton({ jobId, companyName }) {
       const contentBySection = jobRes.data.contentBySection || {};
       const resources = resRes?.data?.resources || [];
       const { blob, filename } = buildSopPdf({ job, contentBySection, companyName, resources });
-      setPreview({ job, contentBySection, companyName, resources, blob, filename });
-      toast({ title: 'Export ready', description: 'Preview is ready to save or share.' });
+      setPreview({ blob, filename });
     } catch (e) {
       toast({ title: 'Export failed', description: e?.message || 'Failed to generate PDF.', variant: 'destructive' });
     } finally {
@@ -58,10 +57,6 @@ export default function SopPdfExportButton({ jobId, companyName }) {
       </button>
       {preview && (
         <SopExportPreview
-          job={preview.job}
-          contentBySection={preview.contentBySection}
-          companyName={preview.companyName}
-          resources={preview.resources}
           blob={preview.blob}
           filename={preview.filename}
           onClose={() => setPreview(null)}

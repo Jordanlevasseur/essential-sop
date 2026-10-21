@@ -1,16 +1,17 @@
 /**
  * SopExportPreview — full-screen export preview for a published SOP.
  *
- * Shows the SOP as a responsive HTML document (SopDocumentView) that fits the
- * screen width and scrolls vertically. The "Export / Share" button delivers
- * the actual PDF (save / share / print via the device share sheet, with a
- * fallback to opening the PDF). No informational note is shown at the top.
+ * Renders the ACTUAL generated PDF (jsPDF Blob) into responsive canvases via
+ * PDF.js — not an HTML recreation. Toolbar: Close | "PDF Preview" | Export / Share.
+ * Respects iPhone safe areas; no top informational note. The Export / Share
+ * button delivers the real PDF via the native share sheet (save/share/print)
+ * with an open-PDF fallback.
  */
 import React, { useEffect } from 'react';
 import { X, Share } from 'lucide-react';
-import SopDocumentView from './SopDocumentView';
+import PdfCanvasViewer from './PdfCanvasViewer';
 
-export default function SopExportPreview({ job, contentBySection, companyName, resources, blob, filename, onClose }) {
+export default function SopExportPreview({ blob, filename, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -39,14 +40,14 @@ export default function SopExportPreview({ job, contentBySection, companyName, r
         <button onClick={onClose} className="icon-btn no-select touch-active flex-shrink-0" aria-label="Close">
           <X size={22} className="text-app-text-2" />
         </button>
-        <p className="flex-1 min-w-0 text-sm font-semibold text-app-text truncate">{filename}</p>
+        <p className="flex-1 min-w-0 text-sm font-semibold text-app-text truncate">PDF Preview</p>
         <button onClick={handleExport}
           className="px-3 py-2 rounded-lg bg-app-accent text-app-accent-text text-sm font-medium flex items-center gap-1.5 no-select touch-active flex-shrink-0">
           <Share size={15} /> Export / Share
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
-        <SopDocumentView job={job} contentBySection={contentBySection} companyName={companyName} resources={resources} />
+        <PdfCanvasViewer blob={blob} />
         <div style={{ height: 'env(safe-area-inset-bottom)' }} />
       </div>
     </div>
