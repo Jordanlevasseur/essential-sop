@@ -1,6 +1,13 @@
 {
   "name": "PlatformAuditLog",
   "type": "object",
+  "description": "Immutable platform audit trail. All direct client access (read/create/update/delete) is blocked via RLS \u2014 entries are written by the platform via writePlatformAudit (service role) and surfaced to platform super-admins via platform audit backend functions. Direct client reads would expose platform administrative actions and target identifiers; direct writes would allow forging audit records.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "idempotencyKey": {
       "type": "string",

@@ -1,6 +1,13 @@
 {
   "name": "TemporaryEditGrant",
   "type": "object",
+  "description": "Temporary edit-access grant created when an EditRequest is approved. All direct client access (read/create/update/delete) is blocked via RLS. Grants are created exclusively by reviewEditRequest (company-admin authorized) and read/revoked by backend functions (submitRevision, resolveJob, resolveCompanyEditRequests, manageMember) using the service role. SECURITY: submitRevision honors an active TemporaryEditGrant as proof of edit permission \u2014 if create were open, a non-admin user could forge a grant for themselves and submit revisions. Denying all client writes closes that privilege-escalation path.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "companyId": {
       "type": "string"

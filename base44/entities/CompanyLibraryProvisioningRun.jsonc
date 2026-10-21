@@ -1,6 +1,13 @@
 {
   "name": "CompanyLibraryProvisioningRun",
   "type": "object",
+  "description": "Platform-owned record of a single company library provisioning run. All direct client access (read/create/update/delete) is blocked via RLS \u2014 these records are created and updated exclusively by the canonical companyLibraryProvisioning service (service role) and surfaced to platform admins via super-admin backend functions. Contains per-company provisioning state and error summaries that must not be exposed to company members.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "companyId": {
       "type": "string",

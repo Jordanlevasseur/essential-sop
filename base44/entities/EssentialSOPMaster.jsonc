@@ -1,6 +1,13 @@
 {
   "name": "EssentialSOPMaster",
   "type": "object",
+  "description": "Platform Master SOP record \u2014 the central Master Library. All direct client access (read/create/update/delete) is blocked via RLS. Masters are read and mutated exclusively through platform super-admin backend functions (manageMasterSOP, generateMasterSopDraft, provisionCompanyLibrary) that verify an active PlatformMembership(SUPER_ADMIN). Company-facing reads are restricted to Masters actively assigned to the caller's company via resolveCompanyMasterLibrary / resolveCompanyMasterPreview (company-admin membership + ACTIVE ProvisioningRecord). A Technician or any other client MUST NOT list, read, or mutate Master records directly through the SDK \u2014 doing so would bypass the distribution-eligibility and assignment gates and expose the full platform Master Library.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "title": {
       "type": "string"

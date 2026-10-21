@@ -1,6 +1,13 @@
 {
   "name": "EssentialSOPSection",
   "type": "object",
+  "description": "Platform Master SOP section content, locked to a specific published version. All direct client access (read/create/update/delete) is blocked via RLS. Sections are written during platform publication and read only through the assignment-gated company preview resolver and platform super-admin backend functions. Direct SDK reads would expose the full content of every Master section across the platform, so client access is denied entirely.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "masterId": {
       "type": "string",

@@ -1,6 +1,13 @@
 {
   "name": "EssentialSOPVersion",
   "type": "object",
+  "description": "Platform Master SOP published version \u2014 immutable once published. All direct client access (read/create/update/delete) is blocked via RLS. Versions are created and read exclusively through platform super-admin backend functions (publishing orchestration, manageMasterSOP) and surfaced to companies only through the assignment-gated company preview resolver. Direct SDK reads would expose draft and published versions of every Master in the platform, including internal/retired content, so client access is denied entirely.",
+  "rls": {
+    "read": false,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
   "properties": {
     "masterId": {
       "type": "string",

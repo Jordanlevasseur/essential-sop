@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { useSafeBack } from '@/lib/useSafeBack';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
@@ -51,6 +51,11 @@ export default function CreateJob() {
       });
     }
   }, [editId]);
+
+  // Technicians and other non-admins cannot create or edit Jobs. The backend
+  // (saveCompanyJob) also denies non-admins, but the screen itself must not
+  // render a creation form for a Technician who navigates here directly.
+  if (!isCompanyAdmin) return <Navigate to="/" replace />;
 
   const set = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
