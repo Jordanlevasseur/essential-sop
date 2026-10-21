@@ -3,12 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useApp } from '@/lib/AppContext';
 import { useTheme } from '@/lib/ThemeContext';
-import { resetDemoData } from '@/lib/seedData';
 import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
 import {
-  Clock, Type, Sun, Moon, Monitor, ArrowUpDown, RotateCcw,
-  Pencil, LogOut, HardHat, ShieldCheck, ChevronRight, Trash2,
+  Clock, Type, Sun, Moon, Monitor, ArrowUpDown,
+  Pencil, LogOut, ShieldCheck, ChevronRight, Trash2,
   AlertTriangle, FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
   RefreshCw,
@@ -27,7 +26,7 @@ import SelectSheet from '@/components/ui/SelectSheet';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, userMode, switchMode, preferences, updatePreferences, recentlyViewed, isPlatformSuperAdmin, companyId } = useApp();
+  const { user, preferences, updatePreferences, recentlyViewed, isPlatformSuperAdmin } = useApp();
   const { activeCompany, activeMembership, companies, isGeneralManager } = useCompany();
   const { appearance, setAppearance } = useTheme();
   const currentPlan = getPlan(activeCompany?.subscriptionPlanCode);
@@ -36,27 +35,11 @@ export default function Profile() {
   const isProjectManager = role === 'project_manager';
   const isProjectLead = role === 'project_lead';
   const isTechnician = role === 'technician';
-  const [resetting, setResetting] = useState(false);
-  const [resetDone, setResetDone] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
   const { syncRecord, librarySyncing } = useApp();
 
   const rl = (code) => getRoleLabel(code, activeCompany);
-
-  const handleReset = async () => {
-    if (!confirm('This will delete all jobs and restore the original demo data. Continue?')) return;
-    setResetting(true);
-    try {
-      await resetDemoData(companyId);
-      setResetDone(true);
-      setTimeout(() => { window.location.href = '/'; }, 1500);
-    } catch (e) {
-      alert('Reset failed: ' + (e.message || 'Unknown error'));
-    } finally {
-      setResetting(false);
-    }
-  };
 
   const APPEARANCE_OPTIONS = [
     { value: 'system', label: 'System', icon: Monitor },
@@ -77,9 +60,6 @@ export default function Profile() {
           <h2 className="font-semibold text-app-text truncate">{user.name}</h2>
           <p className="text-sm text-app-text-2 truncate">{rl(activeMembership?.role) || user.role}</p>
           <p className="text-xs text-app-text-muted truncate">{activeCompany?.name || user.company}</p>
-        </div>
-        <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-app-disabled text-app-text-muted">
-          {userMode === 'admin' ? 'Demo: Admin' : 'Demo: View'}
         </div>
       </div>
 
@@ -216,15 +196,6 @@ export default function Profile() {
             <ChevronDown size={16} className="text-app-text-muted" />
           </button>
         </div>
-      </Section>
-
-      {/* Prototype Controls — presentation-only UI switchers. No backend permissions change. */}
-      <Section title="Prototype Controls (Presentation Only)">
-        <Row icon={HardHat} label="Technician View" active={userMode === 'technician'} onClick={() => switchMode('technician')} />
-        <Divider />
-        <Row icon={ShieldCheck} label="Administrator View" active={userMode === 'admin'} onClick={() => switchMode('admin')} />
-        <Divider />
-        <Row icon={RotateCcw} label={resetting ? 'Resetting…' : resetDone ? 'Reset Complete!' : 'Reset Demo Data'} onClick={resetting ? undefined : handleReset} />
       </Section>
 
       {/* Platform Admin — gated on verified PlatformMembership, not company role */}

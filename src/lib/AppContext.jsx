@@ -42,7 +42,6 @@ export function AppProvider({ children }) {
 
   const [isReady, setIsReady] = useState(false);
   const [seedError, setSeedError] = useState(null);
-  const [userMode, setUserMode] = useState(() => localStorage.getItem(STORAGE_KEYS.mode) || 'technician');
   const [recentlyViewed, setRecentlyViewed] = useState(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.recent) || '[]'); } catch { return []; }
   });
@@ -76,11 +75,6 @@ export function AppProvider({ children }) {
       .catch((err) => { setSeedError(err?.message || 'Failed to initialize'); setIsReady(true); });
   }, [companyId]);
 
-  // technicianViewMode: presentation-only toggle for prototype testing.
-  // It does NOT grant any backend permissions or change authorization.
-  // Renamed from 'admin'/'technician' modes to avoid implying role authority.
-
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.mode, userMode); }, [userMode]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.recent, JSON.stringify(recentlyViewed)); }, [recentlyViewed]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.prefs, JSON.stringify(preferences)); }, [preferences]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session)); }, [session]);
@@ -109,7 +103,6 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  const switchMode = useCallback((mode) => setUserMode(mode), []);
   const updatePreferences = useCallback((updates) => setPreferences(prev => ({ ...prev, ...updates })), []);
 
   const textSizeClass = preferences.textSize === 'small' ? 'text-sm' : preferences.textSize === 'large' ? 'text-lg' : 'text-base';
@@ -125,21 +118,15 @@ export function AppProvider({ children }) {
   // ── Automatic Company Library Sync ────────────────────────────────────────
   const { syncing: librarySyncing, syncRecord, syncError: librarySyncError, triggerSync } = useCompanySync(companyId, hasCompany, isCompanyAdmin);
 
-  // technicianViewMode: presentation-only toggle for prototype UI testing.
-  // Does NOT grant any backend permissions. Renamed to clarify it is not a role switch.
-  const technicianViewMode = userMode === 'technician';
-
   return (
     <AppContext.Provider value={{
-      isReady, seedError, userMode, switchMode,
+      isReady, seedError,
       // Company authority (explicit) — derived from CompanyMembership only
       isCompanyAdmin,
       companyCapabilities,
       // Platform authority (explicit) — sourced from PlatformContext, independent of company
       isPlatformSuperAdmin,
       platformCapabilities,
-      // Prototype presentation mode — NOT an authorization signal
-      technicianViewMode,
       isGeneralManager,
       recentlyViewed, addRecentlyViewed,
       preferences, updatePreferences, textSizeClass,
