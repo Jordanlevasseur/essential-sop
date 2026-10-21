@@ -1,19 +1,20 @@
 /**
- * SopPdfExportButton — "Print / Save PDF" action for a published company SOP.
+ * SopPdfExportButton — "Export SOP" action for a published company SOP.
  *
  * On tap it re-fetches the authoritative, current published SOP through the
  * existing authorized path (resolveJob) and its resources (resolveCompanyResources),
- * then generates a client-side PDF (jsPDF). Nothing is uploaded or written to
- * the company database. Available to every authorized company member who can
- * read the SOP, including Technicians; resolveJob enforces company isolation
- * and the published/Master-assignment gates server-side.
+ * then generates a client-side PDF (jsPDF) and opens a responsive preview.
+ * Nothing is uploaded or written to the company database. Available to every
+ * authorized company member who can read the SOP, including Technicians;
+ * resolveJob enforces company isolation and the published/Master-assignment
+ * gates server-side.
  */
 import React, { useState } from 'react';
-import { Printer, Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { useToast } from '@/components/ui/use-toast';
 import { buildSopPdf } from '@/lib/sopPdfExporter';
-import SopPdfPreview from './SopPdfPreview';
+import SopExportPreview from './SopExportPreview';
 
 export default function SopPdfExportButton({ jobId, companyName }) {
   const [generating, setGenerating] = useState(false);
@@ -35,9 +36,8 @@ export default function SopPdfExportButton({ jobId, companyName }) {
       const contentBySection = jobRes.data.contentBySection || {};
       const resources = resRes?.data?.resources || [];
       const { blob, filename } = buildSopPdf({ job, contentBySection, companyName, resources });
-      const url = URL.createObjectURL(blob);
-      setPreview({ url, blob, filename });
-      toast({ title: 'PDF ready', description: 'Preview is ready to save or print.' });
+      setPreview({ job, contentBySection, companyName, resources, blob, filename });
+      toast({ title: 'Export ready', description: 'Preview is ready to save or share.' });
     } catch (e) {
       toast({ title: 'Export failed', description: e?.message || 'Failed to generate PDF.', variant: 'destructive' });
     } finally {
@@ -51,17 +51,20 @@ export default function SopPdfExportButton({ jobId, companyName }) {
         onClick={handleExport}
         disabled={generating}
         className="px-3 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5 no-select touch-active border border-app-border text-app-text-2 bg-app-elevated disabled:opacity-50"
-        aria-label="Print or save as PDF"
+        aria-label="Export SOP"
       >
-        {generating ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
-        {generating ? 'PDF...' : 'PDF'}
+        {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+        {generating ? 'Export...' : 'Export SOP'}
       </button>
       {preview && (
-        <SopPdfPreview
-          url={preview.url}
+        <SopExportPreview
+          job={preview.job}
+          contentBySection={preview.contentBySection}
+          companyName={preview.companyName}
+          resources={preview.resources}
           blob={preview.blob}
           filename={preview.filename}
-          onClose={() => { URL.revokeObjectURL(preview.url); setPreview(null); }}
+          onClose={() => setPreview(null)}
         />
       )}
     </>
