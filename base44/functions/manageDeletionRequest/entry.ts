@@ -511,11 +511,15 @@ export default async function (req: Request): Promise<Response> {
       const cid = existing.companyId;
       const company = await SR.entities.Company.get(cid).catch(() => null);
 
-      // Revalidate authorization ONLY when the company still exists (first run).
-      // On a retry after the company was deleted, memberships are gone and
-      // revalidation is impossible; the prior Approved status already
-      // authorized the deletion, so we proceed to idempotent residual cleanup.
-      if (company) {
+      // Revalidate authorization ONLY on the FIRST run (status === 'Approved').
+      // On a retry (status === 'Failed') the GM membership may already have been
+      // revoked by the earlier partial execution, so revalidating now would
+      // incorrectly block the retry with REQUESTER_NO_LONGER_GM. The prior
+      // approval (reviewerUserId/reviewedAt) is the verified authorization; we
+      // proceed to idempotent residual cleanup without re-checking the GM and
+      // without granting the former GM any new privilege.
+      if (existing.status === 'Approved') {
+        if (!company) return Response.json({ error: 'The company no longer exists.', code: 'COMPANY_GONE' }, { status: 409 });
         const mems = await SR.entities.CompanyMembership.filter({ companyId: cid, userId: existing.requestedByUserId, status: 'active' }).catch(() => []);
         const stillGm = (mems || []).some((m: any) => m.role === 'general_manager');
         if (!stillGm) return Response.json({ error: 'The requesting General Manager is no longer an active GM. Execution aborted.', code: 'REQUESTER_NO_LONGER_GM' }, { status: 409 });
@@ -541,6 +545,19 @@ export default async function (req: Request): Promise<Response> {
         try { await SR.entities[entity].deleteMany(filter); }
         catch (e: any) { errors.push(`${entity}: ${e?.message || 'delete failed'}`); }
       };
+      // ── BLOCK all operational writes FIRST ──────────────────────────────────
+      // The moment irreversible deletion begins, revoke the company's write-
+      // authorizing state so no new operational data can appear while deletion is
+      // underway (execution, Failed-retry pause, and CleanupPending). This is
+      // real prevention, not a post-hoc sweep: every operational write function
+      // (saveCompanyJob, saveSectionContent, manageCompanyResource,
+      // manageCompanyPdf, reviewEditRequest, …) gates on getActiveMembership,
+      // which filters status='active'; and submitRevision gates on an active
+      // TemporaryEditGrant. Once these two are gone, those functions return 403
+      // BEFORE creating any record. deleteMany is idempotent, so a retry is a
+      // safe no-op on already-removed state.
+      await del('CompanyMembership', { companyId: cid });
+      await del('TemporaryEditGrant', { companyId: cid });
       // Company-owned operational data (companyId-scoped). deleteMany is
       // idempotent, so a retry sweeps any records created since the last attempt.
       await del('Job', { companyId: cid });
@@ -554,15 +571,11 @@ export default async function (req: Request): Promise<Response> {
       await del('CompanyVersionAnalysis', { companyId: cid });
       await del('CompanyVersionDecision', { companyId: cid });
       await del('CompanyVersionDeferral', { companyId: cid });
-      await del('TemporaryEditGrant', { companyId: cid });
       await del('ActivityLog', { companyId: cid });
       await del('Notification', { companyId: cid });
       await del('CompanyInvitation', { companyId: cid });
       await del('ProvisioningRecord', { companyId: cid });
       await del('CompanyLibraryProvisioningRun', { companyId: cid });
-      // Remove this company's memberships (does NOT delete the users or their
-      // memberships in other companies).
-      await del('CompanyMembership', { companyId: cid });
       // Delete the company record itself, last (only if it still exists).
       if (company) {
         try { await SR.entities.Company.delete(cid); }
@@ -589,6 +602,7 @@ export default async function (req: Request): Promise<Response> {
           pendingFileUris,
           fileCleanupStatus: 'pending',
           appDataDeletedAt: now,
+          closedCompanyIds: [cid],
           adminNotes: adminNotes ?? existing.adminNotes ?? '',
         });
         return Response.json({
@@ -620,22 +634,30 @@ export default async function (req: Request): Promise<Response> {
 
     // ── confirm_file_cleanup (SUPER_ADMIN) ───────────────────────────────────
     // Admin attests that the underlying private file content for a
-    // CleanupPending request has been removed (Base44 exposes no file-purge
-    // API; cleanup is performed with the storage provider). Transitions to
-    // Completed and sends the completion notification. Does not touch any
-    // deleted data and never recreates the company.
+    // CleanupPending request has been removed. Base44 exposes NO file-purge
+    // API, so the administrator must contact Base44 support with the captured
+    // pendingFileUris list, request purge of those storage objects, and obtain
+    // written confirmation (a support case / ticket reference). That reference
+    // is REQUIRED in fileCleanupNotes as the evidence of provider cleanup; an
+    // empty attestation is rejected. Transitions to Completed and sends the
+    // completion notification. Does not touch any deleted data and never
+    // recreates the company.
     if (action === 'confirm_file_cleanup') {
       if (!requestId) return Response.json({ error: 'requestId is required' }, { status: 400 });
       const existing = await SR.entities.DeletionRequest.get(requestId).catch(() => null);
       if (!existing) return Response.json({ error: 'Request not found' }, { status: 404 });
       if (existing.requestType !== 'COMPANY_DELETION') return Response.json({ error: 'Not a company deletion request' }, { status: 400 });
       if (existing.status !== 'CleanupPending') return Response.json({ error: 'Only cleanup-pending requests can be confirmed' }, { status: 409 });
+      const fileCleanupNotes = (body.fileCleanupNotes || '').toString().trim();
+      if (!fileCleanupNotes) {
+        return Response.json({ error: 'A Base44 support case reference is required as evidence that the underlying file content was purged.', code: 'EVIDENCE_REQUIRED' }, { status: 400 });
+      }
       const updated = await SR.entities.DeletionRequest.update(requestId, {
         status: 'Completed', completedAt: now,
         fileCleanupStatus: 'completed',
         fileCleanupCompletedAt: now,
         fileCleanupCompletedBy: user.id,
-        fileCleanupNotes: (body.fileCleanupNotes || '').toString().trim() || existing.fileCleanupNotes || '',
+        fileCleanupNotes,
       });
       const notif = await sendCompanyCompletionEmail(base44, existing);
       const withNotif = await SR.entities.DeletionRequest.update(requestId, {

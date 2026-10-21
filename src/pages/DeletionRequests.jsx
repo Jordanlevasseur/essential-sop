@@ -94,7 +94,7 @@ export default function DeletionRequests() {
           <Info size={16} className="text-app-info flex-shrink-0 mt-0.5" />
           <div className="text-xs text-app-text-2 space-y-1.5">
             <p><strong className="text-app-text">Personal Account Deletion</strong> — a user requests deletion of their own account. The GM is notified for work handoff but cannot reject or cancel. Process: Check Prerequisites → remove the login identity in the Dashboard → Mark Completed (attest). Single-person workspaces are closed automatically; a sole GM with other members must transfer ownership first.</p>
-            <p><strong className="text-app-text">Company Deletion</strong> — a General Manager requests permanent deletion of their workspace. View the scope, then Approve or Reject. After approval, run Execute Deletion (irreversible) to permanently remove the company and its data. If the company had private file attachments, the request moves to <strong>Cleanup Pending</strong> until an administrator attests the underlying file content has been removed with the provider, then marks it Completed. The requester's authorization and company state are revalidated at each step; a failed execution can be retried idempotently.</p>
+            <p><strong className="text-app-text">Company Deletion</strong> — a General Manager requests permanent deletion of their workspace. View the scope, then Approve or Reject. After approval, run Execute Deletion (irreversible) to permanently remove the company and its data. If the company had private file attachments, the request moves to <strong>Cleanup Pending</strong>: the admin must contact Base44 support with the captured file URIs to purge the underlying storage objects and obtain a support-case reference, then record it to mark the request Completed. The requester's authorization and company state are revalidated on the first execution; a failed execution can be retried idempotently without re-checking the (now-revoked) GM.</p>
           </div>
         </div>
 
@@ -433,7 +433,7 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
           <div className="border-t border-app-divider pt-3 space-y-2">
             <p className="text-xs font-semibold text-app-info uppercase flex items-center gap-1"><FileText size={12} /> Outstanding file cleanup</p>
             <div className="bg-app-info-bg border border-app-border rounded-lg p-2 text-xs text-app-text-2 space-y-1">
-              <p>Company operational data has been deleted. The following private file references were captured before their metadata was removed and still require authorized provider cleanup:</p>
+              <p>Company operational data has been deleted. The underlying private file content below cannot be purged from within the app — Base44 exposes no file-purge API. <strong className="text-app-text">Procedure:</strong> contact Base44 support with the file URI list, request purge of those storage objects, and obtain a written support-case reference.</p>
               {Array.isArray(req.pendingFileUris) && req.pendingFileUris.length > 0 ? (
                 <ul className="space-y-0.5 mt-1 font-mono text-app-text-muted break-all">
                   {req.pendingFileUris.map((u, i) => <li key={i}>• {u}</li>)}
@@ -447,13 +447,13 @@ function CompanyRequestCard({ req, editNotes, onNotesChange, callManage, refresh
               </button>
             ) : (
               <div className="w-full space-y-2 border border-app-success rounded-lg p-2.5 bg-app-success-bg">
-                <p className="text-xs text-app-text">Attest that the underlying file content has been removed with the provider. This marks the deletion Completed and notifies the requesting GM.</p>
-                <input value={cleanupNotes} onChange={e => setCleanupNotes(e.target.value)} placeholder="Cleanup reference / notes (optional)"
+                <p className="text-xs text-app-text">Record the Base44 support-case reference that confirms the underlying file content was purged. This marks the deletion Completed and notifies the requesting GM. An empty attestation is rejected.</p>
+                <input value={cleanupNotes} onChange={e => setCleanupNotes(e.target.value)} placeholder="Base44 support case reference (required)"
                   className="w-full px-3 py-1.5 bg-app-input border border-app-border rounded-lg text-xs text-app-text focus:outline-none focus:border-app-accent" />
                 <div className="flex gap-2">
                   <button onClick={() => { setCleanupConfirm(false); setCleanupNotes(''); }} disabled={isSaving}
                     className="px-3 py-1.5 border border-app-border rounded-lg text-xs font-medium text-app-text-2 disabled:opacity-50">Cancel</button>
-                  <button onClick={confirmCleanup} disabled={isSaving}
+                  <button onClick={confirmCleanup} disabled={isSaving || !cleanupNotes.trim()}
                     className="px-3 py-1.5 bg-app-success text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center gap-1">
                     <CheckCircle2 size={12} /> {isSaving ? 'Confirming…' : 'Attest & Complete'}
                   </button>
