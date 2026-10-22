@@ -160,8 +160,10 @@ export function sanitizeStoredOverride(storedOverride, jobId) {
     }
   }
 
-  // sectionOverrides — must be an object of section arrays
-  if (storedOverride.sectionOverrides !== undefined) {
+  // sectionOverrides — must be an object of section arrays. Treat null the same
+  // as absent (the storage layer may inject null for an unspecified sub-property;
+  // a title/shortDescription-only customization must not break resolution).
+  if (storedOverride.sectionOverrides != null) {
     if (typeof storedOverride.sectionOverrides === 'object' && !Array.isArray(storedOverride.sectionOverrides)) {
       const cleanSections = {};
       for (const [st, items] of Object.entries(storedOverride.sectionOverrides)) {
