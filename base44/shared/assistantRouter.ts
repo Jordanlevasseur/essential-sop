@@ -319,10 +319,10 @@ function titleMatchScore(question: string, jobTitle: string): number {
 // trade-agnostic: it relies only on how strongly SOP titles match the question,
 // not on any trade vocabulary.
 //
-//   2+ SOPs each named by a DISCRIMINATOR title token matched in the question
-//     → COMBINE (e.g. "paint, floor, and frame" names Painting/Flooring/Framing;
-//     "hang and tape drywall" names Hanging/Taping — "drywall" alone is a shared
-//     object word and does NOT name "Drywall Patch and Repair").
+//   2+ SOPs each named by a matched significant title token (that is NOT an
+//     incidental shared-object-only match) → COMBINE. E.g. "paint, floor, and
+//     frame" names Painting Walls/Flooring/Framing; "hang and tape drywall" names
+//     Hanging/Taping — "drywall" alone does NOT name "Drywall Patch and Repair".
 //   1 named SOP + a credible second operation the user named that no SOP covers
 //     → PARTIAL (answer the one, acknowledge the missing).
 //   1 named SOP whose own title contains "and" → NOT multi (the and is part of
@@ -330,6 +330,10 @@ function titleMatchScore(question: string, jobTitle: string): number {
 //   1 named SOP with NO uncovered operation token → NOT multi (the combiner
 //     joins sections/concepts, e.g. "tools and materials for hanging drywall").
 const MULTI_INDICATOR_RE = /\b(and|both|together|as well as|plus|also|then|next)\b|,/i;
+
+// Collective anaphors that refer back to SOPs from the previous turn, used for
+// follow-up resolution (e.g. "what about the materials for both?").
+const ANAPHOR_RE = /\b(both|those|these|them|the two|those two|these two|each of|the second|the other|the first|that one|the ones|the procedures|the sops?)\b/i;
 
 /**
  * Returns true if the question contains a significant token that looks like a
@@ -391,24 +395,41 @@ function detectMultiOperation(
   const qlower = question.toLowerCase();
   const { titleSig, freq } = buildTitleSignificance(knowledge);
 
-  // A SOP is "named" if the question stem-matches one of its DISCRIMINATOR
-  // significant tokens (a token not shared across other distinct titles).
+  // A SOP is "named" if the question stem-matches one of its significant title
+  // tokens, EXCEPT an incidental object-only match: when EVERY matched token
+  // is a shared object word (appears across other distinct titles) AND the SOP
+  // has a UNIQUE operation token the user did NOT mention. This is what tells
+  // a named operation from a shared material word — no verb/object lexicon:
+  //   "hang and tape drywall": Drywall Patch and Repair matches only "drywall"
+  //     (shared), and its unique "patch" was never mentioned → excluded.
+  //     Hanging/Taping match their unique "hanging"/"taping" → named.
+  //   "paint, floor, and frame": Painting Walls matches "painting" (shared with
+  //     Interior Painting); its only other token "walls" is also shared, so it
+  //     has NO unique unmentioned operation → kept. Interior Painting matches
+  //     "painting" but has unique unmentioned "interior" → excluded.
   const named: { job: any; pos: number }[] = [];
   for (const job of knowledge.jobs) {
     const title = (job.title || '').toLowerCase().trim();
-    const sig = titleSig.get(title);
-    if (!sig) continue;
+    const sigSet = titleSig.get(title);
+    if (!sigSet) continue;
+    const sig = [...sigSet];
+    const matched: string[] = [];
+    const matchedSet = new Set<string>();
     let bestPos = Infinity;
     for (const t of sig) {
-      if ((freq.get(t) || 0) >= 2) continue; // shared object word — not a discriminator
       for (const qt of qTokens) {
         if (stemMatches(qt, t)) {
+          if (!matchedSet.has(t)) { matched.push(t); matchedSet.add(t); }
           const idx = qlower.indexOf(qt);
           if (idx >= 0 && idx < bestPos) bestPos = idx;
         }
       }
     }
-    if (bestPos !== Infinity) named.push({ job, pos: bestPos });
+    if (matched.length === 0) continue;
+    const allMatchedShared = matched.every(t => (freq.get(t) || 0) >= 2);
+    const hasUniqueUnmatched = sig.some(t => !matchedSet.has(t) && (freq.get(t) || 0) === 1);
+    if (allMatchedShared && hasUniqueUnmatched) continue; // incidental object-only match
+    named.push({ job, pos: bestPos });
   }
 
   named.sort((a, b) => a.pos - b.pos);
@@ -628,6 +649,27 @@ export function routeAssistantRequest(
         reason: `Multi-operation request; one named operation has no published SOP.`,
       };
     }
+    // Follow-up anaphora: the question refers back to prior SOPs ("what about
+    // the materials for both?") without re-naming them. When a collective
+    // anaphor is present and 2+ prior-turn SOPs are still eligible, combine the
+    // requested section across them instead of asking the user to re-specify.
+    if (!multi && focusJobIds.length >= 2 && ANAPHOR_RE.test(q)) {
+      const focusJobs = focusJobIds
+        .map(id => findSopByJobId(knowledge, id))
+        .filter((j): j is NonNullable<typeof j> => j !== null);
+      if (focusJobs.length >= 2) {
+        return {
+          route: 'direct',
+          directKind: 'multi_sop_section',
+          targetJobIds: focusJobs.map(j => j.id),
+          targetSectionTypes: sections,
+          sectionType,
+          confidence: 0.8,
+          reason: 'Follow-up referring to previous SOPs; combining the requested section across them.',
+        };
+      }
+    }
+
     const target = resolveTargetSop(knowledge, q, focusJobIds);
     if (target.jobId) {
       // Procedure is only direct when explicitly listing (not explaining).
