@@ -21,12 +21,14 @@ import {
   findSopByJobId,
   SECTION_LABELS,
   SYNONYM_MAP,
+  stemMatches,
 } from './companyKnowledgeEngine.ts';
 
 export type RouteKind = 'direct' | 'generative' | 'no_match' | 'clarification';
 export type DirectKind =
   | 'sop_discovery'
   | 'section_listing'
+  | 'multi_sop_section'
   | 'specific_step'
   | 'resource_request'
   | 'trade_listing'
@@ -36,6 +38,14 @@ export interface RoutingDecision {
   route: RouteKind;
   directKind?: DirectKind;
   targetJobId?: string;
+  // Multi-operation: the explicitly named SOPs whose requested section should
+  // be combined into one answer (NOT clarification). Used by both the direct
+  // multi_sop_section path and the generative path (restricts AI context to
+  // the named SOPs so a keyword-only match like "Mudding Drywall" is excluded).
+  targetJobIds?: string[];
+  // True when the question names 2+ operations but only one has a published
+  // SOP — answer the supported portion and acknowledge the missing source.
+  partialMissing?: boolean;
   sectionType?: string;
   stepNumber?: number;
   tradeFilter?: string;
@@ -243,11 +253,64 @@ function titleMatchScore(question: string, jobTitle: string): number {
   const titleTokens = title.match(/[a-z0-9]+/g) || [];
   const significant = titleTokens.filter(t => t.length > 2 && !TITLE_STOPWORDS.has(t));
   if (significant.length === 0) return 0;
+  const qTokens = q.match(/[a-z0-9]+/g) || [];
   let hits = 0;
   for (const t of significant) {
-    if (q.includes(t)) hits++;
+    // Stem-aware: "hang" matches "hanging", "tape" matches "taping".
+    if (qTokens.some(qt => stemMatches(qt, t))) hits++;
   }
   return hits / significant.length;
+}
+
+// ── Multi-operation detection ────────────────────────────────────────────────
+// A combined request ("What tools do I need to hang AND tape drywall?") names
+// two operations and wants information from BOTH — it is NOT ambiguity.
+// Conjunction + 2+ strongly-matching SOPs (each explicitly named, score>=0.8)
+// → combine. Conjunction + exactly 1 strong match (and that title does not
+// itself contain "and") → partial: answer the one and acknowledge the missing.
+// Conjunction inside a single SOP title ("Gutters and Downspout Repair") is
+// NOT treated as multi — the "and" belongs to the title, not a second op.
+const MULTI_CONJUNCTION_RE = /\b(and|both|together|as well as|plus)\b/i;
+
+function detectMultiOperation(
+  knowledge: CompanyKnowledge,
+  question: string
+): { jobIds: string[]; partial: boolean } | null {
+  if (!MULTI_CONJUNCTION_RE.test(question.toLowerCase())) return null;
+  const scored = knowledge.jobs
+    .map(job => ({ job, score: titleMatchScore(question, job.title || '') }))
+    .filter(s => s.score >= 0.8)
+    .sort((a, b) => b.score - a.score);
+  if (scored.length >= 2) {
+    // Order the combined SOPs to match the order the operations appear in the
+    // question ("hang AND tape" → Hanging before Taping), not storage order.
+    const q = normalizeQuery(question.toLowerCase());
+    const positionOf = (job: any): number => {
+      const title = (job.title || '').toLowerCase().trim();
+      const sig = (title.match(/[a-z0-9]+/g) || []).filter(t => t.length > 2 && !TITLE_STOPWORDS.has(t));
+      const qTokens = q.match(/[a-z0-9]+/g) || [];
+      let best = Infinity;
+      for (const t of sig) {
+        for (const qt of qTokens) {
+          if (stemMatches(qt, t)) {
+            const idx = q.indexOf(qt);
+            if (idx >= 0 && idx < best) best = idx;
+          }
+        }
+      }
+      return best;
+    };
+    const ordered = [...scored].sort((a, b) => positionOf(a.job) - positionOf(b.job));
+    return { jobIds: ordered.map(s => s.job.id), partial: false };
+  }
+  if (scored.length === 1) {
+    // If the single strong match's own title contains "and", the conjunction
+    // is part of the SOP name (e.g. "Gutters and Downspout Repair") — not multi.
+    const t = (scored[0].job.title || '').toLowerCase();
+    if (/\band\b/.test(t)) return null;
+    return { jobIds: [scored[0].job.id], partial: true };
+  }
+  return null;
 }
 
 /**
@@ -318,8 +381,23 @@ export function routeAssistantRequest(
   const q = question.trim();
   const knowledgeComplete = knowledge.metrics?.complete ?? true;
 
+  // Multi-operation detection (combined requests like "hang AND tape drywall").
+  // Computed once and reused by the generative and section-listing branches.
+  const multi = detectMultiOperation(knowledge, q);
+
   // ── 1. Generative intent → generative ──────────────────────────────────
   if (hasGenerativeIntent(q)) {
+    // For a multi-operation generative request, restrict the AI context to
+    // the explicitly named SOPs so a keyword-only match (e.g. "Mudding
+    // Drywall" matching only on "drywall") is excluded from the synthesis.
+    if (multi && multi.jobIds.length >= 2) {
+      return {
+        route: 'generative',
+        targetJobIds: multi.jobIds,
+        confidence: 0.9,
+        reason: 'Multi-operation request; AI context restricted to the named SOPs.',
+      };
+    }
     return {
       route: 'generative',
       confidence: 0.9,
@@ -400,6 +478,30 @@ export function routeAssistantRequest(
   // ── 4. Section listing ────────────────────────────────────────────────
   const sectionType = detectSectionType(q);
   if (sectionType) {
+    // Multi-operation combined request: combine the requested section from
+    // every explicitly named SOP (no clarification). Partial = only one named
+    // operation has a published SOP → answer it and acknowledge the missing.
+    if (multi && multi.jobIds.length >= 2) {
+      return {
+        route: 'direct',
+        directKind: 'multi_sop_section',
+        targetJobIds: multi.jobIds,
+        sectionType,
+        confidence: 0.85,
+        reason: `Multi-operation ${sectionType} request combining the named SOPs.`,
+      };
+    }
+    if (multi && multi.partial && multi.jobIds.length === 1) {
+      return {
+        route: 'direct',
+        directKind: 'multi_sop_section',
+        targetJobIds: multi.jobIds,
+        sectionType,
+        partialMissing: true,
+        confidence: 0.8,
+        reason: `Multi-operation ${sectionType} request; one named operation has no published SOP.`,
+      };
+    }
     const target = resolveTargetSop(knowledge, q, focusJobIds);
     if (target.jobId) {
       // For procedure: only direct if explicitly listing (not explaining)

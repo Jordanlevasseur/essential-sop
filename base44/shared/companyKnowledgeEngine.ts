@@ -124,6 +124,47 @@ export function expandQueryTokens(tokens: string[]): string[] {
   return [...out];
 }
 
+/**
+ * stripSuffix — strip common English inflection suffixes (-ing, -ed, -s) so a
+ * query token matches its titled form. Conservative: only strips when the
+ * remaining stem is long enough to be meaningful (avoids stripping "ing"
+ * from a 3-char token). Does NOT strip a lone trailing 'e' here — that is
+ * handled by the silent-e rule in stemMatches.
+ */
+function stripSuffix(t: string): string {
+  if (t.length > 4 && t.endsWith('ing')) return t.slice(0, -3);
+  if (t.length > 3 && t.endsWith('ed')) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
+  return t;
+}
+
+/**
+ * stemMatches — conservative stem match between two tokens, handling the
+ * cases that matter for construction SOP titles:
+ *   - exact:               "taping" == "taping"
+ *   - suffix-stripped:     "hang" == stripped("hanging") → "hang" == "hang"
+ *   - silent-e conjugation: "tape" vs stripped("taping")="tap" → dropE → "tap"=="tap"
+ *     (tape→taping drops the e, so a naive prefix check fails)
+ *   - prefix (>=4 chars):  "install" prefix-of "installation"
+ * Short tokens ("dry" 3, "mud" 3, "for" 3) are intentionally NOT matched to
+ * longer unrelated words — they fail the >=4 prefix and the >=3 stem/e-drop
+ * equality checks. Exported for reuse by the router and ranking utility.
+ */
+export function stemMatches(a: string, b: string): boolean {
+  if (a === b) return true;
+  const sa = stripSuffix(a);
+  const sb = stripSuffix(b);
+  if (sa === sb && sa.length >= 3) return true;
+  const dropE = (w: string) => (w.endsWith('e') ? w.slice(0, -1) : w);
+  const ea = dropE(sa);
+  const eb = dropE(sb);
+  if (ea === eb && ea.length >= 3) return true;
+  const lo = a.length <= b.length ? a : b;
+  const hi = a.length <= b.length ? b : a;
+  if (lo.length >= 4 && hi.startsWith(lo)) return true;
+  return false;
+}
+
 // ── Resolution ──────────────────────────────────────────────────────────────
 
 /**
@@ -297,7 +338,9 @@ export function rankJobsByQuery(
     const title = String(job.title || '').toLowerCase();
     const titleTokens = new Set(title.match(/[a-z0-9]+/g) || []);
     let score = 0;
-    for (const t of qTokenSet) if (titleTokens.has(t)) score += 3;
+    for (const t of qTokenSet) {
+      for (const tt of titleTokens) { if (stemMatches(t, tt)) { score += 3; break; } }
+    }
     for (const b of qBigrams) if (title.includes(b)) score += 6;
 
     const items = itemsByJob[job.id] || [];

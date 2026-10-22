@@ -158,6 +158,17 @@ function selectSops(
   // Rank all eligible SOPs by query relevance (with synonym expansion)
   const ranked = rankJobsByQuery(knowledge, question, { expandSynonyms: true });
 
+  // Multi-operation generative request: restrict context to the explicitly
+  // named SOPs so a keyword-only match (e.g. "Mudding Drywall" matching only
+  // on "drywall") is excluded from the synthesis. The router already
+  // authorized these as strong, explicitly-named operations.
+  if (decision.targetJobIds && decision.targetJobIds.length >= 2) {
+    const wanted = decision.targetJobIds
+      .map(id => findSopByJobId(knowledge, id))
+      .filter((j): j is NonNullable<typeof j> => j !== null);
+    return wanted.slice(0, MAX_SOPS).map(job => ({ job, score: 100, sections: [] }));
+  }
+
   let selected: SopContext[];
 
   if (mode === 'comparison') {
