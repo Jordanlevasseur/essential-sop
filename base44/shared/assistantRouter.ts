@@ -436,6 +436,98 @@ function namesAnyOperation(question: string): boolean {
   return false;
 }
 
+// ── Ordinal / SOP-name selection after clarification ──────────────────────────
+// After a clarification, the user may respond with an ordinal ("the first one",
+// "the second one") or a bare SOP name from the offered list. Both should
+// resolve to the specific SOP and inherit the section from the previous user
+// question (e.g., "What tools are needed for drywall?" → "the first one" →
+// first SOP's tools). This is deterministic — no AI call, no unreliable ordinal
+// interpretation by the LLM.
+
+const ORDINAL_INDEX: Record<string, number> = {
+  first: 0, '1st': 0,
+  second: 1, '2nd': 1,
+  third: 2, '3rd': 2,
+  fourth: 3, fifth: 4,
+};
+
+// Strictly anchored: the question must BE the ordinal (+ optional "one"/"the"),
+// not merely contain it. Prevents "I need the second coat of mud" from
+// triggering ordinal SOP selection.
+const ORDINAL_SELECTION_RE = /^(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd)(?:\s+one)?\s*$/i;
+
+interface HistoryEntry { role: string; text: string }
+
+/**
+ * Detect an ordinal or bare-SOP-name selection after a clarification.
+ * Returns a RoutingDecision if the question is a selection, or null.
+ */
+function detectClarificationSelection(
+  knowledge: CompanyKnowledge,
+  question: string,
+  focusJobIds: string[],
+  history: HistoryEntry[]
+): RoutingDecision | null {
+  if (focusJobIds.length === 0) return null;
+  const q = question.trim();
+
+  // ── Ordinal: "the first one", "the second one", "the third" ──────────
+  const ordMatch = q.match(ORDINAL_SELECTION_RE);
+  if (ordMatch) {
+    const idx = ORDINAL_INDEX[ordMatch[1].toLowerCase()];
+    if (idx !== undefined && idx < focusJobIds.length) {
+      const job = findSopByJobId(knowledge, focusJobIds[idx]);
+      if (job) {
+        return buildSelectionDecision(knowledge, job, history, `ordinal "${ordMatch[1]}"`);
+      }
+    }
+    return null;
+  }
+
+  // ── Bare SOP name from the clarification list ──────────────────────────
+  // If the question IS (exactly, case-insensitive) one of the focus SOP
+  // titles, resolve to it. Avoids an AI call for a simple selection.
+  const qLower = q.toLowerCase();
+  for (const fid of focusJobIds) {
+    const job = findSopByJobId(knowledge, fid);
+    if (!job) continue;
+    const title = (job.title || '').toLowerCase().trim();
+    if (title && qLower === title) {
+      return buildSelectionDecision(knowledge, job, history, 'SOP name');
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Build a section_listing decision for a clarification selection. The section
+ * is inherited from the previous user question in history (e.g., "What tools..."
+ * → tools). Defaults to 'scope' if no section can be inferred.
+ */
+function buildSelectionDecision(
+  _knowledge: CompanyKnowledge,
+  job: any,
+  history: HistoryEntry[],
+  via: string
+): RoutingDecision {
+  const prevUserQs = history.filter(h => h.role === 'user').map(h => h.text || '');
+  const prevQ = prevUserQs.length > 0 ? prevUserQs[prevUserQs.length - 1] : '';
+  const sections = detectSectionTypes(prevQ);
+  const sectionType = sections.length > 0 ? sections[0] : 'scope';
+  const targetSections = sections.length > 0 ? sections : ['scope'];
+
+  return {
+    route: 'direct',
+    directKind: 'section_listing',
+    targetJobId: job.id,
+    sectionType,
+    targetSectionTypes: targetSections,
+    confidence: 0.9,
+    reason: `Clarification selection via ${via}; resolved to "${job.title}". Section inherited from previous question.`,
+  };
+}
+
 // A "discriminator" title token is one that is NOT shared across other
 // distinct SOP titles. This is what lets the matcher tell a named operation
 // from a shared object word — trade-agnostic, no verb/object lexicon needed.
@@ -607,7 +699,8 @@ function resolveTargetSop(
 export function routeAssistantRequest(
   knowledge: CompanyKnowledge,
   question: string,
-  focusJobIds: string[] = []
+  focusJobIds: string[] = [],
+  history: HistoryEntry[] = []
 ): RoutingDecision {
   const q = question.trim();
   const knowledgeComplete = knowledge.metrics?.complete ?? true;
@@ -884,7 +977,17 @@ export function routeAssistantRequest(
     }
   }
 
-  // ── 8. Default → generative ───────────────────────────────────────────
+  // ── 8. Ordinal / SOP-name selection after clarification ──────────────
+  // "the first one", "the second one", or a bare SOP name from the offered
+  // list. Resolved deterministically — the section is inherited from the
+  // previous user question so the user gets the tools/materials/etc. they
+  // originally asked about.
+  if (focusJobIds.length > 0) {
+    const selection = detectClarificationSelection(knowledge, q, focusJobIds, history);
+    if (selection) return selection;
+  }
+
+  // ── 9. Default → generative ───────────────────────────────────────────
   return {
     route: 'generative',
     confidence: 0.5,

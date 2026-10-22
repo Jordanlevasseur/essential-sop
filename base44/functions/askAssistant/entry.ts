@@ -147,7 +147,7 @@ export default async function (req: Request): Promise<Response> {
 
     // ── Stage 3: Intelligent request routing ──
     const _routeStartTime = Date.now();
-    const decision = routeAssistantRequest(knowledge, question, focusJobIds);
+    const decision = routeAssistantRequest(knowledge, question, focusJobIds, history);
     const _routeDurationMs = Date.now() - _routeStartTime;
 
     // ── Direct / clarification routes: structured answer, no AI call ──

@@ -105,14 +105,12 @@ export default function Assistant() {
       const sources = Array.isArray(data.sources) ? data.sources : [];
       const resources = Array.isArray(data.resources) ? data.resources : [];
       setMessages(prev => [...prev, { role: 'assistant', text: answer, sources, resources }]);
-      // Clear conversational focus after clarification and no-match so stale
-      // SOPs from a previous turn cannot leak into the next question. After a
-      // successful answer, focus follows the returned sources.
-      if (data.route === 'clarification' || data.route === 'no_match') {
-        lastJobIdsRef.current = [];
-      } else {
-        lastJobIdsRef.current = sources.map(s => s.jobId).filter(Boolean);
-      }
+      // Focus follows the returned sources. After a successful answer this is
+      // the cited SOPs; after clarification it is the offered SOPs (so follow-up
+      // selections like "the first one" can resolve); after no_match sources
+      // is empty so focus is naturally cleared. The backend namesAnyOperation
+      // gate prevents stale focus from overriding explicit new subjects.
+      lastJobIdsRef.current = sources.map(s => s.jobId).filter(Boolean);
     } catch (e) {
       setMessages(prev => [...prev, {
         role: 'assistant',
