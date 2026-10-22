@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSafeBack } from '@/lib/useSafeBack';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AlertTriangle } from 'lucide-react';
 
 /**
  * Terms of Service — structural legal terms for the Essential SOP application.
@@ -23,6 +23,19 @@ export default function TermsOfService() {
 
       <div className="max-w-2xl mx-auto px-4 py-6 pb-16 selectable">
 
+
+        {/* Draft / Review Status — business details require owner confirmation */}
+        <div className="flex items-start gap-3 p-4 mb-6 bg-app-warning-bg border border-app-warning rounded-xl">
+          <AlertTriangle size={18} className="text-app-warning flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-app-warning">Draft — Pending Owner Confirmation</p>
+            <p className="text-xs text-app-text-2 mt-0.5">
+              Structural legal terms. The following business details are working drafts requiring
+              owner confirmation and attorney review before public release: legal contracting
+              entity, support contact email, governing jurisdiction, and effective date.
+            </p>
+          </div>
+        </div>
 
         <p className="text-xs text-app-text-muted mb-6">Last updated: October 22, 2026</p>
 

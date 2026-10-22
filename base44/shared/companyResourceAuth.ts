@@ -4,12 +4,14 @@
  * Used by both resolveCompanyResources (read) and manageCompanyResource (write)
  * so the access check is never duplicated and never drifts between surfaces.
  *
- * Reuses the existing company membership verification (companyAuth.ts) and the
- * Master-derived active-assignment rule (activeCompanyContent.ts), mirroring the
- * visibility gates in resolveJob so an archived or platform-revoked SOP can never
- * become accessible through the resource endpoint.
+ * Reuses the existing company membership verification (companyAuth.ts). For
+ * essential_sop Jobs, mirrors resolveJob's adopted-SOP ownership rule: an
+ * already-adopted, Published company SOP's resources and PDFs remain accessible
+ * even if the originating Master is archived, retired, or unassigned. Platform
+ * Master status and ProvisioningRecord assignment are NOT required to read or
+ * manage resources on an existing adopted SOP — they remain required only for
+ * NEW adoption/provisioning (addToCompanyLibrary / resolveCompanyMasterLibrary).
  */
-import { isMasterAssignedActive } from './activeCompanyContent.ts';
 import { getActiveMembership, isCompanyAdminRole } from './companyAuth.ts';
 
 export const VALID_RESOURCE_TYPES = new Set([
@@ -65,8 +67,10 @@ export function sanitizeResourceData(raw: any): any {
  *   - Active CompanyMembership for the job's company
  *   - Admin role (GM/PM) when requireAdmin is true
  *   - Job is not archived
- *   - For essential_sop Jobs: Published status, active source Master, and an
- *     ACTIVE platform ProvisioningRecord assignment
+ *   - For essential_sop Jobs: Published status (company's own Job state).
+ *     Platform Master status and ProvisioningRecord assignment are NOT checked
+ *     — an already-adopted SOP's resources/PDFs remain accessible even if the
+ *     Master is archived/retired/unassigned (adopted-SOP ownership rule).
  *
  * Returns { job, membership, isCompanyAdmin } on success, or { error: Response }.
  */
@@ -88,21 +92,17 @@ export async function verifyResourceJobAccess(
     return { error: Response.json({ error: 'This procedure is no longer active.', code: 'JOB_NOT_ACTIVE' }, { status: 410 }) };
   }
 
-  // Master-derived visibility checks — mirror resolveJob's resolveEssentialSOPJob gates
+  // Adopted-SOP ownership rule — mirror resolveJob's resolveEssentialSOPJob gate.
+  // An EXISTING adopted company SOP is decoupled from platform Master availability.
+  // The company owns its adopted Job and its resources/PDFs, so archiving/retiring/
+  // unassigning the original platform Master must NOT make resources or PDFs
+  // inaccessible. Access is governed solely by the company's own Job state
+  // (Published + non-archived, checked above). Platform Master status and
+  // ProvisioningRecord assignment remain required only for NEW adoption/
+  // provisioning (addToCompanyLibrary / resolveCompanyMasterLibrary).
   if (job.sourceType === 'essential_sop') {
     if (job.status !== 'Published') {
       return { error: Response.json({ error: 'This procedure is no longer active.', code: 'JOB_NOT_ACTIVE' }, { status: 410 }) };
-    }
-    if (job.sourceMasterId) {
-      let sourceMaster: any = null;
-      try { sourceMaster = await SR.entities.EssentialSOPMaster.get(job.sourceMasterId); } catch (_) {}
-      if (!sourceMaster || sourceMaster.status !== 'active') {
-        return { error: Response.json({ error: 'This procedure is no longer available.', code: 'SOURCE_MASTER_UNAVAILABLE' }, { status: 410 }) };
-      }
-      const assignmentActive = await isMasterAssignedActive(SR, job.companyId, job.sourceMasterId);
-      if (!assignmentActive) {
-        return { error: Response.json({ error: 'This procedure is no longer available to your company.', code: 'ASSIGNMENT_REVOKED' }, { status: 410 }) };
-      }
     }
   }
 

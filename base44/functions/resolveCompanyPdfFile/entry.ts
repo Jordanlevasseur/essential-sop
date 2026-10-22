@@ -12,7 +12,8 @@ import { verifyResourceJobAccess } from '../../shared/companyResourceAuth.ts';
  *     company (any role may view).
  *   - The parent Job passes the same visibility checks as resolveJob and
  *     resolveCompanyResources: not archived, and for essential_sop jobs must
- *     be Published with an active Master + ACTIVE platform assignment.
+ *     be Published (adopted-SOP ownership rule — platform Master status and
+ *     ProvisioningRecord assignment are not required for existing adopted SOPs).
  *   - The requested PDF must belong to the specified jobId + company
  *     (parent-child verification), so a guessed PDF ID from another company
  *     job is rejected.

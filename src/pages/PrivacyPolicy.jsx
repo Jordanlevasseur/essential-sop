@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSafeBack } from '@/lib/useSafeBack';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AlertTriangle } from 'lucide-react';
 
 /**
  * Privacy Policy — structural privacy terms for the Essential SOP application.
@@ -24,6 +24,20 @@ export default function PrivacyPolicy() {
       <div className="max-w-2xl mx-auto px-4 py-6 pb-16 selectable">
 
 
+        {/* Draft / Review Status — business details require owner confirmation */}
+        <div className="flex items-start gap-3 p-4 mb-6 bg-app-warning-bg border border-app-warning rounded-xl">
+          <AlertTriangle size={18} className="text-app-warning flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-app-warning">Draft — Pending Owner Confirmation</p>
+            <p className="text-xs text-app-text-2 mt-0.5">
+              Structural privacy terms. The following details are working drafts requiring owner
+              confirmation and attorney review before public release: legal entity name, contact
+              email, effective date, exact data collected, third-party processors, data retention
+              periods, and applicable privacy rights (e.g., GDPR, CCPA).
+            </p>
+          </div>
+        </div>
+
         <p className="text-xs text-app-text-muted mb-6">Last updated: October 22, 2026</p>
 
         <Section title="1. Introduction">
@@ -46,6 +60,7 @@ export default function PrivacyPolicy() {
             <li><strong>Device Information:</strong> Device type, operating system, and app version.</li>
             <li><strong>User-Generated Content:</strong> Job notes, photos, and checklist responses you submit.</li>
           </ul>
+          <p className="mt-2 text-xs text-app-text-muted">Review required: confirm exact data collected with your engineering team and legal counsel.</p>
           
         </Section>
 
@@ -69,6 +84,7 @@ export default function PrivacyPolicy() {
             <li><strong>Legal Compliance:</strong> When required by law, court order, or governmental authority.</li>
             <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, or sale of assets.</li>
           </ul>
+          <p className="mt-2 text-xs text-app-text-muted">Review required: list specific third-party processors after legal review.</p>
           
         </Section>
 
@@ -97,6 +113,7 @@ export default function PrivacyPolicy() {
           </ul>
           <p className="mt-2"><strong>Retained company operational records:</strong> standard operating procedures, job templates, section content, job overrides and revisions, edit requests (including the requester's reason and supporting note as part of the company's SOP-governance record), uploaded reference documents and PDFs, version-analysis/decision/deferral records, temporary edit grants, activity logs, platform audit logs, and distribution/provisioning records. These reference your account by ID or name as part of legitimate company audit and governance history; they are shared operational data, not your personal data, and are <strong>not</strong> deleted with your account.</p>
           <p className="mt-2"><strong>Completion confirmation:</strong> we attempt to send a confirmation email to your registered address. If delivery cannot be confirmed (for example, because your login identity has already been removed or email delivery is unavailable), an administrator will inform you through an alternative verified channel and record that notification. You will not be able to sign in again after deletion.</p>
+          <p className="mt-2 text-xs text-app-text-muted">Review required: finalize data retention periods with legal counsel.</p>
           
         </Section>
 
@@ -115,6 +132,7 @@ export default function PrivacyPolicy() {
             <li>Object to or restrict certain processing.</li>
             <li>Data portability.</li>
           </ul>
+          <p className="mt-2 text-xs text-app-text-muted">Review required: confirm applicable rights based on your users' jurisdictions (e.g., GDPR, CCPA) with legal counsel.</p>
           
         </Section>
 
