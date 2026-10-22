@@ -303,6 +303,8 @@ const NON_OPERATION_WORDS = new Set([
   // Detail-request words that are not construction operations.
   'descriptions', 'quantities', 'specifications', 'specs', 'details',
   'include', 'including',
+  // Collective anaphors — refer back to prior SOPs, not new operations.
+  'both', 'those', 'these', 'them', 'each', 'ones',
 ]);
 
 /**
@@ -403,6 +405,32 @@ function questionNamesUnmatchedOperation(knowledge: CompanyKnowledge, question: 
     if (NON_OPERATION_WORDS.has(qt)) continue;
     if (TITLE_STOPWORDS.has(qt)) continue;
     if (allTitleTokens.some(tt => stemMatches(qt, tt))) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True if the question contains any credible operation token — a significant
+ * word that is not a stopword, section keyword, generic modifier, or
+ * non-operation word. Used to gate the focus fallback in resolveTargetSop:
+ * when the user names a new operation (whether or not a SOP covers it),
+ * previous focus must NOT be promoted as a match or clarification candidate.
+ *
+ *   "What tools are needed for kitchen sink installation?" → true (new op)
+ *   "What about its safety precautions?"                    → false (follow-up)
+ *   "What about the materials for both?"                    → false (anaphor)
+ */
+function namesAnyOperation(question: string): boolean {
+  const q = normalizeQuery(question.toLowerCase());
+  const qTokens = q.match(/[a-z0-9]+/g) || [];
+  for (const qt of qTokens) {
+    if (qt.length < 4) continue;
+    if (ROUTER_STOPWORDS.has(qt)) continue;
+    if (SECTION_KEYWORD_SET.has(qt)) continue;
+    if (NON_OPERATION_WORDS.has(qt)) continue;
+    if (TITLE_STOPWORDS.has(qt)) continue;
+    if (GENERIC_TITLE_MODIFIERS.has(qt)) continue;
     return true;
   }
   return false;
@@ -527,7 +555,15 @@ function resolveTargetSop(
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) {
-    // No title match — try focus (revalidated against current eligible set)
+    // If the question names a credible new operation, do NOT fall back to
+    // previous focus — the user is asking about a different subject. Return
+    // empty so the caller returns no_match (no SOP covers the named op),
+    // never the stale SOPs from the previous turn.
+    if (namesAnyOperation(q)) {
+      return {};
+    }
+    // No operation named — this is a contextual follow-up (section keyword +
+    // pronoun, e.g. "what about its safety?"). Fall back to revalidated focus.
     const eligibleFocus = focusJobIds
       .map(id => findSopByJobId(knowledge, id))
       .filter((j): j is NonNullable<typeof j> => j !== null);
