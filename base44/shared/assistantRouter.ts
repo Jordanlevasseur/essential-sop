@@ -639,21 +639,34 @@ function detectClarificationSelection(
   const qLower = q.toLowerCase();
 
   // ── 0. "The other one" — select a non-selected candidate ────────────
+  // With exactly TWO candidates, select the one that wasn't previously
+  // selected. With THREE OR MORE, if multiple alternatives remain, ask a
+  // concise clarification listing only those remaining alternatives.
   if (recoveredCtx && recoveredCtx.selectedJobId &&
       recoveredCtx.candidateJobIds.length >= 2) {
     const OTHER_RE = /\bthe\s+other(?:\s+one)?\b/i;
     if (OTHER_RE.test(qLower)) {
-      // Pick the first non-selected candidate. With 2 candidates this is
-      // deterministic; with 3+ it picks the first alternative the user saw.
-      const otherId = recoveredCtx.candidateJobIds.find(
+      const otherIds = recoveredCtx.candidateJobIds.filter(
         id => id !== recoveredCtx.selectedJobId
       );
-      if (otherId) {
-        const job = findSopByJobId(knowledge, otherId);
-        if (job) {
-          return buildSelectionDecision(knowledge, job, history, 'the other one', recoveredCtx);
-        }
+      // Revalidate against the current eligible set (stale SOPs dropped).
+      const otherJobs = otherIds
+        .map(id => findSopByJobId(knowledge, id))
+        .filter((j): j is NonNullable<typeof j> => j !== null);
+      if (otherJobs.length === 1) {
+        // Exactly one alternative remains → select it directly.
+        return buildSelectionDecision(knowledge, otherJobs[0], history, 'the other one', recoveredCtx);
       }
+      if (otherJobs.length >= 2) {
+        // Multiple alternatives remain → ask which one (list only remaining).
+        return {
+          route: 'clarification',
+          confidence: 0.85,
+          reason: '"the other one" is ambiguous with 3+ candidates; asking which alternative.',
+          ambiguousJobIds: otherJobs.map(j => j.id),
+        };
+      }
+      // No alternatives remain (all others became ineligible) → fall through.
     }
   }
 
