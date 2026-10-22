@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Send, ExternalLink } from 'lucide-react';
+import { Send, ExternalLink, Plus } from 'lucide-react';
 import { useCompany } from '@/lib/CompanyContext';
 import { useAssistantViewport } from '@/lib/assistantViewport';
 import AssistantMessage from '@/components/assistant/AssistantMessage';
@@ -86,6 +86,13 @@ export default function Assistant() {
   // after a send clears the field. Runs after DOM commit so scrollHeight is fresh.
   useEffect(() => { resizeTextarea(); }, [input, resizeTextarea]);
 
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    lastJobIdsRef.current = [];
+    setInput('');
+    prevLenRef.current = 0;
+  }, []);
+
   const handleAsk = useCallback(async (question) => {
     const q = (question || input).trim();
     if (!q || searching) return;
@@ -136,9 +143,22 @@ export default function Assistant() {
         paddingRight: 'env(safe-area-inset-right)',
       }}
     >
-      <div className="bg-app-surface border-b border-app-border px-3 py-2 flex-shrink-0">
-        <h1 className="text-xl font-bold text-app-heading">Assistant</h1>
-        <p className="text-xs text-app-text-muted mt-0.5">Ask about jobs, procedures, tools, materials, and safety.</p>
+      <div className="bg-app-surface border-b border-app-border px-3 py-2 flex-shrink-0 flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold text-app-heading">Assistant</h1>
+          <p className="text-xs text-app-text-muted mt-0.5">Ask about jobs, procedures, tools, materials, and safety.</p>
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={handleNewChat}
+            disabled={searching}
+            aria-label="New chat"
+            className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 -mt-0.5 text-app-text-2 hover:text-app-accent transition-colors no-select touch-active disabled:opacity-50"
+          >
+            <Plus size={16} />
+            <span className="text-sm font-medium">New</span>
+          </button>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 overscroll-contain">
