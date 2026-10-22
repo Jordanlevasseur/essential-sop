@@ -152,7 +152,7 @@ export default async function (req: Request): Promise<Response> {
 
     // ── Direct / clarification routes: structured answer, no AI call ──
     if (decision.route === 'direct' || decision.route === 'clarification') {
-      const { answer, sources, resources } = buildDirectAnswer(knowledge, decision);
+      const { answer, sources, resources } = buildDirectAnswer(knowledge, decision, question);
       return Response.json({
         answer, sources, resources, route: decision.route,
         _routingMetrics: makeRoutingMetrics(

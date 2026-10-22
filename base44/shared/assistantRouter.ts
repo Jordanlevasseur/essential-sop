@@ -255,6 +255,17 @@ const TITLE_STOPWORDS = new Set([
   'and', 'the', 'for', 'of', 'in', 'on', 'at', 'to', 'a', 'an',
 ]);
 
+// Generic location/position adjectives that appear across unrelated SOP titles
+// (Exterior Painting, Exterior Door Replacement, Interior Door Replacement...).
+// A match on ONLY one of these must not let an unrelated SOP be presented as the
+// answer. They still count as significant tokens for disambiguation when paired
+// with a matching operation noun (e.g. "exterior" + "door"); only an
+// adjective-ONLY match is capped (see titleMatchScore).
+const GENERIC_TITLE_MODIFIERS = new Set([
+  'exterior', 'interior', 'outside', 'inside',
+  'residential', 'commercial', 'exterior',
+]);
+
 // ── Multi-operation vocabulary (universal, trade-agnostic) ──────────────────
 // Used ONLY to decide whether a question names more than one operation. These
 // are NOT trade-specific — they are generic combiners and filters that apply
@@ -287,6 +298,11 @@ const NON_OPERATION_WORDS = new Set([
   'carefully', 'easily', 'slowly', 'cleanly', 'right', 'well', 'fast', 'best',
   'better', 'good', 'new', 'old', 'big', 'small', 'first', 'second', 'third',
   'before', 'after', 'during', 'while', 'too', 'one', 'two', 'three',
+  // Generic location/position adjectives — not operations in their own right.
+  'exterior', 'interior', 'outside', 'inside',
+  // Detail-request words that are not construction operations.
+  'descriptions', 'quantities', 'specifications', 'specs', 'details',
+  'include', 'including',
 ]);
 
 /**
@@ -304,10 +320,18 @@ function titleMatchScore(question: string, jobTitle: string): number {
   if (significant.length === 0) return 0;
   const qTokens = q.match(/[a-z0-9]+/g) || [];
   let hits = 0;
+  let nonGenericHits = 0;
   for (const t of significant) {
     // Stem-aware: "hang" matches "hanging", "tape" matches "taping".
-    if (qTokens.some(qt => stemMatches(qt, t))) hits++;
+    if (qTokens.some(qt => stemMatches(qt, t))) {
+      hits++;
+      // A match on ONLY a generic modifier (exterior/interior/...) is weak —
+      // it must not let an unrelated SOP win on a shared adjective alone.
+      if (!GENERIC_TITLE_MODIFIERS.has(t)) nonGenericHits++;
+    }
   }
+  if (hits === 0) return 0;
+  if (nonGenericHits === 0) return 0.4; // only a generic modifier matched
   return hits / significant.length;
 }
 
@@ -452,6 +476,11 @@ function detectMultiOperation(
       }
     }
     if (matched.length === 0) continue;
+    // A SOP named ONLY by a generic modifier (exterior/interior/...) is not a
+    // real operation match — "exterior painting" must not name "Exterior Door
+    // Replacement" on the shared adjective "exterior" alone.
+    const hasNonGenericMatch = matched.some(t => !GENERIC_TITLE_MODIFIERS.has(t));
+    if (!hasNonGenericMatch) continue;
     const allMatchedShared = matched.every(t => (freq.get(t) || 0) >= 2);
     const hasUniqueUnmatched = sig.some(t => !matchedSet.has(t) && (freq.get(t) || 0) === 1);
     if (allMatchedShared && hasUniqueUnmatched) continue; // incidental object-only match
@@ -494,7 +523,7 @@ function resolveTargetSop(
 
   const scored = knowledge.jobs
     .map(job => ({ job, score: titleMatchScore(q, job.title || '') }))
-    .filter(s => s.score > 0)
+    .filter(s => s.score > 0.4) // exclude generic-modifier-only matches (capped at 0.4)
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) {
