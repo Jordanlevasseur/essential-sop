@@ -57,16 +57,22 @@ export default async function(req) {
     const userName = user.full_name || '';
     const now = new Date().toISOString();
 
-    // ── 1. Sole-admin guard ───────────────────────────────────────────────────
+    // ── 1. Sole-admin note (NON-BLOCKING) ─────────────────────────────────────
+    // Every authenticated user can initiate personal account deletion — including
+    // a sole company owner. The sole-workspace-admin case (User.role='admin') is
+    // NOT a blocker for initiation; it is recorded in adminNotes so the platform
+    // admin completing the request can transfer the workspace-admin role first.
+    // The manageDeletionRequest preflight handles all safety blockers at
+    // completion time (sole GM with other members, last platform super admin).
+    let soleAdminNote = '';
     if (user.role === 'admin') {
-      const allUsers = await base44.asServiceRole.entities.User.list();
-      const admins = (allUsers || []).filter((u: any) => u.role === 'admin');
-      if (admins.length === 1) {
-        return Response.json({
-          error: 'sole_admin',
-          message: 'You are the only administrator. Transfer the admin role to another user before deleting your account.'
-        }, { status: 403 });
-      }
+      try {
+        const allUsers = await base44.asServiceRole.entities.User.list();
+        const admins = (allUsers || []).filter((u: any) => u.role === 'admin');
+        if (admins.length === 1) {
+          soleAdminNote = 'NOTE: This user is the sole workspace administrator (User.role=admin). Transfer the workspace-admin role to another user BEFORE completing this request.';
+        }
+      } catch (_) { /* best-effort */ }
     }
 
     // ── 2. Check for duplicate pending request ────────────────────────────────
@@ -100,7 +106,7 @@ export default async function(req) {
       requestedAt: now,
       status: 'Pending',
       // appDataDeletedAt / authIdentityDeletedAt: intentionally null at request.
-      adminNotes: 'Request received. To complete: (1) remove the user in the Dashboard → Users → Remove User, then (2) run manageDeletionRequest action=complete to remove associated personal data and mark the request Completed.',
+      adminNotes: `Request received. To complete: (1) remove the user in the Dashboard → Users → Remove User, then (2) run manageDeletionRequest action=complete to remove associated personal data and mark the request Completed.${soleAdminNote}`,
     });
 
     console.log(`DeletionRequest created for userId=${userId} email=${userEmail} at ${now}`);

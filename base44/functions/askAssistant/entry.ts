@@ -63,6 +63,7 @@ RULES:
 - If the context was reduced to fit size limits, do not present the answer as a complete or exhaustive procedure or comparison. Acknowledge that some details may have been omitted and suggest the user ask a more specific question or open the full SOP directly.
 - For follow-up questions, use the CONVERSATION history to resolve references like "it", "that SOP", or "the other one". If the user has clearly changed the subject, do not force previous context into the answer.
 - Only cite SOPs whose content you actually used. Return their identifiers (e.g. "src-<jobId>") in "sourceIds". Never cite an SOP that was not provided in the context. Never fabricate item references.
+- Do NOT include internal source identifiers (e.g., "src-<jobId>") anywhere in the answer text. Refer to SOPs by their natural name (e.g., "Per the Deck Stair Repair SOP..."). Source identifiers appear ONLY in the "sourceIds" array, never in the markdown answer.
 
 Return ONLY a JSON object: { "answer": <markdown string>, "sourceIds": [<string>, ...] }`;
 

@@ -7,7 +7,7 @@ import { useCompany } from '@/lib/CompanyContext';
 import CompanySelector from '@/components/CompanySelector';
 import {
   Clock, Type, Sun, Moon, Monitor, ArrowUpDown,
-  Pencil, LogOut, ShieldCheck, ChevronRight,
+  LogOut, ShieldCheck, ChevronRight,
   FileText, ScrollText, ClipboardList, CreditCard,
   Users, GitPullRequest, Activity, Bell, Building2, Tag, ShieldAlert,
   RefreshCw,
@@ -207,8 +207,6 @@ export default function Profile() {
 
       <Section title="Account">
 
-        <Row icon={Pencil} label="Edit Profile" onClick={() => alert('Profile editing is not available in this prototype.')} />
-        <Divider />
         <Row icon={LogOut} label="Sign Out" onClick={() => {
           // Only clear this app's known keys — do not wipe origin-wide localStorage
           ['esop_mode','esop_recent','esop_prefs','esop_session','esop_user'].forEach(k => localStorage.removeItem(k));

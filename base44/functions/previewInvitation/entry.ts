@@ -32,13 +32,24 @@ export default async function (req) {
 
     const company = await SR.entities.Company.get(inv.companyId).catch(() => null);
 
+    // Normalize expired status: a pending invitation past its expiration date
+    // is displayed as "expired" (consistent with resolveTeamRoster). The
+    // database record is not modified — this is a response-only normalization.
+    let displayStatus = inv.status;
+    if (inv.status === 'pending' && inv.expiresAt && new Date(inv.expiresAt) < new Date()) {
+      displayStatus = 'expired';
+    }
+
+    // SECURITY: invitedEmail is NOT returned in the preview. An invitation ID
+    // alone (without the token) must not expose the recipient's email address.
+    // The recipient already knows their own email from the invitation link.
+    // Email match is verified at acceptance time (acceptInvitation).
     return Response.json({
       invitation: {
         id: inv.id,
         companyId: inv.companyId,
-        invitedEmail: inv.invitedEmail,
         intendedRole: inv.intendedRole,
-        status: inv.status,
+        status: displayStatus,
         expiresAt: inv.expiresAt,
       },
       companyName: company?.name || null,

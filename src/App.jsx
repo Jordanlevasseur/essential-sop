@@ -39,7 +39,7 @@ const DeletionRequests = lazy(() => import('@/pages/DeletionRequests'));
 const Subscription = lazy(() => import('@/pages/Subscription'));
 const Plans = lazy(() => import('@/pages/Plans'));
 const TeamMembers = lazy(() => import('@/pages/TeamMembers'));
-const RequestsAndReviews = lazy(() => import('@/pages/RequestsAndReviews'));
+
 const EditRequests = lazy(() => import('@/pages/EditRequests'));
 const ActivityHistory = lazy(() => import('@/pages/ActivityHistory'));
 const Notifications = lazy(() => import('@/pages/Notifications'));
