@@ -456,7 +456,7 @@ const ORDINAL_INDEX: Record<string, number> = {
 const SELECTOR_STOPWORDS = new Set([
   'the', 'a', 'an', 'one', 'ones', 'option', 'sop', 'sops', 'procedure',
   'procedures', 'please', 'choose', 'select', 'pick', 'want', 'need',
-  'about', 'go', 'with', 'use',
+  'about', 'go', 'with', 'use', 'what',
 ]);
 
 interface HistoryEntry { role: string; text: string }
@@ -492,20 +492,127 @@ function parseOrdinalSelection(qLower: string): number | null {
   return null;
 }
 
+// ── Multi-turn clarification context recovery ──────────────────────────────
+// After a successful clarification selection, the frontend sets focusJobIds
+// to only the SELECTED SOP (from the response sources). When the user then
+// selects another candidate from the same clarification (e.g. "Taping" after
+// "Hanging"), the reduced focus no longer contains the other candidates.
+// recoverClarificationContext scans the conversation history for the
+// assistant's clarification message, re-extracts the full candidate list,
+// the original question (which carries the requested section intent), and
+// the previously-selected SOP (for "the other one"). This lets the user
+// switch between offered SOPs across multiple turns without the frontend
+// needing to track the candidate list separately.
+
+interface RecoveredClarificationContext {
+  candidateJobIds: string[];
+  originalQuestion: string;
+  selectedJobId: string | null;
+}
+
+function recoverClarificationContext(
+  history: HistoryEntry[],
+  knowledge: CompanyKnowledge
+): RecoveredClarificationContext | null {
+  // Scan backwards for the most recent assistant clarification message.
+  let clarIdx = -1;
+  let clarText = '';
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.role === 'assistant' && h.text &&
+        h.text.includes('I found multiple SOPs that could match')) {
+      clarIdx = i;
+      clarText = h.text;
+      break;
+    }
+  }
+  if (clarIdx === -1) return null;
+
+  // Extract numbered SOP titles: "1. Taping Drywall" etc.
+  const candidateTitles: string[] = [];
+  for (const line of clarText.split('\n')) {
+    const m = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (m && m[2]) candidateTitles.push(m[2].trim());
+  }
+  if (candidateTitles.length < 2) return null;
+
+  // Match against the current eligible knowledge set (stale SOPs dropped).
+  const candidateJobIds: string[] = [];
+  for (const title of candidateTitles) {
+    const job = knowledge.jobs.find(j =>
+      (j.title || '').toLowerCase().trim() === title.toLowerCase().trim()
+    );
+    if (job && !candidateJobIds.includes(job.id)) candidateJobIds.push(job.id);
+  }
+  if (candidateJobIds.length < 2) return null;
+
+  // Find the original user question (immediately before the clarification).
+  let originalQuestion = '';
+  for (let i = clarIdx - 1; i >= 0; i--) {
+    if (history[i].role === 'user') {
+      originalQuestion = history[i].text || '';
+      break;
+    }
+  }
+
+  // Determine which candidate was previously selected (scan assistant
+  // responses after the clarification for a heading matching a candidate).
+  let selectedJobId: string | null = null;
+  for (let i = clarIdx + 1; i < history.length; i++) {
+    if (history[i].role !== 'assistant') continue;
+    const text = history[i].text || '';
+    if (text.includes('I found multiple SOPs that could match')) continue;
+    for (const id of candidateJobIds) {
+      const job = knowledge.jobs.find(j => j.id === id);
+      if (!job || !job.title) continue;
+      for (const line of text.split('\n')) {
+        if (/^#{1,4}\s/.test(line) && line.includes(job.title)) {
+          selectedJobId = id;
+          break;
+        }
+      }
+      if (selectedJobId) break;
+    }
+    if (selectedJobId) break;
+  }
+
+  // Topic-change detection: if a user message after the clarification names
+  // a new operation not matching any candidate (and is not itself a
+  // selection shorthand or anaphor), the clarification is stale.
+  for (let i = clarIdx + 1; i < history.length; i++) {
+    if (history[i].role !== 'user') continue;
+    const uq = (history[i].text || '').trim();
+    if (!uq) continue;
+    const uqLower = uq.toLowerCase();
+    if (ANAPHOR_RE.test(uqLower)) continue;
+    if (parseOrdinalSelection(uqLower) !== null) continue;
+    const matchesCandidate = candidateJobIds.some(id => {
+      const job = knowledge.jobs.find(j => j.id === id);
+      return job && titleMatchScore(uq, job.title || '') > 0.4;
+    });
+    if (matchesCandidate) continue;
+    if (namesAnyOperation(uq)) return null;
+  }
+
+  return { candidateJobIds, originalQuestion, selectedJobId };
+}
+
 /**
  * Detect a clarification-selection reply: ordinal ("the first one", "2",
- * "option 2") or shorthand SOP name ("Taping", "Taping drywall", "The taping
- * one"). Resolves to the selected SOP and inherits the original question's
- * section/step/resource intent from conversation history.
+ * "option 2", "sop 1"), shorthand SOP name ("Taping", "Taping drywall", "The taping
+ * one"), or collective anaphor ("the other one"). Resolves to the selected
+ * SOP and inherits the original question's section/step/resource intent.
+ *
+ * After a successful selection the frontend's focusJobIds contains only the
+ * selected SOP. The full candidate list is recovered from the conversation
+ * history (recoveredCtx) so the user can switch to any other offered SOP.
  *
  * Matching rules:
- *   - Ordinal: maps to focusJobIds[idx] by position (matches displayed numbering).
- *   - Exact title: question equals a focus SOP title (case-insensitive).
+ *   - "The other one": selects the non-selected candidate (2 candidates only).
+ *   - Ordinal: maps to recovered candidates by position (original display order).
+ *   - Exact title: question equals a candidate SOP title (case-insensitive).
  *   - Shorthand: question's significant tokens (after stripping selector words)
- *     stem-match a SUBSET of one focus SOP's significant title tokens. If
- *     exactly one SOP matches → resolve. If multiple match → re-clarify with
- *     just the matched subset. If none match → null (fall through; may be a
- *     new topic).
+ *     stem-match a SUBSET of one candidate's significant title tokens.
  *
  * Returns a RoutingDecision for a successful selection, a clarification if
  * the shorthand is ambiguous, a no_match if the selected SOP is no longer
@@ -515,35 +622,66 @@ function detectClarificationSelection(
   knowledge: CompanyKnowledge,
   question: string,
   focusJobIds: string[],
-  history: HistoryEntry[]
+  history: HistoryEntry[],
+  recoveredCtx?: RecoveredClarificationContext | null
 ): RoutingDecision | null {
-  if (focusJobIds.length === 0) return null;
+  // Build the effective candidate list: union of recovered candidates
+  // (from history) and the frontend's focus. After a selection, focus
+  // contains only the selected SOP; recovered candidates restore the rest.
+  const recoveredIds = recoveredCtx?.candidateJobIds || [];
+  const effectiveIds: string[] = [];
+  for (const id of [...recoveredIds, ...focusJobIds]) {
+    if (!effectiveIds.includes(id)) effectiveIds.push(id);
+  }
+  if (effectiveIds.length === 0) return null;
+
   const q = question.trim();
   const qLower = q.toLowerCase();
+
+  // ── 0. "The other one" — select a non-selected candidate ────────────
+  if (recoveredCtx && recoveredCtx.selectedJobId &&
+      recoveredCtx.candidateJobIds.length >= 2) {
+    const OTHER_RE = /\bthe\s+other(?:\s+one)?\b/i;
+    if (OTHER_RE.test(qLower)) {
+      // Pick the first non-selected candidate. With 2 candidates this is
+      // deterministic; with 3+ it picks the first alternative the user saw.
+      const otherId = recoveredCtx.candidateJobIds.find(
+        id => id !== recoveredCtx.selectedJobId
+      );
+      if (otherId) {
+        const job = findSopByJobId(knowledge, otherId);
+        if (job) {
+          return buildSelectionDecision(knowledge, job, history, 'the other one', recoveredCtx);
+        }
+      }
+    }
+  }
 
   // ── 1. Ordinal selection ──────────────────────────────────────────────
   const ordIdx = parseOrdinalSelection(qLower);
   if (ordIdx !== null) {
-    if (ordIdx < focusJobIds.length) {
-      const job = findSopByJobId(knowledge, focusJobIds[ordIdx]);
+    // Map ordinal to the RECOVERED candidates (which preserve the display
+    // order from the original clarification), falling back to focus.
+    const candidateList = recoveredIds.length > 0 ? recoveredIds : focusJobIds;
+    if (ordIdx < candidateList.length) {
+      const job = findSopByJobId(knowledge, candidateList[ordIdx]);
       if (job) {
-        return buildSelectionDecision(knowledge, job, history, `ordinal ${ordIdx + 1}`);
+        return buildSelectionDecision(knowledge, job, history, `ordinal ${ordIdx + 1}`, recoveredCtx);
       }
-      // The specifically selected SOP is no longer available.
       return {
         route: 'no_match',
         confidence: 0.7,
         reason: 'Selected SOP is no longer available.',
       };
     }
-    return null; // out of range — don't guess
+    return null;
   }
 
-  // Revalidate all focus SOPs against the current eligible set.
-  const focusJobs = focusJobIds
+  // Revalidate all effective candidates against the current eligible set.
+  const candidateJobs = effectiveIds
     .map(id => findSopByJobId(knowledge, id))
     .filter((j): j is NonNullable<typeof j> => j !== null);
-  if (focusJobs.length === 0) {
+  if (candidateJobs.length === 0) {
     return {
       route: 'no_match',
       confidence: 0.7,
@@ -552,27 +690,23 @@ function detectClarificationSelection(
   }
 
   // ── 2. Exact title match ──────────────────────────────────────────────
-  for (const job of focusJobs) {
+  for (const job of candidateJobs) {
     const title = (job.title || '').toLowerCase().trim();
     if (title && qLower === title) {
-      return buildSelectionDecision(knowledge, job, history, 'exact SOP name');
+      return buildSelectionDecision(knowledge, job, history, 'exact SOP name', recoveredCtx);
     }
   }
 
   // ── 3. Shorthand / partial name match ─────────────────────────────────
-  // Strip selector words, then check if the remaining tokens uniquely
-  // identify one focus SOP via stem-matching against significant title
-  // tokens. "Taping" → "Taping Drywall"; "The taping one" → same.
   const qTokens = (qLower.match(/[a-z0-9]+/g) || [])
     .filter(t => !SELECTOR_STOPWORDS.has(t) && t.length > 1);
   if (qTokens.length > 0) {
     const matches: any[] = [];
-    for (const job of focusJobs) {
+    for (const job of candidateJobs) {
       const titleTokens = (job.title || '').toLowerCase().match(/[a-z0-9]+/g) || [];
       const sigTitle = titleTokens.filter(
         t => t.length > 2 && !TITLE_STOPWORDS.has(t)
       );
-      // ALL question tokens must stem-match at least one significant title token.
       const allMatch = qTokens.every(qt =>
         sigTitle.some(tt => stemMatches(qt, tt))
       );
@@ -580,10 +714,9 @@ function detectClarificationSelection(
     }
 
     if (matches.length === 1) {
-      return buildSelectionDecision(knowledge, matches[0], history, 'shorthand SOP name');
+      return buildSelectionDecision(knowledge, matches[0], history, 'shorthand SOP name', recoveredCtx);
     }
     if (matches.length >= 2) {
-      // Multiple focus SOPs match the shorthand — ask which one (don't guess).
       return {
         route: 'clarification',
         confidence: 0.7,
@@ -591,8 +724,6 @@ function detectClarificationSelection(
         ambiguousJobIds: matches.map(j => j.id),
       };
     }
-    // No match — not a selection of any offered SOP. Fall through (may be a
-    // new topic the user is naming explicitly).
   }
 
   return null;
@@ -607,10 +738,18 @@ function buildSelectionDecision(
   _knowledge: CompanyKnowledge,
   job: any,
   history: HistoryEntry[],
-  via: string
+  via: string,
+  recoveredCtx?: RecoveredClarificationContext | null
 ): RoutingDecision {
-  const prevUserQs = history.filter(h => h.role === 'user').map(h => h.text || '');
-  const prevQ = prevUserQs.length > 0 ? prevUserQs[prevUserQs.length - 1] : '';
+  // Use the ORIGINAL question from the clarification context (the one that
+  // preceded the clarification) to determine the requested section/step/
+  // resource intent. Without this, after two selections the "previous user
+  // question" would be the first selection shorthand (e.g. "Hanging") which
+  // carries no section intent, causing the answer to default to scope or
+  // fall into generative mode.
+  const prevQ = recoveredCtx?.originalQuestion
+    || history.filter(h => h.role === 'user').map(h => h.text || '').pop()
+    || '';
 
   // Preserve the original question's intent: step, resource, or section listing.
   const stepNum = detectStepNumber(prevQ);
@@ -832,6 +971,11 @@ export function routeAssistantRequest(
   // Computed once and reused by the generative and section-listing branches.
   const multi = detectMultiOperation(knowledge, q);
 
+  // Recover clarification context from history — the full candidate list and
+  // the original question are preserved across multiple selections so the
+  // user can switch between offered SOPs without re-specifying the request.
+  const clarCtx = recoverClarificationContext(history, knowledge);
+
   // ── 1. Generative intent → generative ──────────────────────────────────
   if (hasGenerativeIntent(q)) {
     const genSections = detectSectionTypes(q);
@@ -845,6 +989,17 @@ export function routeAssistantRequest(
         targetSectionTypes: genSections.length > 0 ? genSections : undefined,
         confidence: 0.9,
         reason: 'Multi-operation request; AI context restricted to the named SOPs.',
+      };
+    }
+    // Generative request referencing prior clarification candidates (e.g.
+    // "compare the two"). Restrict AI context to the recovered candidates.
+    if (clarCtx && clarCtx.candidateJobIds.length >= 2 && ANAPHOR_RE.test(q)) {
+      return {
+        route: 'generative',
+        targetJobIds: clarCtx.candidateJobIds,
+        targetSectionTypes: genSections.length > 0 ? genSections : undefined,
+        confidence: 0.9,
+        reason: 'Generative request referencing prior clarification candidates.',
       };
     }
     return {
@@ -1105,8 +1260,8 @@ export function routeAssistantRequest(
   // list. Resolved deterministically — the section is inherited from the
   // previous user question so the user gets the tools/materials/etc. they
   // originally asked about.
-  if (focusJobIds.length > 0) {
-    const selection = detectClarificationSelection(knowledge, q, focusJobIds, history);
+  if (focusJobIds.length > 0 || (clarCtx && clarCtx.candidateJobIds.length > 0)) {
+    const selection = detectClarificationSelection(knowledge, q, focusJobIds, history, clarCtx);
     if (selection) return selection;
   }
 
