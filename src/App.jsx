@@ -111,6 +111,20 @@ const AuthenticatedApp = () => {
     );
   }
 
+  // Accept Invitation — rendered BEFORE the company gate. A brand-new invitee
+  // is not yet in any workspace, so nesting this route under SeededApp (which
+  // shows NoCompanyScreen when hasCompany=false) would block them. A logged-out
+  // recipient also reaches it: previewInvitation needs no auth, and handleAccept
+  // redirects to login preserving this URL, then returns here after sign-in.
+  if (location.pathname === '/accept-invitation') {
+    if (isLoadingPublicSettings || isLoadingAuth) return <RouteFallback />;
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <AcceptInvitation />
+      </Suspense>
+    );
+  }
+
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -201,7 +215,8 @@ const SeededApp = () => {
       <Route path="/requests" element={<PageTransition><EditRequests /></PageTransition>} />
       <Route path="/activity" element={<PageTransition><ActivityHistory /></PageTransition>} />
       <Route path="/notifications" element={<PageTransition><Notifications /></PageTransition>} />
-      <Route path="/accept-invitation" element={<PageTransition><AcceptInvitation /></PageTransition>} />
+      {/* /accept-invitation is rendered pre-company-gate in AuthenticatedApp
+          so logged-out recipients and invitees with no workspace can reach it. */}
       <Route path="/company-profile" element={<PageTransition><CompanyProfile /></PageTransition>} />
       <Route path="/role-labels" element={<PageTransition><RoleLabels /></PageTransition>} />
       <Route path="/ownership" element={<PageTransition><OwnershipAndAccount /></PageTransition>} />

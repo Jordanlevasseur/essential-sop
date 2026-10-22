@@ -41,8 +41,13 @@ export default function AcceptInvitation() {
     setAccepting(true);
     setError('');
     try {
-      const user = await base44.auth.me();
-      if (!user) { base44.auth.redirectToLogin(window.location.href); return; }
+      // base44.auth.me() throws (does not return null) for an unauthenticated
+      // user, so use the non-throwing isAuthenticated() check and redirect to
+      // login — preserving this full URL — when the recipient is not yet
+      // signed in. After login/register the user returns to this exact URL
+      // with the invitation context (token + invitationId) intact.
+      const isAuthed = await base44.auth.isAuthenticated().catch(() => false);
+      if (!isAuthed) { base44.auth.redirectToLogin(window.location.href); return; }
 
       // Seat enforcement, token verification, and all writes are server-side.
       const resp = await base44.functions.invoke('acceptInvitation', { invitationId, token });

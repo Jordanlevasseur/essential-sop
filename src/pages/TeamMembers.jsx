@@ -6,7 +6,7 @@ import { useApp } from '@/lib/AppContext';
 import { getPlan, isUnlimited } from '@/lib/plans';
 import { getRoleLabel, ROLE_CODES } from '@/lib/roleLabels';
 import SelectSheet from '@/components/ui/SelectSheet';
-import { ArrowLeft, UserPlus, MoreVertical, Mail, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, UserPlus, MoreVertical, Mail, X, ChevronDown, RefreshCw, Loader2 } from 'lucide-react';
 
 export default function TeamMembers() {
   const handleBack = useSafeBack('/profile');
@@ -25,6 +25,7 @@ export default function TeamMembers() {
   const [inviteResult, setInviteResult] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [roleSheetOpen, setRoleSheetOpen] = useState(false);
+  const [resending, setResending] = useState(null);
 
   // Mirror the backend: an unrecognized/missing plan code falls back to the
   // LOWEST tier (homeowner, 1 profile), never to unlimited. This keeps the
@@ -84,6 +85,24 @@ export default function TeamMembers() {
     } else {
       setError(res.data?.error || 'Action failed');
     }
+  };
+
+  const handleResend = async (inviteId) => {
+    setResending(inviteId); setError('');
+    try {
+      const res = await base44.functions.invoke('inviteMember', { action: 'resend', invitationId: inviteId });
+      const data = res.data || {};
+      if (data.success && data.emailDelivered) {
+        loadData();
+      } else if (data.success && !data.emailDelivered) {
+        setError(data.emailError ? `Email not sent: ${data.emailError}` : 'Email could not be sent. The invitation is still pending.');
+      } else {
+        setError(data.error || 'Resend failed');
+      }
+    } catch (e) {
+      setError(e?.message || 'Resend failed');
+    }
+    setResending(null);
   };
 
   const handleCancelInvite = async (inviteId) => {
@@ -173,12 +192,22 @@ export default function TeamMembers() {
         )}
 
         {inviteResult && (
-          <div className="mb-5 bg-app-success-bg border border-app-success rounded-lg p-3">
-            <p className="font-semibold text-app-success mb-1">Invitation Sent</p>
-            <p className="text-sm text-app-text-2 mb-3">Prototype mode: email not sent. Share this link manually:</p>
-            <div className="bg-app-elevated rounded-lg p-2.5 break-all text-xs text-app-text font-mono mb-3">{inviteResult.inviteLink}</div>
-            <button onClick={() => navigator.clipboard.writeText(window.location.origin + inviteResult.inviteLink)}
-              className="text-xs text-app-accent underline touch-active">Copy Link</button>
+          <div className={`mb-5 border rounded-lg p-3 ${inviteResult.emailDelivered ? 'bg-app-success-bg border-app-success' : 'bg-app-warning-bg border-app-warning'}`}>
+            <p className={`font-semibold mb-1 ${inviteResult.emailDelivered ? 'text-app-success' : 'text-app-warning'}`}>
+              {inviteResult.emailDelivered ? 'Invitation Sent' : 'Invitation Created — Email Not Delivered'}
+            </p>
+            <p className="text-sm text-app-text-2 mb-3">
+              {inviteResult.emailDelivered
+                ? `An invitation email was sent to ${inviteResult.invitation?.invitedEmail || inviteEmail}. They can tap the link to join.`
+                : `The email could not be sent${inviteResult.emailError ? `: ${inviteResult.emailError}` : ''}. The invitation is pending — share this link manually, or resend it later from the pending list.`}
+            </p>
+            {!inviteResult.emailDelivered && inviteResult.inviteLink && (
+              <>
+                <div className="bg-app-elevated rounded-lg p-2.5 break-all text-xs text-app-text font-mono mb-3">{inviteResult.inviteLink}</div>
+                <button onClick={() => navigator.clipboard.writeText(inviteResult.inviteLink)}
+                  className="text-xs text-app-accent underline touch-active">Copy Link</button>
+              </>
+            )}
             <button onClick={() => { setShowInviteForm(false); setInviteResult(null); setInviteEmail(''); }}
               className="ml-4 text-xs text-app-text-muted touch-active">Done</button>
           </div>
@@ -220,9 +249,15 @@ export default function TeamMembers() {
                   <p className="text-xs text-app-text-muted">{rl(inv.intendedRole)} · Expires {new Date(inv.expiresAt).toLocaleDateString()}</p>
                 </div>
                 {isGeneralManager && (
-                  <button onClick={() => handleCancelInvite(inv.id)} className="icon-btn text-app-danger touch-active" aria-label="Cancel invitation">
-                    <X size={16} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => handleResend(inv.id)} disabled={resending === inv.id}
+                      className="icon-btn text-app-text-2 touch-active disabled:opacity-50" aria-label="Resend invitation">
+                      {resending === inv.id ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={15} />}
+                    </button>
+                    <button onClick={() => handleCancelInvite(inv.id)} className="icon-btn text-app-danger touch-active" aria-label="Cancel invitation">
+                      <X size={16} />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
