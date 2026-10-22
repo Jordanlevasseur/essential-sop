@@ -56,10 +56,10 @@ interface DetailLevel {
 function detectDetailLevel(question: string): DetailLevel {
   const q = (question || '').toLowerCase();
   return {
-    descriptions: /\b(descri|detail|explain)\b/.test(q) || /with description/.test(q) || /what.*used for/.test(q),
-    quantities: /\b(how many|quantit|amount|number of)\b/.test(q),
-    specs: /\b(spec|specification|what size|what kind|what type)\b/.test(q),
-    required: /\b(required|optional|mandatory|which.*must|which.*need)\b/.test(q),
+    descriptions: /\bdescri/.test(q) || /\bdetail/.test(q) || /\bexplain/.test(q) || /with description/.test(q) || /what.*used for/.test(q),
+    quantities: /\bhow many/.test(q) || /\bquantit/.test(q) || /\bamount/.test(q) || /\bnumber of/.test(q),
+    specs: /\bspec/.test(q) || /what size/.test(q) || /what kind/.test(q) || /what type/.test(q),
+    required: /which.*required/.test(q) || /required.*optional/.test(q) || /optional.*required/.test(q) || /required vs/.test(q) || /which.*mandatory/.test(q),
   };
 }
 
