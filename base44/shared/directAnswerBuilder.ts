@@ -90,9 +90,16 @@ function buildSectionListing(
   const job = findSopByJobId(knowledge, decision.targetJobId!);
   if (!job) return { answer: NO_MATCH_ANSWER, sources: [] };
 
-  const sectionType = decision.sectionType!;
-  const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
-  const items = getSectionItems(knowledge, job.id, sectionType);
+  // Resolve the requested sections (universal multi-section support). Falls
+  // back to the single sectionType field for older callers.
+  const sectionTypes = (decision.targetSectionTypes && decision.targetSectionTypes.length > 0)
+    ? decision.targetSectionTypes
+    : (decision.sectionType ? [decision.sectionType] : []);
+  if (sectionTypes.length === 0) return { answer: NO_MATCH_ANSWER, sources: [] };
+
+  const sources: any[] = [];
+  const lines: string[] = [];
+  const multi = sectionTypes.length > 1;
 
   const introMap: Record<string, string> = {
     tools: `Here are the approved tools for **${job.title}**:`,
@@ -102,48 +109,154 @@ function buildSectionListing(
     scope: `Here is the scope for **${job.title}**:`,
     procedure: `Here are the procedure steps for **${job.title}**:`,
   };
-  const intro = introMap[sectionType] || `Here is the ${sectionLabel} for **${job.title}**:`;
 
-  let body: string;
-  if (items.length === 0) {
-    body = `No ${sectionLabel.toLowerCase()} are documented for **${job.title}**.`;
-  } else if (sectionType === 'safety') {
-    body = formatSafetyItems(items);
-  } else if (sectionType === 'procedure') {
-    body = formatProcedureItems(items);
-  } else {
-    body = formatGeneralItems(items, sectionType);
+  if (multi) {
+    lines.push(`Here is the combined overview for **${job.title}**:\n`);
   }
 
-  const answer = `${intro}\n\n${body}`;
-  const sources = [{
-    jobId: job.id,
-    jobTitle: job.title,
-    sectionType,
-    section: sectionLabel,
-    item: items.length > 0 ? items[0].title : sectionLabel,
-  }];
+  for (const sectionType of sectionTypes) {
+    const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
+    const items = getSectionItems(knowledge, job.id, sectionType);
 
-  return { answer, sources };
+    if (multi) lines.push(`### ${sectionLabel}`);
+    else lines.push(introMap[sectionType] || `Here is the ${sectionLabel} for **${job.title}**:`);
+
+    let body: string;
+    if (items.length === 0) {
+      body = `No ${sectionLabel.toLowerCase()} are documented for **${job.title}**.`;
+    } else if (sectionType === 'safety') {
+      body = formatSafetyItems(items);
+    } else if (sectionType === 'procedure') {
+      body = formatProcedureItems(items);
+    } else {
+      body = formatGeneralItems(items, sectionType);
+    }
+    lines.push(body);
+    lines.push('');
+
+    sources.push({
+      jobId: job.id,
+      jobTitle: job.title,
+      sectionType,
+      section: sectionLabel,
+      item: items.length > 0 ? items[0].title : sectionLabel,
+    });
+  }
+
+  return { answer: lines.join('\n').trim(), sources };
 }
 
-// ── Multi-operation section (combined request) ──────────────────────────────
-// A combined request ("What tools do I need to hang and tape drywall?")
-// names 2+ operations and wants the section from BOTH SOPs. We combine them
-// into ONE answer (no clarification): tools/materials are de-duplicated and
-// attributed to their source SOP(s); procedure/safety are grouped by
-// operation so order and identity are preserved. Each cited source is a
-// distinct published SOP. When partialMissing is set, only one named
-// operation had a published SOP — we answer it and explicitly acknowledge
-// the missing source (never fabricate the other operation's content).
-function multiItemLine(it: KnowledgeContentItem, sectionType: string): string {
-  const req = it.isRequired ? ' (Required)' : '';
-  const title = `**${it.title || ''}**${req}`;
-  const meta = formatMetadata(it.metadata, sectionType);
-  if (it.body && meta) return `${title} — ${it.body}\n   ${meta}`;
-  if (it.body) return `${title} — ${it.body}`;
-  if (meta) return `${title}\n   ${meta}`;
-  return title;
+// ── Multi-operation answer (universal: N SOPs × M sections) ────────────────
+// A combined request ("What tools and materials do I need to hang and tape
+// drywall?") names 2+ operations AND may request multiple sections. We
+// combine them into ONE answer (no clarification). For tools/materials we
+// de-duplicate by title and attribute each item to its source SOP(s); for
+// procedure/safety/quality/scope we group by operation so order and identity
+// are preserved. Each cited source is a distinct published SOP. When
+// partialMissing is set, only one named operation had a published SOP — we
+// answer it and explicitly acknowledge the missing source (never fabricate).
+//
+// Multi-section: when more than one section is requested, each section is
+// rendered under its own heading, so "tools and materials across hang+tape"
+// reads as a Tools block then a Materials block, each combining both SOPs.
+
+/** Build the tools/materials block: union with per-source attribution. */
+function buildUnionSection(
+  knowledge: CompanyKnowledge,
+  jobs: any[],
+  sectionType: string,
+  startNum: number
+): { lines: string[]; nextNum: number } {
+  const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
+  const lines: string[] = [];
+  const map = new Map<string, { title: string; body: string; meta: string; isRequired: boolean; ops: { id: string; title: string }[] }>();
+  for (const job of jobs) {
+    const items = getSectionItems(knowledge, job.id, sectionType);
+    for (const it of items) {
+      const key = (it.title || '').toLowerCase().trim() || it.id;
+      if (!map.has(key)) {
+        map.set(key, {
+          title: it.title, body: it.body || '',
+          meta: formatMetadata(it.metadata, sectionType),
+          isRequired: !!it.isRequired, ops: [],
+        });
+      }
+      map.get(key)!.ops.push({ id: job.id, title: job.title });
+    }
+  }
+  const entries = [...map.values()];
+  const shared = entries.filter(e => e.ops.length >= 2);
+  const perOpOnly = jobs.map(j => ({
+    job: j,
+    items: entries.filter(e => e.ops.length === 1 && e.ops[0].id === j.id),
+  }));
+  let n = startNum;
+  if (shared.length > 0) {
+    lines.push(`**Shared across the operations**`);
+    for (const e of shared) {
+      lines.push(`${n}. ${e.title}${e.isRequired ? ' (Required)' : ''}${e.body ? ' — ' + e.body : ''}${e.meta ? '\n   ' + e.meta : ''}`);
+      lines.push(`   _Sources: ${e.ops.map(o => o.title).join(', ')}_`);
+      n++;
+    }
+    lines.push('');
+  }
+  for (const g of perOpOnly) {
+    if (g.items.length === 0) continue;
+    // Disambiguate duplicate titles with a short id suffix so two distinct
+    // same-named SOPs read as separate sections, not merged.
+    const dupCount = jobs.filter(j => j.title === g.job.title).length;
+    const heading = dupCount > 1
+      ? `**${g.job.title} only** (${g.job.id.slice(-4)})`
+      : `**${g.job.title} only**`;
+    lines.push(heading);
+    for (const e of g.items) {
+      lines.push(`${n}. ${e.title}${e.isRequired ? ' (Required)' : ''}${e.body ? ' — ' + e.body : ''}${e.meta ? '\n   ' + e.meta : ''}`);
+      n++;
+    }
+    lines.push('');
+  }
+  if (shared.length === 0 && perOpOnly.every(g => g.items.length === 0)) {
+    lines.push(`No ${sectionLabel.toLowerCase()} are documented for these operations.`);
+  }
+  return { lines, nextNum: n };
+}
+
+/** Build the procedure/safety/quality/scope block: grouped by operation. */
+function buildGroupedSection(
+  knowledge: CompanyKnowledge,
+  jobs: any[],
+  sectionType: string,
+  startNum: number
+): { lines: string[]; nextNum: number } {
+  const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
+  const lines: string[] = [];
+  let n = startNum;
+  for (const job of jobs) {
+    const items = getSectionItems(knowledge, job.id, sectionType);
+    lines.push(`**${job.title}**`);
+    if (items.length === 0) {
+      lines.push(`No ${sectionLabel.toLowerCase()} are documented for **${job.title}**.`);
+      lines.push('');
+      continue;
+    }
+    if (sectionType === 'safety') {
+      for (const it of items) {
+        const sev = it.metadata?.severity ? ` (${it.metadata.severity})` : '';
+        const crit = it.isCritical ? ' (Critical)' : '';
+        lines.push(`${n}. **${it.title}**${sev}${crit}`);
+        if (it.body) lines.push(`   ${it.body}`);
+        n++;
+      }
+    } else {
+      for (const it of items) {
+        lines.push(`${n}. **${it.title}**`);
+        if (it.body) lines.push(`   ${it.body}`);
+        n++;
+      }
+    }
+    lines.push('');
+  }
+  return { lines, nextNum: n };
 }
 
 function buildMultiSopSection(
@@ -154,14 +267,21 @@ function buildMultiSopSection(
   const jobs = ids
     .map(id => findSopByJobId(knowledge, id))
     .filter((j): j is NonNullable<typeof j> => j !== null);
-  const sectionType = decision.sectionType!;
-  const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
+
+  // Resolve ALL requested sections (universal multi-section). Falls back to
+  // the single sectionType field for older callers.
+  const sectionTypes = (decision.targetSectionTypes && decision.targetSectionTypes.length > 0)
+    ? decision.targetSectionTypes
+    : (decision.sectionType ? [decision.sectionType] : []);
 
   if (jobs.length === 0) {
     return {
       answer: "I couldn't find a published company SOP for the operations you mentioned. Ask an administrator if a procedure should be added.",
       sources: [],
     };
+  }
+  if (sectionTypes.length === 0) {
+    return { answer: NO_MATCH_ANSWER, sources: [] };
   }
 
   const opNames = jobs.map(j => j.title);
@@ -170,91 +290,43 @@ function buildMultiSopSection(
     : opNames.join(', ');
 
   const lines: string[] = [];
+  const sources: any[] = [];
+  const multiSection = sectionTypes.length > 1;
+  let n = 1;
 
-  if (sectionType === 'tools' || sectionType === 'materials') {
-    // Union with per-source attribution; de-duplicate by title.
-    lines.push(`Here are the approved ${sectionLabel.toLowerCase()} for ${introOps}, from your company SOPs:\n`);
-    // Union with per-source attribution; de-duplicate by title. Attribution
-    // tracks job IDs (not titles) so two distinct SOPs sharing a title do not
-    // cross-contaminate each other's "only" group — items are attributed to
-    // the exact job that documents them.
-    const map = new Map<string, { title: string; body: string; meta: string; isRequired: boolean; ops: { id: string; title: string }[] }>();
+  for (const sectionType of sectionTypes) {
+    const sectionLabel = SECTION_LABELS[sectionType] || sectionType;
+
+    if (multiSection) {
+      lines.push(`### ${sectionLabel}`);
+    }
+
+    if (sectionType === 'tools' || sectionType === 'materials') {
+      if (!multiSection) {
+        lines.push(`Here are the approved ${sectionLabel.toLowerCase()} for ${introOps}, from your company SOPs:\n`);
+      }
+      const r = buildUnionSection(knowledge, jobs, sectionType, n);
+      lines.push(...r.lines);
+      n = r.nextNum;
+    } else {
+      if (!multiSection) {
+        lines.push(`Here is the ${sectionLabel.toLowerCase()} for ${introOps}, from your company SOPs:\n`);
+      }
+      const r = buildGroupedSection(knowledge, jobs, sectionType, n);
+      lines.push(...r.lines);
+      n = r.nextNum;
+    }
+
+    // One source card per (SOP, section) so attribution is exact.
     for (const job of jobs) {
       const items = getSectionItems(knowledge, job.id, sectionType);
-      for (const it of items) {
-        const key = (it.title || '').toLowerCase().trim() || it.id;
-        if (!map.has(key)) {
-          map.set(key, {
-            title: it.title, body: it.body || '',
-            meta: formatMetadata(it.metadata, sectionType),
-            isRequired: !!it.isRequired, ops: [],
-          });
-        }
-        map.get(key)!.ops.push({ id: job.id, title: job.title });
-      }
-    }
-    const entries = [...map.values()];
-    const shared = entries.filter(e => e.ops.length >= 2);
-    const perOpOnly = jobs.map(j => ({
-      job: j,
-      items: entries.filter(e => e.ops.length === 1 && e.ops[0].id === j.id),
-    }));
-    let n = 1;
-    if (shared.length > 0) {
-      lines.push(`**Shared across the operations**`);
-      for (const e of shared) {
-        lines.push(`${n}. ${e.title}${e.isRequired ? ' (Required)' : ''}${e.body ? ' — ' + e.body : ''}${e.meta ? '\n   ' + e.meta : ''}`);
-        lines.push(`   _Sources: ${e.ops.map(o => o.title).join(', ')}_`);
-        n++;
-      }
-      lines.push('');
-    }
-    for (const g of perOpOnly) {
-      if (g.items.length === 0) continue;
-      // Disambiguate duplicate titles with a short id suffix so two distinct
-      // same-named SOPs read as separate sections, not merged.
-      const dupCount = jobs.filter(j => j.title === g.job.title).length;
-      const heading = dupCount > 1
-        ? `**${g.job.title} only** (${g.job.id.slice(-4)})`
-        : `**${g.job.title} only**`;
-      lines.push(heading);
-      for (const e of g.items) {
-        lines.push(`${n}. ${e.title}${e.isRequired ? ' (Required)' : ''}${e.body ? ' — ' + e.body : ''}${e.meta ? '\n   ' + e.meta : ''}`);
-        n++;
-      }
-      lines.push('');
-    }
-    if (shared.length === 0 && perOpOnly.every(g => g.items.length === 0)) {
-      lines.push(`No ${sectionLabel.toLowerCase()} are documented for these operations.`);
-    }
-  } else {
-    // procedure / safety / quality / scope — group by operation (identity/order).
-    lines.push(`Here is the ${sectionLabel.toLowerCase()} for ${introOps}, from your company SOPs:\n`);
-    let n = 1;
-    for (const job of jobs) {
-      const items = getSectionItems(knowledge, job.id, sectionType);
-      lines.push(`**${job.title}**`);
-      if (items.length === 0) {
-        lines.push(`No ${sectionLabel.toLowerCase()} are documented for **${job.title}**.`);
-        lines.push('');
-        continue;
-      }
-      if (sectionType === 'safety') {
-        for (const it of items) {
-          const sev = it.metadata?.severity ? ` (${it.metadata.severity})` : '';
-          const crit = it.isCritical ? ' (Critical)' : '';
-          lines.push(`${n}. **${it.title}**${sev}${crit}`);
-          if (it.body) lines.push(`   ${it.body}`);
-          n++;
-        }
-      } else {
-        for (const it of items) {
-          lines.push(`${n}. **${it.title}**`);
-          if (it.body) lines.push(`   ${it.body}`);
-          n++;
-        }
-      }
-      lines.push('');
+      sources.push({
+        jobId: job.id,
+        jobTitle: job.title,
+        sectionType,
+        section: sectionLabel,
+        item: items.length > 0 ? items[0].title : sectionLabel,
+      });
     }
   }
 
@@ -262,19 +334,7 @@ function buildMultiSopSection(
     lines.push(`_I could only find a published company SOP for **${jobs[0].title}**. I did not find an approved SOP for the other operation you mentioned, so I can't provide that part. Ask an administrator if a procedure should be added._`);
   }
 
-  const answer = lines.join('\n').trim();
-  const sources = jobs.map(j => {
-    const items = getSectionItems(knowledge, j.id, sectionType);
-    return {
-      jobId: j.id,
-      jobTitle: j.title,
-      sectionType,
-      section: sectionLabel,
-      item: items.length > 0 ? items[0].title : sectionLabel,
-    };
-  });
-
-  return { answer, sources };
+  return { answer: lines.join('\n').trim(), sources };
 }
 
 function formatGeneralItems(items: KnowledgeContentItem[], sectionType: string): string {

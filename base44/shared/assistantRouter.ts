@@ -47,6 +47,10 @@ export interface RoutingDecision {
   // SOP — answer the supported portion and acknowledge the missing source.
   partialMissing?: boolean;
   sectionType?: string;
+  // All requested sections when the question asks for multiple categories at
+  // once (e.g. "tools AND materials"). `sectionType` is set to the first entry
+  // for backward-compat consumers (count, context-selector fallback).
+  targetSectionTypes?: string[];
   stepNumber?: number;
   tradeFilter?: string;
   categoryFilter?: string;
@@ -144,11 +148,12 @@ export function hasGenerativeIntent(question: string): boolean {
 }
 
 /**
- * Detect the requested section type from the question. Returns the sectionType
- * if exactly one section is clearly requested, or null if ambiguous/none.
- * Exported for testability.
+ * Detect ALL requested section types from the question (universal multi-section
+ * support). "What tools and materials..." → ['tools','materials']. Order
+ * follows SECTION_KEYWORD_MAP (scope, tools, materials, procedure, safety,
+ * quality). Exported for testability and reuse by the context selector.
  */
-export function detectSectionType(question: string): string | null {
+export function detectSectionTypes(question: string): string[] {
   const q = question.toLowerCase();
   const found: string[] = [];
   for (const { keywords, sectionType } of SECTION_KEYWORD_MAP) {
@@ -159,8 +164,18 @@ export function detectSectionType(question: string): string | null {
       }
     }
   }
-  if (found.length === 1) return found[0];
-  return null;
+  return found;
+}
+
+/**
+ * Detect the requested section type when EXACTLY ONE is requested. Returns
+ * the sectionType, or null if zero or multiple are requested. Kept for
+ * single-section consumers (count, step). For multi-section routing use
+ * detectSectionTypes.
+ */
+export function detectSectionType(question: string): string | null {
+  const found = detectSectionTypes(question);
+  return found.length === 1 ? found[0] : null;
 }
 
 /**
@@ -240,6 +255,40 @@ const TITLE_STOPWORDS = new Set([
   'and', 'the', 'for', 'of', 'in', 'on', 'at', 'to', 'a', 'an',
 ]);
 
+// ── Multi-operation vocabulary (universal, trade-agnostic) ──────────────────
+// Used ONLY to decide whether a question names more than one operation. These
+// are NOT trade-specific — they are generic combiners and filters that apply
+// to any current or future SOP regardless of trade, title, or category.
+const ROUTER_STOPWORDS = new Set([
+  'the', 'a', 'an', 'to', 'of', 'for', 'and', 'or', 'in', 'on', 'at', 'by', 'with',
+  'how', 'what', 'which', 'is', 'are', 'do', 'does', 'did', 'i', 'my', 'me', 'we',
+  'this', 'that', 'it', 'its', 'can', 'will', 'be', 'should', 'would', 'could',
+  'please', 'tell', 'show', 'give', 'about', 'need', 'needed', 'want', 'wanted',
+  'use', 'used', 'using', 'get', 'make', 'making', 'done', 'from', 'into', 'over',
+  'under', 'out', 'many', 'much', 'some', 'any', 'all',
+]);
+// Section-keyword variants — an "and" joining these ("tools and materials") is
+// NOT a second operation.
+const SECTION_KEYWORD_SET = new Set([
+  'tools', 'tool', 'equipment', 'materials', 'material', 'supplies', 'parts',
+  'products', 'safety', 'hazards', 'hazard', 'ppe', 'precautions', 'precaution',
+  'warnings', 'warning', 'danger', 'caution', 'quality', 'standards',
+  'acceptance', 'inspection', 'scope', 'steps', 'step', 'procedure', 'process',
+  'instructions', 'list', 'find',
+]);
+// Non-operation nouns/adverbs/connectors — excluded from the "uncovered
+// operation token" check so a single-SOP request is not falsely reported as a
+// missing second operation. Trade-agnostic: contains no trade verbs.
+const NON_OPERATION_WORDS = new Set([
+  'room', 'rooms', 'area', 'house', 'home', 'building', 'wall', 'walls',
+  'ceiling', 'roof', 'floors', 'floor', 'section', 'side', 'piece', 'pieces',
+  'sheet', 'sheets', 'board', 'boards', 'panel', 'panels', 'stuff', 'things',
+  'thing', 'gear', 'gears', 'properly', 'safely', 'quickly', 'correctly',
+  'carefully', 'easily', 'slowly', 'cleanly', 'right', 'well', 'fast', 'best',
+  'better', 'good', 'new', 'old', 'big', 'small', 'first', 'second', 'third',
+  'before', 'after', 'during', 'while', 'too', 'one', 'two', 'three',
+]);
+
 /**
  * Score how well a question references a job title. Returns 0..1.
  * 1.0 = full title substring in question. Lower = partial token overlap.
@@ -262,54 +311,124 @@ function titleMatchScore(question: string, jobTitle: string): number {
   return hits / significant.length;
 }
 
-// ── Multi-operation detection ────────────────────────────────────────────────
-// A combined request ("What tools do I need to hang AND tape drywall?") names
-// two operations and wants information from BOTH — it is NOT ambiguity.
-// Conjunction + 2+ strongly-matching SOPs (each explicitly named, score>=0.8)
-// → combine. Conjunction + exactly 1 strong match (and that title does not
-// itself contain "and") → partial: answer the one and acknowledge the missing.
-// Conjunction inside a single SOP title ("Gutters and Downspout Repair") is
-// NOT treated as multi — the "and" belongs to the title, not a second op.
-const MULTI_CONJUNCTION_RE = /\b(and|both|together|as well as|plus)\b/i;
+// ── Multi-operation detection (universal) ─────────────────────────────────────
+// A combined request names two or more operations and wants information from
+// ALL of them — it is NOT ambiguity. Evidence of multiplicity is a combiner
+// (and/both/together/as well as/plus/also/then/next) OR a comma-separated list,
+// so "paint, floor, and frame" and "hang and tape" are both recognized. This is
+// trade-agnostic: it relies only on how strongly SOP titles match the question,
+// not on any trade vocabulary.
+//
+//   2+ SOPs each named by a DISCRIMINATOR title token matched in the question
+//     → COMBINE (e.g. "paint, floor, and frame" names Painting/Flooring/Framing;
+//     "hang and tape drywall" names Hanging/Taping — "drywall" alone is a shared
+//     object word and does NOT name "Drywall Patch and Repair").
+//   1 named SOP + a credible second operation the user named that no SOP covers
+//     → PARTIAL (answer the one, acknowledge the missing).
+//   1 named SOP whose own title contains "and" → NOT multi (the and is part of
+//     the SOP name, e.g. "Gutters and Downspout Repair").
+//   1 named SOP with NO uncovered operation token → NOT multi (the combiner
+//     joins sections/concepts, e.g. "tools and materials for hanging drywall").
+const MULTI_INDICATOR_RE = /\b(and|both|together|as well as|plus|also|then|next)\b|,/i;
+
+/**
+ * Returns true if the question contains a significant token that looks like a
+ * second operation the matched SOP does not cover. Excludes stopwords, section
+ * keywords, generic non-operation nouns/adverbs, and title stopwords so that
+ * "tools and materials for hanging drywall" (no uncovered op) is NOT partial
+ * while "hang and plaster drywall" (plaster uncovered) IS partial.
+ */
+function hasUncoveredOperationToken(question: string, job: any): boolean {
+  const q = normalizeQuery(question.toLowerCase());
+  const qTokens = q.match(/[a-z0-9]+/g) || [];
+  const titleTokens = (job.title || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  for (const qt of qTokens) {
+    if (qt.length < 4) continue;
+    if (ROUTER_STOPWORDS.has(qt)) continue;
+    if (SECTION_KEYWORD_SET.has(qt)) continue;
+    if (NON_OPERATION_WORDS.has(qt)) continue;
+    if (TITLE_STOPWORDS.has(qt)) continue;
+    if (titleTokens.some(tt => stemMatches(qt, tt))) continue;
+    return true;
+  }
+  return false;
+}
+
+// A "discriminator" title token is one that is NOT shared across other
+// distinct SOP titles. This is what lets the matcher tell a named operation
+// from a shared object word — trade-agnostic, no verb/object lexicon needed.
+//   "hang and tape drywall": "hanging"/"taping" are discriminators (each in
+//     one title); "drywall" is shared across 4 titles → not a discriminator, so
+//     "Drywall Patch and Repair" / "Mudding Drywall" are NOT named by "drywall".
+//   "paint, floor, and frame": "painting"/"flooring"/"framing" are
+//     discriminators → Painting Walls, Flooring Installation, Framing Walls
+//     are all named even though the user never said "walls".
+//   Duplicate titles ("Mudding Drywall" x2): "mudding" belongs to ONE distinct
+//     title → discriminator → both records are named (distinct IDs preserved).
+function buildTitleSignificance(knowledge: CompanyKnowledge) {
+  const titleSig = new Map<string, Set<string>>();
+  for (const job of knowledge.jobs) {
+    const title = (job.title || '').toLowerCase().trim();
+    if (titleSig.has(title)) continue;
+    const tokens = title.match(/[a-z0-9]+/g) || [];
+    titleSig.set(title, new Set(tokens.filter(t => t.length > 2 && !TITLE_STOPWORDS.has(t))));
+  }
+  // Frequency of each significant token across DISTINCT titles.
+  const freq = new Map<string, number>();
+  for (const sig of titleSig.values()) {
+    for (const t of sig) freq.set(t, (freq.get(t) || 0) + 1);
+  }
+  return { titleSig, freq };
+}
 
 function detectMultiOperation(
   knowledge: CompanyKnowledge,
   question: string
 ): { jobIds: string[]; partial: boolean } | null {
-  if (!MULTI_CONJUNCTION_RE.test(question.toLowerCase())) return null;
-  const scored = knowledge.jobs
-    .map(job => ({ job, score: titleMatchScore(question, job.title || '') }))
-    .filter(s => s.score >= 0.8)
-    .sort((a, b) => b.score - a.score);
-  if (scored.length >= 2) {
-    // Order the combined SOPs to match the order the operations appear in the
-    // question ("hang AND tape" → Hanging before Taping), not storage order.
-    const q = normalizeQuery(question.toLowerCase());
-    const positionOf = (job: any): number => {
-      const title = (job.title || '').toLowerCase().trim();
-      const sig = (title.match(/[a-z0-9]+/g) || []).filter(t => t.length > 2 && !TITLE_STOPWORDS.has(t));
-      const qTokens = q.match(/[a-z0-9]+/g) || [];
-      let best = Infinity;
-      for (const t of sig) {
-        for (const qt of qTokens) {
-          if (stemMatches(qt, t)) {
-            const idx = q.indexOf(qt);
-            if (idx >= 0 && idx < best) best = idx;
-          }
+  if (!MULTI_INDICATOR_RE.test(question.toLowerCase())) return null;
+  const q = normalizeQuery(question.toLowerCase());
+  const qTokens = q.match(/[a-z0-9]+/g) || [];
+  const qlower = question.toLowerCase();
+  const { titleSig, freq } = buildTitleSignificance(knowledge);
+
+  // A SOP is "named" if the question stem-matches one of its DISCRIMINATOR
+  // significant tokens (a token not shared across other distinct titles).
+  const named: { job: any; pos: number }[] = [];
+  for (const job of knowledge.jobs) {
+    const title = (job.title || '').toLowerCase().trim();
+    const sig = titleSig.get(title);
+    if (!sig) continue;
+    let bestPos = Infinity;
+    for (const t of sig) {
+      if ((freq.get(t) || 0) >= 2) continue; // shared object word — not a discriminator
+      for (const qt of qTokens) {
+        if (stemMatches(qt, t)) {
+          const idx = qlower.indexOf(qt);
+          if (idx >= 0 && idx < bestPos) bestPos = idx;
         }
       }
-      return best;
-    };
-    const ordered = [...scored].sort((a, b) => positionOf(a.job) - positionOf(b.job));
-    return { jobIds: ordered.map(s => s.job.id), partial: false };
+    }
+    if (bestPos !== Infinity) named.push({ job, pos: bestPos });
   }
-  if (scored.length === 1) {
-    // If the single strong match's own title contains "and", the conjunction
-    // is part of the SOP name (e.g. "Gutters and Downspout Repair") — not multi.
-    const t = (scored[0].job.title || '').toLowerCase();
+
+  named.sort((a, b) => a.pos - b.pos);
+
+  if (named.length >= 2) {
+    return { jobIds: named.map(n => n.job.id), partial: false };
+  }
+
+  if (named.length === 1) {
+    // "and" inside the matched title belongs to the SOP name — not multi.
+    const t = (named[0].job.title || '').toLowerCase();
     if (/\band\b/.test(t)) return null;
-    return { jobIds: [scored[0].job.id], partial: true };
+    // Only treat as partial if the user named a credible second operation no
+    // SOP covers. "tools and materials for hanging drywall" has none → single.
+    if (hasUncoveredOperationToken(question, named[0].job)) {
+      return { jobIds: [named[0].job.id], partial: true };
+    }
+    return null;
   }
+
   return null;
 }
 
@@ -387,6 +506,7 @@ export function routeAssistantRequest(
 
   // ── 1. Generative intent → generative ──────────────────────────────────
   if (hasGenerativeIntent(q)) {
+    const genSections = detectSectionTypes(q);
     // For a multi-operation generative request, restrict the AI context to
     // the explicitly named SOPs so a keyword-only match (e.g. "Mudding
     // Drywall" matching only on "drywall") is excluded from the synthesis.
@@ -394,12 +514,14 @@ export function routeAssistantRequest(
       return {
         route: 'generative',
         targetJobIds: multi.jobIds,
+        targetSectionTypes: genSections.length > 0 ? genSections : undefined,
         confidence: 0.9,
         reason: 'Multi-operation request; AI context restricted to the named SOPs.',
       };
     }
     return {
       route: 'generative',
+      targetSectionTypes: genSections.length > 0 ? genSections : undefined,
       confidence: 0.9,
       reason: 'Question contains generative-intent keywords.',
     };
@@ -475,20 +597,23 @@ export function routeAssistantRequest(
     };
   }
 
-  // ── 4. Section listing ────────────────────────────────────────────────
-  const sectionType = detectSectionType(q);
-  if (sectionType) {
-    // Multi-operation combined request: combine the requested section from
-    // every explicitly named SOP (no clarification). Partial = only one named
+  // ── 4. Section listing (single OR multiple sections) ─────────────────
+  const sections = detectSectionTypes(q);
+  if (sections.length > 0) {
+    const sectionType = sections[0]; // backward-compat single-section field
+    // Multi-operation combined request: combine every requested section from
+    // every explicitly named SOP (no clarification). Works for one section
+    // across N SOPs, or M sections across N SOPs. Partial = only one named
     // operation has a published SOP → answer it and acknowledge the missing.
     if (multi && multi.jobIds.length >= 2) {
       return {
         route: 'direct',
         directKind: 'multi_sop_section',
         targetJobIds: multi.jobIds,
+        targetSectionTypes: sections,
         sectionType,
         confidence: 0.85,
-        reason: `Multi-operation ${sectionType} request combining the named SOPs.`,
+        reason: `Multi-operation request combining ${sections.join(', ')} across the named SOPs.`,
       };
     }
     if (multi && multi.partial && multi.jobIds.length === 1) {
@@ -496,16 +621,19 @@ export function routeAssistantRequest(
         route: 'direct',
         directKind: 'multi_sop_section',
         targetJobIds: multi.jobIds,
+        targetSectionTypes: sections,
         sectionType,
         partialMissing: true,
         confidence: 0.8,
-        reason: `Multi-operation ${sectionType} request; one named operation has no published SOP.`,
+        reason: `Multi-operation request; one named operation has no published SOP.`,
       };
     }
     const target = resolveTargetSop(knowledge, q, focusJobIds);
     if (target.jobId) {
-      // For procedure: only direct if explicitly listing (not explaining)
-      if (sectionType === 'procedure') {
+      // Procedure is only direct when explicitly listing (not explaining).
+      // When procedure is the SOLE requested section, gate it; when requested
+      // alongside other sections the user is clearly listing, so allow direct.
+      if (sections.length === 1 && sectionType === 'procedure') {
         const isListing = hasAnyWord(q, ['list', 'show']) ||
           hasPhrase(q, 'what are the steps') || hasPhrase(q, 'what steps') ||
           hasPhrase(q, 'list the steps') || hasPhrase(q, 'show the steps');
@@ -521,25 +649,26 @@ export function routeAssistantRequest(
         route: 'direct',
         directKind: 'section_listing',
         targetJobId: target.jobId,
+        targetSectionTypes: sections,
         sectionType,
         confidence: 0.85,
-        reason: `Clear ${sectionType} listing for an identified SOP.`,
+        reason: `Clear ${sections.join(', ')} listing for an identified SOP.`,
       };
     }
     if (target.ambiguous) {
       return {
         route: 'clarification',
         confidence: 0.6,
-        reason: `${sectionType} listing with ambiguous target SOP.`,
+        reason: `${sections.join(', ')} listing with ambiguous target SOP.`,
         ambiguousJobIds: target.ambiguous,
       };
     }
-    // Section keyword present but no target — ask which SOP
+    // Section keyword(s) present but no target — ask which SOP
     if (knowledge.jobs.length > 0) {
       return {
         route: 'clarification',
         confidence: 0.6,
-        reason: `${sectionType} listing without a clear target SOP.`,
+        reason: `${sections.join(', ')} listing without a clear target SOP.`,
       };
     }
     return { route: 'no_match', confidence: 0.7, reason: 'No eligible SOPs.' };

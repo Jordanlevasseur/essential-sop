@@ -34,7 +34,7 @@ import {
   getResourcesForJob,
   rankJobsByQuery,
 } from './companyKnowledgeEngine.ts';
-import { RoutingDecision, detectSectionType } from './assistantRouter.ts';
+import { RoutingDecision, detectSectionType, detectSectionTypes } from './assistantRouter.ts';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ function selectSectionsForSop(
   job: any,
   knowledge: CompanyKnowledge,
   mode: QueryMode,
-  targetSectionType: string | undefined
+  targetSectionTypes: string[]
 ): string[] {
   // Determine which sections exist for this SOP
   const existingSections = new Set<string>();
@@ -236,26 +236,24 @@ function selectSectionsForSop(
     return SECTION_ORDER.filter(st => existingSections.has(st));
   }
 
-  // section_targeted: include target + always-include sections + related
+  // section_targeted: include ALL requested sections + always-include + related
   const sections = new Set<string>();
-
   for (const st of ALWAYS_INCLUDE_SECTIONS) {
     if (existingSections.has(st)) sections.add(st);
   }
-
-  if (targetSectionType && existingSections.has(targetSectionType)) {
-    sections.add(targetSectionType);
+  for (const st of targetSectionTypes) {
+    if (existingSections.has(st)) sections.add(st);
   }
 
-  // Safety question → also include procedure (context for precautions)
-  if (targetSectionType === 'safety' && existingSections.has('procedure')) {
+  // Related-section context so the answer is coherent across multi-section
+  // requests (e.g. "tools and materials" → include both even if one omitted).
+  if (targetSectionTypes.includes('safety') && existingSections.has('procedure')) {
     sections.add('procedure');
   }
-  // Tools ↔ Materials (related)
-  if (targetSectionType === 'tools' && existingSections.has('materials')) {
+  if (targetSectionTypes.includes('tools') && existingSections.has('materials')) {
     sections.add('materials');
   }
-  if (targetSectionType === 'materials' && existingSections.has('tools')) {
+  if (targetSectionTypes.includes('materials') && existingSections.has('tools')) {
     sections.add('tools');
   }
 
@@ -385,7 +383,7 @@ function reduceContext(
   sopContexts: SopContext[],
   knowledge: CompanyKnowledge,
   mode: QueryMode,
-  targetSectionType: string | undefined,
+  targetSectionTypes: string[],
   includeResources: boolean
 ): { text: string; reason: string; finalContexts: SopContext[] } {
   const minSops = mode === 'comparison' ? 2 : 1;
@@ -403,7 +401,7 @@ function reduceContext(
   // Pass 1: drop non-essential sections from lowest-scoring SOPs
   if (text.length > CONTEXT_BUDGET) {
     const essential = new Set<string>(ALWAYS_INCLUDE_SECTIONS);
-    if (targetSectionType) essential.add(targetSectionType);
+    for (const st of targetSectionTypes) essential.add(st);
     if (mode === 'comprehensive') essential.add('procedure');
 
     // Process lowest-scoring SOPs first (most expendable)
@@ -539,7 +537,13 @@ export function selectAiContext(
 ): AiContextResult {
   const mode = detectQueryMode(question, decision);
   const includeResources = questionHasResourceKeywords(question);
-  const targetSectionType = decision.sectionType || detectSectionType(question) || undefined;
+  // Universal multi-section: prefer the router's resolved sections, then the
+  // plural detector, then the single-section field as a final fallback.
+  const targetSectionTypes: string[] = (decision.targetSectionTypes && decision.targetSectionTypes.length > 0)
+    ? decision.targetSectionTypes
+    : (detectSectionTypes(question).length > 0
+        ? detectSectionTypes(question)
+        : (decision.sectionType ? [decision.sectionType] : (detectSectionType(question) ? [detectSectionType(question)!] : [])));
   const knowledgeComplete = knowledge.metrics?.complete ?? true;
 
   // ── Select SOPs ──
@@ -564,7 +568,7 @@ export function selectAiContext(
   const sopContexts: SopContext[] = scoredSops.map(s => ({
     job: s.job,
     score: s.score,
-    sections: selectSectionsForSop(s.job, knowledge, mode, targetSectionType),
+    sections: selectSectionsForSop(s.job, knowledge, mode, targetSectionTypes),
   }));
 
   // Filter out SOPs with no content sections
@@ -609,7 +613,7 @@ export function selectAiContext(
   let finalContexts = withContent;
 
   if (contextText.length > CONTEXT_BUDGET) {
-    const reduced = reduceContext(withContent, knowledge, mode, targetSectionType, includeResources);
+    const reduced = reduceContext(withContent, knowledge, mode, targetSectionTypes, includeResources);
     contextText = reduced.text;
     truncated = true;
     reductionReason = reduced.reason;
