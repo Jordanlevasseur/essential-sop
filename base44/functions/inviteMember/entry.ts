@@ -9,7 +9,7 @@ const INVITE_EXPIRY_DAYS = 7;
 // (Base44 editor preview, localhost, an obsolete domain), so a link baked
 // into an email must always point to the real published app. Update this
 // constant if the production domain changes.
-const PRODUCTION_ORIGIN = 'https://essential-job-flow.base44.app';
+const PRODUCTION_ORIGIN = 'https://essentialsop-job-flow.com';
 
 function hashToken(token: string): string {
   // Same deterministic hash as acceptInvitation — verifies the invite-link secret.
