@@ -439,7 +439,42 @@ export default async function(req) {
         return Response.json({ success: true, alreadyDeleted: true });
       }
 
-      // 1. Archive all published versions (tombstone; blocks resolveJob)
+      // ── ADOPTION GUARD — protect adopted company SOPs ───────────────────────
+      // Before ANY destructive write, check for ALL derived company Jobs that
+      // reference this Master, regardless of Job status or archive state. Once a
+      // company has adopted a Master SOP, its company Job and customizations
+      // (JobOverride, resources, PDF attachments, version decisions) are
+      // protected company-owned content. Hard-deleting the Master would archive
+      // those Jobs and DESTROY their JobOverride records — irreversible company
+      // data loss. Refuse the hard delete and direct the admin to archive the
+      // Master instead (archiving preserves existing adoptions while removing
+      // the Master from new-adoption availability). True hard deletion is
+      // permitted only when no adopted company Jobs reference the Master.
+      const derivedJobs = await SR.entities.Job.filter(
+        { sourceType: 'essential_sop', sourceMasterId: masterId }, '-created_date', 500
+      ).catch(() => []) || [];
+
+      if (derivedJobs.length > 0) {
+        const adoptedCompanyIds = Array.from(new Set(derivedJobs.map((j: any) => j.companyId).filter(Boolean)));
+        const companyNames: string[] = [];
+        for (const cid of adoptedCompanyIds.slice(0, 10)) {
+          try {
+            const c = await SR.entities.Company.get(cid);
+            if (c?.name) companyNames.push(c.name);
+          } catch (_) {}
+        }
+        return Response.json({
+          error: `Cannot delete this Master SOP because it has been adopted by ${derivedJobs.length} company workspace(s)${
+            companyNames.length ? ` (${companyNames.join(', ')}${adoptedCompanyIds.length > companyNames.length ? ', …' : ''})` : ''
+          }. Adopted company SOPs and their customizations must be preserved. Archive the Master instead — existing company adoptions remain fully accessible, and the Master is removed from new-adoption availability.`,
+          code: 'ADOPTED_COMPANY_SOPS_EXIST',
+          adoptedCompanyJobCount: derivedJobs.length,
+          adoptedCompanyIds,
+        }, { status: 409 });
+      }
+
+      // No adopted company Jobs reference this Master — safe to hard-delete.
+      // 1. Archive all published versions (tombstone)
       const versions = await SR.entities.EssentialSOPVersion.filter({ masterId }, '-versionNumber', 200).catch(() => []) || [];
       for (const v of versions) {
         if (v.status === 'published') {
@@ -447,11 +482,8 @@ export default async function(req) {
         }
       }
 
-      // 2. Per derived Company Job — revoke overrides/decisions/analyses + archive job
-      const derivedJobs = await SR.entities.Job.filter(
-        { sourceType: 'essential_sop', sourceMasterId: masterId }, '-created_date', 500
-      ).catch(() => []) || [];
-
+      // 2. (No derived Jobs to revoke — adoption guard above ensured none exist;
+      //       the loops below are retained as defense-in-depth no-ops.)
       for (const j of derivedJobs) {
         const ov = await SR.entities.JobOverride.filter({ companyId: j.companyId, jobId: j.id }, '-updatedAt', 50).catch(() => []) || [];
         for (const o of ov) await SR.entities.JobOverride.delete(o.id).catch(() => {});

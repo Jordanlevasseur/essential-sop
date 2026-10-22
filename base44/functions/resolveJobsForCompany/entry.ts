@@ -4,7 +4,6 @@ import {
   sanitizeStoredOverride,
   buildResolvedItems,
 } from '../../shared/overrideSchema.js';
-import { loadActiveAssignmentMasterIds } from '../../shared/activeCompanyContent.ts';
 
 /**
  * resolveJobsForCompany — Resolver-backed Jobs list and search service.
@@ -62,26 +61,19 @@ export default async function(req: Request): Promise<Response> {
     const allJobs = await SR.entities.Job.filter({ companyId }, '-updated_date', 200);
     const publishedJobs = (allJobs || []).filter((j: any) => !j.isArchived && j.status === 'Published');
 
-    const _rawSopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
+    const sopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
     const companyJobs = publishedJobs.filter((j: any) => j.sourceType !== 'essential_sop');
 
-    // ── Phase 5 active-company-content eligibility ──────────────────────────────
-    // An essential_sop Job is active company content ONLY if its platform
-    // assignment (ProvisioningRecord) is ACTIVE AND its source Master is active.
-    // This excludes platform-unassigned Masters even when an adopted published
-    // Job still exists, and excludes orphaned/derived jobs whose Master was
-    // deleted. See activeCompanyContent.ts for the authoritative rule.
-    const activeMasterIds = await loadActiveAssignmentMasterIds(SR, companyId);
-    const _sopMasterIds = Array.from(new Set(_rawSopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
-    const _masterCache: Record<string, any> = {};
-    await Promise.all(_sopMasterIds.map(async (mid: string) => {
-      try { _masterCache[mid] = await SR.entities.EssentialSOPMaster.get(mid); } catch { _masterCache[mid] = null; }
-    }));
-    const sopJobs = _rawSopJobs.filter((j: any) => {
-      if (!j.sourceMasterId || !activeMasterIds.has(j.sourceMasterId)) return false;
-      const m = _masterCache[j.sourceMasterId];
-      return !!m && m.status === 'active';
-    });
+    // ── Adopted-SOP ownership rule ──────────────────────────────────────────────
+    // An EXISTING adopted company SOP is decoupled from platform Master
+    // availability. The company owns its adopted Job, so archiving/retiring/
+    // unassigning the original platform Master must NOT remove an already-adopted
+    // SOP from the Company Library list. Eligibility is governed by the company
+    // Job being Published + non-archived (above) and its pinned source version
+    // remaining published (versionStatusCache below). Platform Master status and
+    // ProvisioningRecord assignment remain required only for NEW adoption /
+    // provisioning (addToCompanyLibrary, resolveCompanyMasterLibrary,
+    // resolveCompanyMasterPreview) — not for reading an existing adopted SOP.
 
     // ── Batch load all overrides for this company ────────────────────────────
     const allOverrides = await SR.entities.JobOverride.filter({ companyId }, '-updatedAt', 500);
@@ -116,6 +108,11 @@ export default async function(req: Request): Promise<Response> {
       }
     }
 
+    // Adopted SOP is list-eligible only if its pinned source version is still
+    // published (content resolvable). Jobs whose pinned version was archived
+    // (e.g. a legacy orphan from a pre-guard hard delete) are excluded.
+    const eligibleSopJobs = sopJobs.filter((j: any) => versionStatusCache[`${j.sourceMasterId}__${j.sourceVersionId}`] === true);
+
     // ── Batch load SectionContent for company-owned Jobs ─────────────────────
     const allContent = await SR.entities.SectionContent.filter({ companyId }, 'sortOrder', 2000);
     const contentByJobId: Record<string, any[]> = {};
@@ -141,7 +138,7 @@ export default async function(req: Request): Promise<Response> {
     });
 
     // Process Essential SOP Jobs
-    for (const job of sopJobs) {
+    for (const job of eligibleSopJobs) {
       const vk = `${job.sourceMasterId}__${job.sourceVersionId}`;
       const masterSections = versionSectionCache[vk] || [];
       const override = overrideByJobId[job.id] || null;

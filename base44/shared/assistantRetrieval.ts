@@ -3,7 +3,6 @@ import {
   sanitizeStoredOverride,
   buildResolvedItems,
 } from './overrideSchema.js';
-import { loadActiveAssignmentMasterIdsWithMetrics } from './activeCompanyContent.ts';
 
 /**
  * resolveAssistantContext — shared retrieval for the Assistant.
@@ -42,25 +41,18 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   const sopJobs = publishedJobs.filter((j: any) => j.sourceType === 'essential_sop');
   const companyJobs = publishedJobs.filter((j: any) => j.sourceType !== 'essential_sop');
 
-  // ── Phase 5: filter sopJobs to active-company-content eligible ───────────────
-  // An essential_sop Job is active company content ONLY if its platform
-  // assignment is ACTIVE and its source Master is active. This excludes
-  // platform-unassigned Masters (even with an adopted published Job) and
-  // orphaned jobs whose Master was deleted/archived. This is the EXCLUSIVE
-  // source for the AI Assistant — there is no Master Library fallback.
-  // See activeCompanyContent.ts for the authoritative rule.
-  const { masterIds: activeMasterIds, hasMore: _provisioningHasMore } = await loadActiveAssignmentMasterIdsWithMetrics(SR, companyId);
-  if (_provisioningHasMore) _errors.push('ProvisioningRecord query limit (500) reached — some assignments may be omitted.');
-  const _masterIds = Array.from(new Set(sopJobs.map((j: any) => j.sourceMasterId).filter(Boolean)));
-  const _masterCache: Record<string, any> = {};
-  await Promise.all(_masterIds.map(async (mid: string) => {
-    try { _masterCache[mid] = await SR.entities.EssentialSOPMaster.get(mid); } catch { _masterCache[mid] = null; }
-  }));
-  const eligibleSopJobs = sopJobs.filter((j: any) => {
-    if (!j.sourceMasterId || !activeMasterIds.has(j.sourceMasterId)) return false;
-    const m = _masterCache[j.sourceMasterId];
-    return !!m && m.status === 'active';
-  });
+  // ── Adopted-SOP ownership rule ──────────────────────────────────────────────
+  // An EXISTING adopted company SOP is decoupled from platform Master
+  // availability. The company owns its adopted Job, so archiving/retiring/
+  // unassigning the original platform Master must NOT remove an already-adopted
+  // SOP from the Assistant's knowledge. Eligibility is governed by the company
+  // Job being Published + non-archived (above) and its pinned source version
+  // remaining published (versionStatusCache below). Platform Master status and
+  // ProvisioningRecord assignment remain required only for NEW adoption — not
+  // for citing an existing adopted SOP. Unpublished or company-archived SOPs
+  // are excluded by the publishedJobs filter above and never enter Assistant
+  // knowledge. Unadopted/internal platform Master content is never read here
+  // (only adopted Jobs' pinned versions are).
 
   const allOverrides = await SR.entities.JobOverride.filter({ companyId }, '-updatedAt', 500);
   const _overridesHasMore = (allOverrides || []).length >= 500;
@@ -71,18 +63,27 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
   }
 
   const versionSectionCache: Record<string, any[]> = {};
-  for (const job of eligibleSopJobs) {
+  const versionStatusCache: Record<string, boolean> = {};
+  for (const job of sopJobs) {
     const vk = `${job.sourceMasterId}__${job.sourceVersionId}`;
     if (versionSectionCache[vk] !== undefined) continue;
     try {
       const version = await SR.entities.EssentialSOPVersion.get(job.sourceVersionId);
-      if (!version || version.status !== 'published') { versionSectionCache[vk] = []; continue; }
+      if (!version || version.status !== 'published') {
+        versionStatusCache[vk] = false;
+        versionSectionCache[vk] = [];
+        continue;
+      }
+      versionStatusCache[vk] = true;
       const sections = await SR.entities.EssentialSOPSection.filter(
         { masterId: job.sourceMasterId, versionId: job.sourceVersionId }, 'sortOrder', 10
       );
       versionSectionCache[vk] = sections || [];
-    } catch { versionSectionCache[vk] = []; }
+    } catch { versionStatusCache[vk] = false; versionSectionCache[vk] = []; }
   }
+  // Adopted SOP is Assistant-eligible only if its pinned source version is still
+  // published (content resolvable).
+  const eligibleSopJobs = sopJobs.filter((j: any) => versionStatusCache[`${j.sourceMasterId}__${j.sourceVersionId}`] === true);
 
   const allContent = await SR.entities.SectionContent.filter({ companyId }, 'sortOrder', 2000);
   const _contentHasMore = (allContent || []).length >= 2000;
@@ -188,7 +189,7 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
     _errors.push('CompanyResource retrieval failed — resources omitted.');
   }
 
-  const _complete = !_jobsHasMore && !_contentHasMore && !_overridesHasMore && !_resourcesHasMore && !_provisioningHasMore;
+  const _complete = !_jobsHasMore && !_contentHasMore && !_overridesHasMore && !_resourcesHasMore;
 
   const metrics = {
     eligibleJobCount: jobs.length,
@@ -201,7 +202,6 @@ export async function resolveAssistantContext(SR: any, companyId: string): Promi
       content: _contentHasMore,
       overrides: _overridesHasMore,
       resources: _resourcesHasMore,
-      provisioning: _provisioningHasMore,
     },
     errors: _errors,
   };

@@ -72,6 +72,9 @@ export default async function(req: Request): Promise<Response> {
     if (master.status !== 'active' || !master.currentPublishedVersionId) {
       return Response.json({ error: 'Master SOP is not available', code: 'MASTER_UNAVAILABLE' }, { status: 409 });
     }
+    if (master.distributionStatus === 'retired') {
+      return Response.json({ error: 'This Master SOP has been retired and is no longer available for adoption.', code: 'MASTER_RETIRED' }, { status: 409 });
+    }
 
     let version: any;
     try { version = await SR.entities.EssentialSOPVersion.get(master.currentPublishedVersionId); } catch (_) {}

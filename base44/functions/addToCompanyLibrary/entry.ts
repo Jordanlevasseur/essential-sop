@@ -59,6 +59,9 @@ export default async function(req: Request): Promise<Response> {
     if (master.status !== 'active') {
       return Response.json({ error: 'Master SOP is not active', code: 'MASTER_NOT_ACTIVE' }, { status: 409 });
     }
+    if (master.distributionStatus === 'retired') {
+      return Response.json({ error: 'This Master SOP has been retired and is no longer available for adoption.', code: 'MASTER_RETIRED' }, { status: 409 });
+    }
 
     // ── Require an ACTIVE platform assignment (provisioning) ──────────────────
     // Adoption can never bypass provisioning. If no ACTIVE ProvisioningRecord

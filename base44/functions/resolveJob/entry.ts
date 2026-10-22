@@ -4,7 +4,6 @@ import {
   buildResolvedItems,
   VALID_SECTION_TYPES,
 } from '../../shared/overrideSchema.js';
-import { isMasterAssignedActive } from '../../shared/activeCompanyContent.ts';
 
 /**
  * resolveJob — Centralized Job resolver for the Essential SOP Master Library architecture.
@@ -126,28 +125,18 @@ async function resolveEssentialSOPJob(job: any, SR: any, capabilities: any, acti
     return Response.json({ error: 'Source version is not available.' }, { status: 409 });
   }
 
-  // ── Defense-in-depth: require an existing, active source Master ─────────────
-  // Deletion cascade hard-deletes the master; this gate blocks any orphaned
-  // derived job (and any job whose master was archived) from being opened.
-  let sourceMaster: any = null;
-  if (job.sourceMasterId) {
-    try { sourceMaster = await SR.entities.EssentialSOPMaster.get(job.sourceMasterId); } catch (_) {}
-  }
-  if (!sourceMaster || sourceMaster.status !== 'active') {
-    return Response.json({ error: 'This job is no longer available.', code: 'SOURCE_MASTER_UNAVAILABLE' }, { status: 410 });
-  }
-
-  // ── Phase 5: require an ACTIVE platform assignment for this company ────────
-  // A platform-unassigned Master (assignmentStatus REMOVED) must NOT remain
-  // accessible as an active company procedure via a stale deep link, even if
-  // the adopted published Job still exists. Return a controlled unavailable
-  // response instead of leaking the SOP content. Company data (Job, overrides,
-  // history) is preserved — only visibility is revoked. See activeCompanyContent.ts.
-  const assignmentActive = await isMasterAssignedActive(SR, job.companyId, job.sourceMasterId);
-  if (!assignmentActive) {
-    return Response.json({ error: 'This procedure is no longer available to your company.', code: 'ASSIGNMENT_REVOKED' }, { status: 410 });
-  }
-
+  // ── Adopted-SOP ownership rule ──────────────────────────────────────────────
+  // An EXISTING adopted company SOP is decoupled from platform Master
+  // availability. The company owns its adopted Job, so archiving/retiring/
+  // unassigning the original platform Master must NOT make this adopted SOP
+  // inaccessible. Content resolvability is governed solely by the company's own
+  // Job state (Published + non-archived, checked above) and the pinned source
+  // version remaining published (checked above). Platform Master status and
+  // ProvisioningRecord assignment are NO LONGER required to READ an existing
+  // adopted SOP — they remain required only for NEW adoption/provisioning
+  // (addToCompanyLibrary / resolveCompanyMasterLibrary / resolveCompanyMasterPreview).
+  // A company that deliberately removed the SOP is still blocked by the
+  // JOB_NOT_ACTIVE gate above (Job isArchived / not Published).
   const masterSections = await SR.entities.EssentialSOPSection.filter(
     { masterId: job.sourceMasterId, versionId }, 'sortOrder', 10
   );

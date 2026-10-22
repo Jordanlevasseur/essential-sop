@@ -1,36 +1,34 @@
 import { buildProvisioningKey } from './companyLibraryProvisioning.ts';
 
 /**
- * activeCompanyContent.ts — Phase 5: the SINGLE authoritative active-company-
- * content eligibility rule for essential_sop Jobs.
+ * activeCompanyContent.ts — Active-assignment lookup helpers.
  *
- * An essential_sop Job is "active company content" — visible in the Company
- * Library list, openable via Job detail, and retrievable/citable by the AI
- * Assistant — if and ONLY if ALL hold:
+ * ADOPTED-SOP OWNERSHIP RULE (current):
+ * Once a company adopts a Master SOP, its company Job and customizations are
+ * protected company-owned content. Reading an EXISTING adopted company SOP
+ * (Company Library list, Job detail/deep link, Assistant retrieval, all six
+ * sections, overrides, resources, PDF export) is decoupled from platform
+ * Master availability. An adopted SOP remains accessible as long as:
+ *   - The company Job exists and belongs to the requesting user's company.
+ *   - The Job is Published and NOT company-archived (deliberate company removal
+ *     via removeFromCompanyLibrary is still honored — it archives the Job).
+ *   - The pinned source EssentialSOPVersion remains published and its sections
+ *     remain intact (so content is resolvable).
+ *   - The company override (JobOverride) remains available.
+ * Archiving, retiring, or unassigning the original platform Master does NOT
+ * revoke access to an already-adopted SOP.
  *
- *   1. Job.companyId === the requesting company (enforced by the caller's
- *      { companyId } entity filter).
- *   2. Job.status === 'Published' AND !Job.isArchived (enforced by the caller
- *      before calling these helpers).
- *   3. Job.sourceMasterId is present.
- *   4. EssentialSOPMaster(sourceMasterId) exists with status === 'active'.
- *      (resolveJob additionally verifies the pinned version is published.)
- *   5. ProvisioningRecord(companyId, sourceMasterId).assignmentStatus === 'ACTIVE'.
+ * WHAT THESE HELPERS ARE FOR:
+ * The helpers below define the "ACTIVE platform assignment" set and the
+ * single-master active-assignment check. They are used by NEW-adoption and
+ * provisioning-eligibility paths (addToCompanyLibrary, resolveCompanyMasterLibrary,
+ * resolveCompanyMasterPreview, companyLibraryProvisioning) to decide whether a
+ * Master may be NEWLY adopted or provisioned. They are NOT used to gate reads of
+ * already-adopted company SOPs — those paths no longer require an active
+ * platform assignment or an active Master.
  *
- * Company-created Jobs (sourceType !== 'essential_sop', including the legacy
- * Jobs with unset sourceType) remain eligible when Published + non-archived
- * for the company — their eligibility is unchanged.
- *
- * Consequences enforced by this rule:
- *   - A provisioned-only Master (no adopted Job) is NOT active content.
- *   - A company-removed (archived) Job is NOT active content.
- *   - A platform-unassigned Master (assignment REMOVED) is NOT active content,
- *     even if an adopted published Job still exists.
- *
- * This module is the ONLY definition of active-company-content eligibility.
- * resolveJobsForCompany, resolveJob, and resolveAssistantContext (used by
- * askAssistant + resolveJobsForAssistant) all import from here so the rule
- * is never duplicated and never drifts between surfaces.
+ * Company-created Jobs (sourceType !== 'essential_sop') are unaffected: they
+ * remain list/detail/Assistant-eligible when Published + non-archived.
  */
 
 /**
@@ -67,10 +65,13 @@ export async function loadActiveAssignmentMasterIds(SR: any, companyId: string):
 }
 
 /**
- * isMasterAssignedActive — targeted single-master check for resolveJob's deep-
- * link path. Returns true iff an ACTIVE ProvisioningRecord exists for the exact
- * (companyId, masterId) pair. Uses the canonical provisioningKey for one
- * targeted lookup instead of loading all company assignments.
+ * isMasterAssignedActive — targeted single-master check used by NEW-adoption
+ * gating paths. Returns true iff an ACTIVE ProvisioningRecord exists for the
+ * exact (companyId, masterId) pair. Uses the canonical provisioningKey for one
+ * targeted lookup instead of loading all company assignments. NOTE: reading an
+ * EXISTING adopted company SOP no longer requires an active assignment (see the
+ * Adopted-SOP ownership rule above); this helper is for new-adoption/provisioning
+ * eligibility only.
  */
 export async function isMasterAssignedActive(SR: any, companyId: string, masterId: string): Promise<boolean> {
   try {

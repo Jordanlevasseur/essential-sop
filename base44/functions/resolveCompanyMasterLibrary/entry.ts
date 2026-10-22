@@ -110,7 +110,7 @@ export default async function(req: Request): Promise<Response> {
     const masters: any[] = [];
     for (const mid of masterIds) {
       const m = masterMap.get(mid);
-      if (!m || m.status !== 'active' || !m.currentPublishedVersionId) continue;
+      if (!m || m.status !== 'active' || m.distributionStatus === 'retired' || !m.currentPublishedVersionId) continue;
       const v = versionMap.get(m.currentPublishedVersionId);
       if (!v || v.status !== 'published') continue;
 
