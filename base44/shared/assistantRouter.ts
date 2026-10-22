@@ -358,6 +358,32 @@ function hasUncoveredOperationToken(question: string, job: any): boolean {
   return false;
 }
 
+/**
+ * True if the question names a credible operation token that NO eligible SOP
+ * title covers. Used to tell "no published content for this topic" (no_match)
+ * from "too vague, name a SOP" (clarification). E.g. "quantum phaser
+ * calibration" → no SOP covers "phaser"/"calibration" → no_match.
+ */
+function questionNamesUnmatchedOperation(knowledge: CompanyKnowledge, question: string): boolean {
+  const q = normalizeQuery(question.toLowerCase());
+  const qTokens = q.match(/[a-z0-9]+/g) || [];
+  const allTitleTokens: string[] = [];
+  for (const job of knowledge.jobs) {
+    const t = (job.title || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+    for (const x of t) allTitleTokens.push(x);
+  }
+  for (const qt of qTokens) {
+    if (qt.length < 4) continue;
+    if (ROUTER_STOPWORDS.has(qt)) continue;
+    if (SECTION_KEYWORD_SET.has(qt)) continue;
+    if (NON_OPERATION_WORDS.has(qt)) continue;
+    if (TITLE_STOPWORDS.has(qt)) continue;
+    if (allTitleTokens.some(tt => stemMatches(qt, tt))) continue;
+    return true;
+  }
+  return false;
+}
+
 // A "discriminator" title token is one that is NOT shared across other
 // distinct SOP titles. This is what lets the matcher tell a named operation
 // from a shared object word — trade-agnostic, no verb/object lexicon needed.
@@ -705,8 +731,13 @@ export function routeAssistantRequest(
         ambiguousJobIds: target.ambiguous,
       };
     }
-    // Section keyword(s) present but no target — ask which SOP
+    // Section keyword(s) present but no target. If the question names a
+    // credible operation no SOP covers, report no match (no content); if it is
+    // too vague to tell which SOP, ask for clarification.
     if (knowledge.jobs.length > 0) {
+      if (questionNamesUnmatchedOperation(knowledge, q)) {
+        return { route: 'no_match', confidence: 0.7, reason: 'No eligible SOP covers the named operation.' };
+      }
       return {
         route: 'clarification',
         confidence: 0.6,
