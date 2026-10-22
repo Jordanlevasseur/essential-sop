@@ -555,9 +555,9 @@ function buildClarification(
     'I found multiple SOPs that could match. Which one are you referring to?',
     '',
   ];
-  jobs.forEach(j => lines.push(`- ${j.title}`));
+  jobs.forEach((j, i) => lines.push(`${i + 1}. ${j.title}`));
   lines.push('');
-  lines.push('Please specify the SOP by name, or ask about a specific section (e.g., "What tools do I need for Deck Stair Repair?").');
+  lines.push('Reply with the number or name (e.g., "1" or "Taping") to select one.');
 
   const sources = jobs.map(j => ({
     jobId: j.id, jobTitle: j.title, sectionType: 'scope',

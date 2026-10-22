@@ -451,16 +451,65 @@ const ORDINAL_INDEX: Record<string, number> = {
   fourth: 3, fifth: 4,
 };
 
-// Strictly anchored: the question must BE the ordinal (+ optional "one"/"the"),
-// not merely contain it. Prevents "I need the second coat of mud" from
-// triggering ordinal SOP selection.
-const ORDINAL_SELECTION_RE = /^(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd)(?:\s+one)?\s*$/i;
+// Selector words stripped from a shorthand reply before title-token matching.
+// These are generic clarifier nouns/articles, not construction operations.
+const SELECTOR_STOPWORDS = new Set([
+  'the', 'a', 'an', 'one', 'ones', 'option', 'sop', 'sops', 'procedure',
+  'procedures', 'please', 'choose', 'select', 'pick', 'want', 'need',
+  'about', 'go', 'with', 'use',
+]);
 
 interface HistoryEntry { role: string; text: string }
 
 /**
- * Detect an ordinal or bare-SOP-name selection after a clarification.
- * Returns a RoutingDecision if the question is a selection, or null.
+ * Parse an ordinal selection from the question.
+ * Supports: "the first one", "first", "second", "2", "option 2", "sop 1".
+ * Returns the 0-based index, or null.
+ */
+function parseOrdinalSelection(qLower: string): number | null {
+  // Word ordinals: "the first one", "first", "the second", "2nd"
+  const ordMatch = qLower.match(
+    /^(?:the\s+)?(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)(?:\s+one)?\s*$/
+  );
+  if (ordMatch) {
+    const idx = ORDINAL_INDEX[ordMatch[1].toLowerCase()];
+    if (idx !== undefined) return idx;
+  }
+  // Bare number: "1", "2", "3"
+  const bareNum = qLower.match(/^(\d+)\s*$/);
+  if (bareNum) {
+    const n = parseInt(bareNum[1], 10);
+    if (n >= 1 && n <= 9) return n - 1;
+  }
+  // Prefixed number: "option 2", "sop 1", "choice 3", "number 2"
+  const prefixed = qLower.match(
+    /^(?:option|sop|choice|number|pick|select)\s+(\d+)\s*$/
+  );
+  if (prefixed) {
+    const n = parseInt(prefixed[1], 10);
+    if (n >= 1 && n <= 9) return n - 1;
+  }
+  return null;
+}
+
+/**
+ * Detect a clarification-selection reply: ordinal ("the first one", "2",
+ * "option 2") or shorthand SOP name ("Taping", "Taping drywall", "The taping
+ * one"). Resolves to the selected SOP and inherits the original question's
+ * section/step/resource intent from conversation history.
+ *
+ * Matching rules:
+ *   - Ordinal: maps to focusJobIds[idx] by position (matches displayed numbering).
+ *   - Exact title: question equals a focus SOP title (case-insensitive).
+ *   - Shorthand: question's significant tokens (after stripping selector words)
+ *     stem-match a SUBSET of one focus SOP's significant title tokens. If
+ *     exactly one SOP matches → resolve. If multiple match → re-clarify with
+ *     just the matched subset. If none match → null (fall through; may be a
+ *     new topic).
+ *
+ * Returns a RoutingDecision for a successful selection, a clarification if
+ * the shorthand is ambiguous, a no_match if the selected SOP is no longer
+ * available, or null if the question is not a selection.
  */
 function detectClarificationSelection(
   knowledge: CompanyKnowledge,
@@ -470,31 +519,80 @@ function detectClarificationSelection(
 ): RoutingDecision | null {
   if (focusJobIds.length === 0) return null;
   const q = question.trim();
+  const qLower = q.toLowerCase();
 
-  // ── Ordinal: "the first one", "the second one", "the third" ──────────
-  const ordMatch = q.match(ORDINAL_SELECTION_RE);
-  if (ordMatch) {
-    const idx = ORDINAL_INDEX[ordMatch[1].toLowerCase()];
-    if (idx !== undefined && idx < focusJobIds.length) {
-      const job = findSopByJobId(knowledge, focusJobIds[idx]);
+  // ── 1. Ordinal selection ──────────────────────────────────────────────
+  const ordIdx = parseOrdinalSelection(qLower);
+  if (ordIdx !== null) {
+    if (ordIdx < focusJobIds.length) {
+      const job = findSopByJobId(knowledge, focusJobIds[ordIdx]);
       if (job) {
-        return buildSelectionDecision(knowledge, job, history, `ordinal "${ordMatch[1]}"`);
+        return buildSelectionDecision(knowledge, job, history, `ordinal ${ordIdx + 1}`);
       }
+      // The specifically selected SOP is no longer available.
+      return {
+        route: 'no_match',
+        confidence: 0.7,
+        reason: 'Selected SOP is no longer available.',
+      };
     }
-    return null;
+    return null; // out of range — don't guess
   }
 
-  // ── Bare SOP name from the clarification list ──────────────────────────
-  // If the question IS (exactly, case-insensitive) one of the focus SOP
-  // titles, resolve to it. Avoids an AI call for a simple selection.
-  const qLower = q.toLowerCase();
-  for (const fid of focusJobIds) {
-    const job = findSopByJobId(knowledge, fid);
-    if (!job) continue;
+  // Revalidate all focus SOPs against the current eligible set.
+  const focusJobs = focusJobIds
+    .map(id => findSopByJobId(knowledge, id))
+    .filter((j): j is NonNullable<typeof j> => j !== null);
+  if (focusJobs.length === 0) {
+    return {
+      route: 'no_match',
+      confidence: 0.7,
+      reason: 'Previously offered SOPs are no longer available.',
+    };
+  }
+
+  // ── 2. Exact title match ──────────────────────────────────────────────
+  for (const job of focusJobs) {
     const title = (job.title || '').toLowerCase().trim();
     if (title && qLower === title) {
-      return buildSelectionDecision(knowledge, job, history, 'SOP name');
+      return buildSelectionDecision(knowledge, job, history, 'exact SOP name');
     }
+  }
+
+  // ── 3. Shorthand / partial name match ─────────────────────────────────
+  // Strip selector words, then check if the remaining tokens uniquely
+  // identify one focus SOP via stem-matching against significant title
+  // tokens. "Taping" → "Taping Drywall"; "The taping one" → same.
+  const qTokens = (qLower.match(/[a-z0-9]+/g) || [])
+    .filter(t => !SELECTOR_STOPWORDS.has(t) && t.length > 1);
+  if (qTokens.length > 0) {
+    const matches: any[] = [];
+    for (const job of focusJobs) {
+      const titleTokens = (job.title || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+      const sigTitle = titleTokens.filter(
+        t => t.length > 2 && !TITLE_STOPWORDS.has(t)
+      );
+      // ALL question tokens must stem-match at least one significant title token.
+      const allMatch = qTokens.every(qt =>
+        sigTitle.some(tt => stemMatches(qt, tt))
+      );
+      if (allMatch) matches.push(job);
+    }
+
+    if (matches.length === 1) {
+      return buildSelectionDecision(knowledge, matches[0], history, 'shorthand SOP name');
+    }
+    if (matches.length >= 2) {
+      // Multiple focus SOPs match the shorthand — ask which one (don't guess).
+      return {
+        route: 'clarification',
+        confidence: 0.7,
+        reason: 'Multiple offered SOPs match the shorthand selection.',
+        ambiguousJobIds: matches.map(j => j.id),
+      };
+    }
+    // No match — not a selection of any offered SOP. Fall through (may be a
+    // new topic the user is naming explicitly).
   }
 
   return null;
@@ -513,6 +611,31 @@ function buildSelectionDecision(
 ): RoutingDecision {
   const prevUserQs = history.filter(h => h.role === 'user').map(h => h.text || '');
   const prevQ = prevUserQs.length > 0 ? prevUserQs[prevUserQs.length - 1] : '';
+
+  // Preserve the original question's intent: step, resource, or section listing.
+  const stepNum = detectStepNumber(prevQ);
+  if (stepNum !== null) {
+    return {
+      route: 'direct',
+      directKind: 'specific_step',
+      targetJobId: job.id,
+      sectionType: 'procedure',
+      stepNumber: stepNum,
+      confidence: 0.9,
+      reason: `Clarification selection via ${via}; resolved to "${job.title}". Step ${stepNum} inherited from previous question.`,
+    };
+  }
+
+  if (detectResourceRequest(prevQ)) {
+    return {
+      route: 'direct',
+      directKind: 'resource_request',
+      targetJobId: job.id,
+      confidence: 0.9,
+      reason: `Clarification selection via ${via}; resolved to "${job.title}". Resource request inherited from previous question.`,
+    };
+  }
+
   const sections = detectSectionTypes(prevQ);
   const sectionType = sections.length > 0 ? sections[0] : 'scope';
   const targetSections = sections.length > 0 ? sections : ['scope'];
