@@ -70,14 +70,24 @@ export default async function (req) {
       suspendedAt: m.suspendedAt,
     }));
 
-    const invitesOut = (invitations || []).map(i => ({
-      id: i.id,
-      invitedEmail: i.invitedEmail,
-      intendedRole: i.intendedRole,
-      status: i.status,
-      expiresAt: i.expiresAt,
-      cancelledAt: i.cancelledAt,
-    }));
+    // Normalize expired pending invitations to 'expired' in the RESPONSE only.
+    // The database record and its original expiration timestamp are preserved.
+    // The backend (acceptInvitation) already rejects expired tokens at
+    // acceptance time (HTTP 410) — this is a display-only fix so the GM does not
+    // see stale invitations listed as actionable. Accepted and cancelled
+    // invitations retain their real status even if their timestamp has passed.
+    const now = new Date();
+    const invitesOut = (invitations || []).map(i => {
+      const isExpiredPending = i.status === 'pending' && i.expiresAt && new Date(i.expiresAt) < now;
+      return {
+        id: i.id,
+        invitedEmail: i.invitedEmail,
+        intendedRole: i.intendedRole,
+        status: isExpiredPending ? 'expired' : i.status,
+        expiresAt: i.expiresAt,
+        cancelledAt: i.cancelledAt,
+      };
+    });
 
     return Response.json({ members: membersOut, invitations: invitesOut, users });
   } catch (e) {
