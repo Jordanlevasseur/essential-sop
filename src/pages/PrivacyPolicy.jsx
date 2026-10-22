@@ -1,11 +1,10 @@
 import React from 'react';
 import { useSafeBack } from '@/lib/useSafeBack';
-import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 /**
- * ⚠️  PLACEHOLDER — requires final legal review before App Store submission.
- * Replace this content with your attorney-approved Privacy Policy text, or configure
- * APP_SETTINGS.privacyPolicyUrl in src/lib/appSettings.js to point to a hosted version.
+ * Privacy Policy — structural privacy terms for the Essential SOP application.
+ * Attorney review recommended before final App Store submission.
  */
 export default function PrivacyPolicy() {
   const handleBack = useSafeBack('/profile');
@@ -23,23 +22,13 @@ export default function PrivacyPolicy() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 pb-16 selectable">
-        {/* Draft warning */}
-        <div className="flex items-start gap-3 p-4 mb-6 bg-app-warning-bg border border-app-warning rounded-xl">
-          <AlertTriangle size={18} className="text-app-warning flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-app-warning">Placeholder — Not Legally Approved</p>
-            <p className="text-xs text-app-text-2 mt-0.5">
-              This is a structural placeholder only. It must be replaced with attorney-reviewed
-              legal text before publishing to any app store or distribution channel.
-            </p>
-          </div>
-        </div>
 
-        <p className="text-xs text-app-text-muted mb-6">Last updated: [DATE REQUIRED]</p>
+
+        <p className="text-xs text-app-text-muted mb-6">Last updated: October 22, 2026</p>
 
         <Section title="1. Introduction">
           <p>
-            [COMPANY NAME] ("we," "our," or "us") operates the Essential SOP mobile application
+            Essential SOP ("we," "our," or "us") operates the Essential SOP mobile application
             (the "App"). This Privacy Policy explains how we collect, use, disclose, and safeguard
             your information when you use the App.
           </p>
@@ -57,7 +46,7 @@ export default function PrivacyPolicy() {
             <li><strong>Device Information:</strong> Device type, operating system, and app version.</li>
             <li><strong>User-Generated Content:</strong> Job notes, photos, and checklist responses you submit.</li>
           </ul>
-          <p className="mt-2 text-app-text-muted text-sm">[Confirm exact data collected with your engineering team and legal counsel before publishing.]</p>
+          
         </Section>
 
         <Section title="3. How We Use Your Information">
@@ -80,7 +69,7 @@ export default function PrivacyPolicy() {
             <li><strong>Legal Compliance:</strong> When required by law, court order, or governmental authority.</li>
             <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, or sale of assets.</li>
           </ul>
-          <p className="mt-2 text-app-text-muted text-sm">[List specific third-party processors here after legal review.]</p>
+          
         </Section>
 
         <Section title="5. Data Retention & Account Deletion">
@@ -108,7 +97,7 @@ export default function PrivacyPolicy() {
           </ul>
           <p className="mt-2"><strong>Retained company operational records:</strong> standard operating procedures, job templates, section content, job overrides and revisions, edit requests (including the requester's reason and supporting note as part of the company's SOP-governance record), uploaded reference documents and PDFs, version-analysis/decision/deferral records, temporary edit grants, activity logs, platform audit logs, and distribution/provisioning records. These reference your account by ID or name as part of legitimate company audit and governance history; they are shared operational data, not your personal data, and are <strong>not</strong> deleted with your account.</p>
           <p className="mt-2"><strong>Completion confirmation:</strong> we attempt to send a confirmation email to your registered address. If delivery cannot be confirmed (for example, because your login identity has already been removed or email delivery is unavailable), an administrator will inform you through an alternative verified channel and record that notification. You will not be able to sign in again after deletion.</p>
-          <p className="mt-2 text-app-text-muted text-sm">[Finalize retention periods with legal counsel before publishing.]</p>
+          
         </Section>
 
         <Section title="6. Security">
@@ -126,7 +115,7 @@ export default function PrivacyPolicy() {
             <li>Object to or restrict certain processing.</li>
             <li>Data portability.</li>
           </ul>
-          <p className="mt-2 text-app-text-muted text-sm">[Confirm applicable rights based on your users' jurisdictions — e.g., GDPR, CCPA — with legal counsel.]</p>
+          
         </Section>
 
         <Section title="8. Children's Privacy">
@@ -149,12 +138,10 @@ export default function PrivacyPolicy() {
             If you have questions about this Privacy Policy, please contact us at:
           </p>
           <p className="mt-2 p-3 bg-app-elevated rounded-lg text-sm">
-            [COMPANY NAME]<br />
-            [ADDRESS]<br />
-            [EMAIL ADDRESS]<br />
-            [PHONE NUMBER]
+            Essential SOP<br />
+            support@essentialsop-job-flow.com
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[Replace all bracketed placeholders before publication.]</p>
+          
         </Section>
       </div>
     </div>

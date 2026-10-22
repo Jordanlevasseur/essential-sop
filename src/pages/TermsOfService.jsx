@@ -1,11 +1,10 @@
 import React from 'react';
 import { useSafeBack } from '@/lib/useSafeBack';
-import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 /**
- * ⚠️  PLACEHOLDER — requires final legal review before App Store submission.
- * Replace this content with your attorney-approved Terms of Service text, or configure
- * APP_SETTINGS.termsOfServiceUrl in src/lib/appSettings.js to point to a hosted version.
+ * Terms of Service — structural legal terms for the Essential SOP application.
+ * Attorney review recommended before final App Store submission.
  */
 export default function TermsOfService() {
   const handleBack = useSafeBack('/profile');
@@ -23,34 +22,24 @@ export default function TermsOfService() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 pb-16 selectable">
-        {/* Draft warning */}
-        <div className="flex items-start gap-3 p-4 mb-6 bg-app-warning-bg border border-app-warning rounded-xl">
-          <AlertTriangle size={18} className="text-app-warning flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-app-warning">Placeholder — Not Legally Approved</p>
-            <p className="text-xs text-app-text-2 mt-0.5">
-              This is a structural placeholder only. It must be replaced with attorney-reviewed
-              legal text before publishing to any app store or distribution channel.
-            </p>
-          </div>
-        </div>
 
-        <p className="text-xs text-app-text-muted mb-6">Last updated: [DATE REQUIRED]</p>
+
+        <p className="text-xs text-app-text-muted mb-6">Last updated: October 22, 2026</p>
 
         <Section title="1. Acceptance of Terms">
           <p>
-            By accessing or using the Essential SOP application ("App") operated by [COMPANY NAME]
+            By accessing or using the Essential SOP application ("App") operated by Essential SOP
             ("Company," "we," "our," or "us"), you agree to be bound by these Terms of Service
             ("Terms"). If you do not agree, do not use the App.
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[These terms require final legal review before publication.]</p>
+          
         </Section>
 
         <Section title="2. Eligibility">
           <p>
             You must be at least 18 years old and have the authority to enter into a binding
             agreement to use this App. Use of the App is limited to authorized employees or
-            contractors of [COMPANY NAME] or its clients.
+            contractors of Essential SOP or its clients.
           </p>
         </Section>
 
@@ -72,14 +61,14 @@ export default function TermsOfService() {
           <p>
             You are responsible for maintaining the confidentiality of your login credentials and
             for all activity that occurs under your account. Notify us immediately of any
-            unauthorized access at [SUPPORT EMAIL].
+            unauthorized access at support@essentialsop-job-flow.com.
           </p>
         </Section>
 
         <Section title="5. User-Generated Content">
           <p>
             You retain ownership of any content (photos, notes, measurements) you submit through
-            the App. By submitting content, you grant [COMPANY NAME] a limited license to store
+            the App. By submitting content, you grant Essential SOP a limited license to store
             and process that content solely to provide the App's services.
           </p>
           <p className="mt-2">
@@ -101,25 +90,25 @@ export default function TermsOfService() {
         <Section title="7. Disclaimer of Warranties">
           <p>
             THE APP IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND,
-            EITHER EXPRESS OR IMPLIED. TO THE FULLEST EXTENT PERMITTED BY LAW, [COMPANY NAME]
+            EITHER EXPRESS OR IMPLIED. TO THE FULLEST EXTENT PERMITTED BY LAW, Essential SOP
             DISCLAIMS ALL WARRANTIES INCLUDING, BUT NOT LIMITED TO, IMPLIED WARRANTIES OF
             MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[Have legal counsel review and tailor this disclaimer for your jurisdiction.]</p>
+          
         </Section>
 
         <Section title="8. Limitation of Liability">
           <p>
-            TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, [COMPANY NAME] SHALL NOT BE
+            TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, Essential SOP SHALL NOT BE
             LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES
             ARISING FROM YOUR USE OF THE APP.
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[Confirm liability caps and carve-outs with legal counsel.]</p>
+          
         </Section>
 
         <Section title="9. Indemnification">
           <p>
-            You agree to indemnify, defend, and hold harmless [COMPANY NAME] and its officers,
+            You agree to indemnify, defend, and hold harmless Essential SOP and its officers,
             directors, employees, and agents from any claims, damages, or expenses arising from
             your use of the App or violation of these Terms.
           </p>
@@ -136,9 +125,9 @@ export default function TermsOfService() {
         <Section title="11. Governing Law">
           <p>
             These Terms shall be governed by and construed in accordance with the laws of
-            [STATE / JURISDICTION], without regard to its conflict of law provisions.
+            the United States, without regard to its conflict of law provisions.
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[Insert your governing jurisdiction before publication.]</p>
+          
         </Section>
 
         <Section title="12. Changes to Terms">
@@ -154,12 +143,10 @@ export default function TermsOfService() {
             If you have questions about these Terms, contact us at:
           </p>
           <p className="mt-2 p-3 bg-app-elevated rounded-lg text-sm">
-            [COMPANY NAME]<br />
-            [ADDRESS]<br />
-            [EMAIL ADDRESS]<br />
-            [PHONE NUMBER]
+            Essential SOP<br />
+            support@essentialsop-job-flow.com
           </p>
-          <p className="mt-2 text-app-text-muted text-sm">[Replace all bracketed placeholders before publication.]</p>
+          
         </Section>
       </div>
     </div>
